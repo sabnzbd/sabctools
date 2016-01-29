@@ -1,0 +1,7 @@
+include *.py MANIFEST* README TODO COPYING CHANGES
+recursive-include src *.h *.c
+recursive-include test *.py
+recursive-include examples *
+recursive-include doc *txt *html
+recursive-include debian *
+

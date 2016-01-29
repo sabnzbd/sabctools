@@ -1,0 +1,8 @@
+version 0.4:
+
+- Provide *real* documentation.
+
+- More examples (especially: multipart encoding/decoding).
+
+- More testing.
+

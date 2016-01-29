@@ -1,0 +1,16 @@
+Package: python-yenc
+Architecture: i386
+Version: 0.4
+Depends: python2.6
+Maintainer: Alessandro Duca (DuAL) <alessandro.duca@gmail.com>
+Section: news
+Priority: optional
+Standards-Version: 3.5.6.1
+Description: yEnc encoding/decoding extension for Python
+ The yEnc module provide a simple API for doing raw encoding/decoding of
+ yencoded binaries, mainly for retrieving or posting to the usenet.
+ This implementation is really simple and intended mainly as an exercise
+ to the author but is also significatively faster than any possible pure
+ Python implementation and it's being actually used by some Python nntp
+ clients out there.
+

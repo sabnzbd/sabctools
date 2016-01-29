@@ -1,0 +1,155 @@
+##=============================================================================
+ #
+ # Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
+ #
+ # This library is free software; you can redistribute it and/or
+ # modify it under the terms of the GNU Lesser General Public
+ # License as published by the Free Software Foundation; either
+ # version 2.1 of the License, or (at your option) any later version.
+ #
+ # This library is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # Lesser General Public License for more details.
+ #
+ # You should have received a copy of the GNU Lesser General Public
+ # License along with this library; if not, write to the Free Software
+ # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ #=============================================================================
+ # 
+##=============================================================================
+
+Description:
+-----------
+This a fairly simple module, it provide only raw yEnc encoding/decoding with
+builitin crc32 calculation.
+Header parsing, checkings and yenc formatting are left to you (see examples 
+directory for possible implementations). The interface was originally intended 
+to be similar to the uu module from Python standard library.
+Version 0.2 changed a bit the previous (0.1)  behaviour, but it should be
+more usable and flexible (now you can encode/decode from and to standard
+input and output and use filenames instead of file objects as arguments
+for encode() and decode() ). See CHANGES file for details.
+Version 0.3 doesn't introduce anything new, just a bugfix a some internals
+changes.
+Version 0.4 introduces the close() method on Encoder and Decoder, fixes
+crc32 formatting and adds escaping of '.' for compatibility with some ydecode 
+tools, strictly speaking this wasn't a bug and yenc specs reccomend this
+behaviour only for clients that write directly on the tcp steam. 
+
+Version 0.4 is meant to be backward compatible with both 0.3 and 0.2.
+
+
+Requirements:
+------------
+A C developement environment, Python>=2.6 and python developement libs (look for 
+python-dev or something like that if you're using .rpm or .deb packages, if you 
+installed from sources you already have everything you need).
+The module is known to work with Python2.6, testing with other version is needed.
+
+
+Installation:
+------------
+To install:
+tar xzfv yenc-0.4.tar.gz
+cd yenc-0.4
+python setup.py build
+su
+python setup.py install
+
+To uninstall:
+Simply remove _yenc.so, yenc.py and yenc.pyc from your PYTHONPATH.
+
+On my Ubuntu:
+/usr/local/lib/python2.6/site-packages/{_yenc.so,yenc.py,yenc.pyc} 
+
+
+Usage:
+-----
+As usual:
+
+import yenc
+
+in your modules. The 'yenc' module defines 2 functions (encode() and decode())
+and an error class, yenc.Error(Exception). 
+
+
+encode(in_file, out_file, bytes=0):
+
+Accepts both filenames or file objects as arguments, if "in_file" is a file
+type object it must be opened for reading ("r","rw"...), if "out_file"  is a
+file type object it must be opened for writing ("w","rw"..), when files are 
+specified as filenames the files are (if possible) automatically opened in the
+correct mode.
+The "bytes" argument is an optional numeric value, if set to 0 or omitted it
+causes the input file to be read and encoded until EOF, otherwise it specifies
+the maximum number of bytes to read and encode.
+When reading from stdin "bytes" argument can't be 0 (or omitted).
+
+If arguments don't match such criteria an exception is raised. encode() reads 
+data from "in_file" and writes the encoded data on "out_file", it returns a 
+tuple containing the number of encoded bytes and a crc32 sum of the original 
+data.
+Specifing "-" as "in_file" or "out_file" arguments causes the input/output to
+be read/written on standard input/output.
+
+
+decode(in_file, out_file, size=0, crc_in=""):
+
+Same as encode (of course it does the inverse job). Exceptions are raised when
+output can't be written or calculated crc doesn't match the optional crc_in 
+argument (useful for writing decoding tools).
+
+CRC32 sums are always represented as lowercase strings, whithout any
+preceeding simbol (like '0x').
+
+
+Decoder and Encoder:
+-------------------
+
+Encoder and Decoder are facility classes meant for encoding data one chunk at time,
+optionally writing the encoded/decoded data to an output file.
+
+import yenc.Encoder
+
+encoder = Encoder()
+encoder.feed('some data')
+encoder.feed('some other data')
+encoder.terminate() # writes the \r\n terminator on file, further feed(..) will fail
+
+encoded_data = encoder.getEncoded() # returns encoded data as string
+crc32 = encoder.getCrc32() # returns crc32 of clear data
+
+
+optionally you can write onto an output file:
+
+encoder = Encoder(file('outputfile.ync', 'wb'))
+encoder.feed('some data')
+encoder.feed('some other data')
+encoder.terminate()
+encoder.flush() # writes the local buffer to the output file
+
+encoder.close() # flushes and closes output_file, called automatically upon deletion
+
+crc32 = encoder.getCrc32()
+
+Decoder works basically the same way.
+
+
+Performances:
+------------
+Fast enough.
+
+
+Author:
+------:
+Alessandro Duca <alessandro.duca AT gmail.com>
+
+
+Thanks:
+------
+Michael Muller <mmuller AT endunden.com> for code reviewing and fixing.
+
+
+Greets, Sandro.
+

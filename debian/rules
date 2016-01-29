@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+
+PYTHON='python2.6'
+
+build: clean
+	/usr/bin/env $PYTHON setup.py build
+	/usr/bin/env $PYTHON setup.py install --root=debian/tmp
+	cp -av debian/DEBIAN debian/tmp/DEBIAN
+
+binary: binary-arch binary-indep
+
+binary-indep:
+	dpkg-gencontrol
+	dpkg --build debian/tmp ../python-yenc_0.4.deb
+
+binary-arch:
+
+clean:
+	rm -rf debian/tmp/*
+	rm -rf dist/*
+	rm -rf build/*
+

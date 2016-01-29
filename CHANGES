@@ -1,0 +1,36 @@
+version: 0.1
+- Initial release.
+
+version: 0.2
+- Included patch from Michael Muller <mmuller@enduden.com> that fixes some 
+possible buffer overflows, and some yEnc incompatibilities.
+- A few enanchments in C code, mainly cosmetic (it should be a little faster
+in encoding).
+- Files opened in O_RDWR mode are now handled properly.
+- yenc.i interface adapted to latest SWIG releases.
+- Passing a file opened in a wrong mode now raises a ValueError (rather than
+an AssertionError).
+- encode()/decode() now accepts filenames and stdin/stdout as arguments.
+- Reaching EOF while encoding/decoding no more raises an exception (it was
+redundant since the number of encoded/decoded bytes were already returned),
+this could break some implementations.
+- Passing 0 to the encode o decode functions causes file to be encoded/decoded
+up to EOF (this is made possible by the previous change).
+ 
+version: 0.3
+- Encoded lines now are correctly terminated with CRLF.
+- Encoded lines size now is 128 chars.
+- using fread() instead of fgets in decode() function (much faster).
+- SWIG isn't used anymore for wrapper generation.
+
+version: 0.4
+- change license to LGPL
+- crc32 codes are now Python longs (returned from _yenc calls) in the range [2**0, 2**32 -1]
+- crc32 formatting is fixed
+- 'bytes' arguments named 'bytez' to avoid collision with 'bytes' type
+- basic unit testing
+- unescaped dots at the beginning of line caused ydecode to fail under some circumstances
+  dots at the beginning of line are now always escaped 
+- Encoder's and Decoder's output files (if any) are automatically flushed and closed upon deletion
+- new method close() on Encoder and Decoder
+
