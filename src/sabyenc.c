@@ -277,11 +277,115 @@ static int decode_buffer(
 
 static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt bytes, Crc32 *crc, Bool *escape)
 {
-	uInt read_ind;
-	uInt decoded_bytes;
-	Byte byte;
+	// Search helpers
+    char *cur_char; // Pointer to search result
+    char *start_loc; // Pointer to current char
+    char *end_loc;
+    // Output vars
+    int part;
+    uInt size;
+    uInt decoded_bytes;
+    Byte byte;
+    char *filename = NULL;
+    Bool is_part = 0; 
+    
+
+
+    /*
+     ANALYZE HEADER
+     Always in the same format, e.g.:
+     =ybegin part=41 line=128 size=49152000 name=90E2Sdvsmds0801dvsmds90E.part06.rar
+	 =ypart begin=15360001 end=15744000
+	 But we only care about the filename and the size
+	*/
+
+    // Start of header
+    start_loc = strstr(input_buffer, "=ybegin");
+    if(start_loc) {
+    	// Move forward to start of header
+    	cur_char = start_loc+8;
+
+    	// Find part-number
+    	start_loc = strstr(cur_char, "part=");
+    	if(start_loc) {
+    		start_loc += 5;
+    		part = strtoul(start_loc, NULL, 0);
+    	}
+
+    	// Find size
+    	start_loc = strstr(cur_char, "size=");
+    	if(start_loc) {
+    		start_loc += 5;
+    		size = strtoul(start_loc, NULL, 0);
+    		//printf("size=%d\n", size);
+    	}
+
+		// Find name
+    	start_loc = strstr(cur_char, "name=");
+    	if(start_loc) {
+    		start_loc += 5;
+    		// Skip over everything untill end of line
+    		for (end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
+
+    		// Now copy this part to the output
+    		filename = (char*)malloc(end_loc - start_loc + 1);
+            memcpy(filename, start_loc, end_loc - start_loc);
+            filename[end_loc - start_loc] = '\0';
+            //printf("%s\n", filename);
+            
+            // Move pointer
+            cur_char = end_loc;
+    	}
+
+    	// Is there a part-indicator?
+    	start_loc = strstr(cur_char, "=ypart");
+    	if(start_loc) {
+    		start_loc += 6;
+    		// Partial file, so we need to find "pcrc=" and not "crc="
+    		is_part = 1;
+    		// Skip over everything untill end of line
+    		for (end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
+    		// Set the new startpoint
+    		cur_char = end_loc;
+    	}
+
+    	// Let's loop over all the data
+    	decoded_bytes = 0;
+    	while(1) {
+    		// At the end?
+    		if(decoded_bytes>381995) {
+    			if (!strncmp(cur_char, "=yend ", 6)) {
+	    			break;
+	    		}
+    		}
+    		
+    		// Get current char and increment pointer
+    		cur_char++;
+
+    		if(*escape) {
+				byte = (Byte)(*cur_char - 106);
+				*escape = 0;
+			} else if(*cur_char == ESC) {
+				*escape = 1;
+				continue;
+			} else if(*cur_char == LF || *cur_char == CR) {
+				continue;
+			} else if(*cur_char == DOT && *(cur_char-1) == DOT && *(cur_char-2) == LF) {
+				continue;
+			} else {
+				byte = (Byte)(*cur_char - 42);
+			}
+			output_buffer[decoded_bytes] = byte;
+			decoded_bytes++;
+
+			crc_update(crc, byte);
+    	}
+    }
+    printf("%d\n", decoded_bytes);
+    printf("%d\n", size);
+	return decoded_bytes;
 	
-	decoded_bytes = 0;
+	/*decoded_bytes = 0;
 	for(read_ind = 0; read_ind < bytes; read_ind++) {
 		byte = input_buffer[read_ind];
 
@@ -302,7 +406,7 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt by
 		decoded_bytes++;
 		crc_update(crc, byte);
 	}
-	return decoded_bytes;
+	return decoded_bytes;*/
 }
 
 PyObject* encode_string(

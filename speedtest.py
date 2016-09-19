@@ -1,4 +1,5 @@
 import _yenc
+import sabyenc
 import re
 import time
 import binascii
@@ -87,32 +88,13 @@ time1_new = time.clock()
 timet_new = 0.0
 for i in xrange(nr_runs):
     time2 = time.clock()
-    data = data_raw
 
-    new_lines = data.split('\r\n')
-    data = new_lines
-    data = filter(None, data)
-    yenc, data = yCheck(data)
-    ybegin, ypart, yend = yenc
 
     timet_new += time.clock()-time2
 
     # Different from homemade
-    decoded_data, crc = _yenc.decode_string_usenet('\r\n'.join(data))
-    partcrc = '%08X' % ((crc ^ -1) & 2 ** 32L - 1)
+    decoded_data_new, crc = sabyenc.decode_string_usenet(data_raw)
 
-    if ypart:
-        crcname = 'pcrc32'
-    else:
-        crcname = 'crc32'
-
-    if crcname in yend:
-        _partcrc = '0' * (8 - len(yend[crcname])) + yend[crcname].upper()
-    else:
-        _partcrc = None
-        print "Corrupt header detected => yend: %s" % yend
-    if not _partcrc == partcrc:
-        print 'shit'
 
 print "---"
 time1_new_disp = 1000*(time.clock()-time1_new)
@@ -166,6 +148,9 @@ for i in xrange(nr_runs):
         print "Corrupt header detected => yend: %s" % yend
     if not _partcrc == partcrc:
         print 'shit'
+
+
+print decoded_data_new == decoded_data
 
 time1_disp = 1000*(time.clock()-time1)
 timet_disp = 1000*timet
