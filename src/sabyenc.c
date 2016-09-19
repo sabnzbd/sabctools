@@ -1,6 +1,7 @@
  /*=============================================================================
  *
  * Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
+ * Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd 
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -18,7 +19,7 @@
  *=============================================================================
  */ 
 
-#include "_yenc.h"
+#include "sabyenc.h"
 
 /* Typedefs */
 typedef struct {
@@ -77,20 +78,24 @@ static char* argnames[] = {"infile", "outfile", "bytez", NULL};
 /* Function declarations */
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
-#ifdef __unix__
-static Bool readable(FILE *);
-static Bool writable(FILE *);
-#endif
-void init_yenc(void);
+void initsabyenc(void);
+static int encode_buffer(Byte *, Byte *, uInt, Crc32 *, uInt *);
 static int decode_buffer(Byte *, Byte *, uInt, Crc32 *, Bool *);
-PyObject* decode_string(PyObject* ,PyObject* ,PyObject* );
+static int decode_buffer_usenet(Byte *, Byte *, uInt, Crc32 *, Bool *);
 
 /* Python API requirements */
+static char encode_doc[] = "encode(input_file, output_file, <size>)";
 static char decode_doc[] = "decode(input_file, output_file, <size>)";
+static char encode_string_doc[] = "encode_string(string, crc32, column)";
 static char decode_string_doc[] = "decode_string(string, crc32, escape)";
+static char decode_string_usenet_doc[] = "decode_string_usenet(string, crc32, escape)";
+
 static PyMethodDef funcs[] = {
+        {"encode", (PyCFunction) encode_file, METH_KEYWORDS | METH_VARARGS, encode_doc},
         {"decode", (PyCFunction) decode_file, METH_KEYWORDS | METH_VARARGS, decode_doc},
+        {"encode_string", (PyCFunction) encode_string, METH_KEYWORDS | METH_VARARGS, encode_string_doc},
         {"decode_string", (PyCFunction) decode_string, METH_KEYWORDS | METH_VARARGS, decode_string_doc},
+        {"decode_string_usenet", (PyCFunction) decode_string_usenet, METH_KEYWORDS | METH_VARARGS, decode_string_usenet_doc},
         {NULL, NULL, 0, NULL}
 };
 /* Function definitions */
@@ -108,8 +113,7 @@ static void crc_update(Crc32 *crc, uInt c)
 
 /*
  * Todo: provide alternatives for this to work on win32
- */
-#ifdef __unix__
+ *
 static Bool writable(FILE *file)
 {
 	int mode = fcntl(fileno(file),F_GETFL) & O_ACCMODE;
@@ -121,7 +125,120 @@ static Bool readable(FILE *file)
 	int mode = fcntl(fileno(file),F_GETFL) & O_ACCMODE;
 	return (mode == O_RDONLY) || (mode == O_RDWR);
 }
-#endif
+/*
+ * 
+ */
+
+static int encode_buffer(
+		Byte *input_buffer, 
+		Byte *output_buffer, 
+		uInt bytes, 
+		Crc32 *crc, 
+		uInt *col
+		)
+{
+	uInt in_ind;
+	uInt out_ind;
+	Byte byte;
+		
+	out_ind = 0;
+	for(in_ind=0; in_ind < bytes; in_ind++) {
+		byte = (Byte)(input_buffer[in_ind] + 42);
+		crc_update(crc, input_buffer[in_ind]);
+		switch(byte){
+			case ZERO:
+			case LF:
+			case CR:
+			case ESC:
+				goto escape_string;
+			case TAB:
+			case SPACE:
+				if(*col == 0 || *col == LINESIZE-1) {
+					goto escape_string;
+				}
+                        case DOT:
+                                if(*col == 0) {
+                                        goto escape_string;
+                                }
+			default:
+				goto plain_string;
+		}
+		escape_string:
+		byte = (Byte)(byte + 64);
+		output_buffer[out_ind++] = ESC;
+		(*col)++;
+		plain_string:
+		output_buffer[out_ind++] = byte;
+		(*col)++;
+		if(*col >= LINESIZE) {
+			output_buffer[out_ind++] = CR;
+			output_buffer[out_ind++] = LF;
+			*col = 0;
+		}
+	}
+	return out_ind;
+}
+
+PyObject* encode_file(
+		PyObject* self,
+		PyObject* args,
+		PyObject* kwds
+		)
+{
+	Byte read_buffer[BLOCK];
+	Byte write_buffer[LONGBUFF];
+	uLong encoded = 0;
+	uInt col = 0;
+	uInt read_bytes;
+	uInt in_ind;
+	uInt encoded_bytes;
+	uLong bytes = 0;
+	Crc32 crc;
+
+	FILE *infile = NULL, *outfile = NULL;
+	PyObject *Py_infile = NULL, *Py_outfile = NULL;
+	
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!|l", argnames, \
+				&PyFile_Type, &Py_infile, \
+				&PyFile_Type, &Py_outfile, \
+				&bytes)) return NULL;
+
+	infile = PyFile_AsFile(Py_infile);
+	outfile = PyFile_AsFile(Py_outfile);
+	
+	/*
+	if(!readable(infile) || !writable(outfile) ) {
+		return PyErr_Format(PyExc_ValueError, "file objects not writeable/readable");
+	} 
+	*/
+	
+	crc_init(&crc, 0xffffffffl);
+	while(encoded < bytes || bytes == 0){
+		if( bytes && (bytes - encoded) < BLOCK) {
+			in_ind = bytes - encoded;
+		} else {
+			in_ind = BLOCK;
+		}
+		read_bytes = fread(&read_buffer, 1, in_ind, infile);
+		if(read_bytes < 1) {
+                        break;
+                }
+		encoded_bytes = encode_buffer(&read_buffer[0], &write_buffer[0], read_bytes, &crc, &col);
+		if(fwrite(&write_buffer, 1, encoded_bytes, outfile) != encoded_bytes) {
+			break;
+		}
+		encoded += read_bytes;
+	}
+	if(ferror(infile) || ferror(outfile)) {
+		return PyErr_Format(PyExc_IOError, "I/O Error while encoding");
+	}
+	if(col > 0) {
+		fputc(CR, outfile);
+		fputc(LF, outfile);
+	}
+	fflush(outfile);
+	return Py_BuildValue("(l,L)", encoded, (long long)crc.crc);
+}
 
 static int decode_buffer(
 		Byte *input_buffer, 
@@ -138,6 +255,7 @@ static int decode_buffer(
 	decoded_bytes = 0;
 	for(read_ind = 0; read_ind < bytes; read_ind++) {
 		byte = input_buffer[read_ind];
+
 		if(*escape) {
 			byte = (Byte)(byte - 106);
 			*escape = 0;
@@ -154,6 +272,86 @@ static int decode_buffer(
 		crc_update(crc, byte);
 	}
 	return decoded_bytes;
+}
+
+
+static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt bytes, Crc32 *crc, Bool *escape)
+{
+	uInt read_ind;
+	uInt decoded_bytes;
+	Byte byte;
+	
+	decoded_bytes = 0;
+	for(read_ind = 0; read_ind < bytes; read_ind++) {
+		byte = input_buffer[read_ind];
+
+		if(*escape) {
+			byte = (Byte)(byte - 106);
+			*escape = 0;
+		} else if(byte == ESC) {
+			*escape = 1;
+			continue;
+		} else if(byte == LF || byte == CR) {
+			continue;
+		} else if(byte == DOT && input_buffer[read_ind+1] == DOT && input_buffer[read_ind-1] == LF) {
+			continue;
+		} else {
+			byte = (Byte)(byte - 42);
+		}
+		output_buffer[decoded_bytes] = byte;
+		decoded_bytes++;
+		crc_update(crc, byte);
+	}
+	return decoded_bytes;
+}
+
+PyObject* encode_string(
+		PyObject* self, 
+		PyObject* args, 
+		PyObject* kwds
+		)
+{
+	PyObject *Py_input_string;
+	PyObject *Py_output_string;
+	PyObject *retval = NULL;
+	
+	Byte *input_buffer = NULL;
+	Byte *output_buffer = NULL;
+	long long crc_value = 0xffffffffll;
+	uInt input_len = 0;
+	uInt output_len = 0;
+	uInt col = 0;
+	Crc32 crc;
+	
+	static char *kwlist[] = { "string", "crc32", "column", NULL };
+	if(!PyArg_ParseTupleAndKeywords(args, 
+				kwds,
+				"O!|Li", 
+				kwlist,
+				&PyString_Type,
+				&Py_input_string, 
+				&crc_value,
+				&col
+				)) 
+		return NULL;
+
+	crc_init(&crc, (uInt)crc_value);
+	input_len = PyString_Size(Py_input_string);
+	input_buffer = (Byte *) PyString_AsString(Py_input_string);
+	output_buffer = (Byte *) malloc((2 * input_len / LINESIZE + 1) * (LINESIZE + 2));
+	if(!output_buffer)
+		return PyErr_NoMemory();
+	output_len = encode_buffer(input_buffer, output_buffer, input_len, &crc, &col);
+	Py_output_string = PyString_FromStringAndSize((char *)output_buffer, output_len);
+	if(!Py_output_string)
+		goto out;
+
+	retval = Py_BuildValue("(S,L,i)", Py_output_string, (long long)crc.crc, col);
+	Py_DECREF(Py_output_string);
+	
+out:
+	free(output_buffer);
+	return retval;
 }
 
 PyObject* decode_file(
@@ -183,12 +381,14 @@ PyObject* decode_file(
 
 	infile = PyFile_AsFile(Py_infile);
 	outfile = PyFile_AsFile(Py_outfile);
-#ifdef __unix__
+
+	/*
 	if(!readable(infile) || !writable(outfile)) {
 		return PyErr_Format(PyExc_ValueError,
 				"file objects not writeable/readable");
 	} 
-#endif
+	*/
+
 	crc_init(&crc, 0xffffffffl);
 	while(decoded < bytes || bytes == 0){
 		if(bytes){
@@ -260,9 +460,53 @@ out:
 	return retval;
 }
 
-
-void init_yenc()
+PyObject* decode_string_usenet(PyObject* self, PyObject* args, PyObject* kwds)
 {
-	Py_InitModule3("_yenc", funcs, "Raw yenc operations");
+	PyObject *Py_input_string;
+	PyObject *Py_output_string;
+	PyObject *retval = NULL;
+	
+	Byte *input_buffer = NULL;
+	Byte *output_buffer = NULL;
+	long long crc_value = 0xffffffffll;
+	uInt input_len = 0;
+	uInt output_len = 0;
+	int escape = 0;
+	Crc32 crc;
+	
+	static char *kwlist[] = { "string", "crc32", "escape", NULL };
+	if(!PyArg_ParseTupleAndKeywords(args, 
+				kwds,
+				"O!|Li", 
+				kwlist,
+				&PyString_Type,
+				&Py_input_string, 
+				&crc_value,
+				&escape
+				)) 
+		return NULL;
+	crc_init(&crc, (uInt)crc_value);
+	input_len = PyString_Size(Py_input_string);
+	input_buffer = (Byte *)PyString_AsString(Py_input_string);
+	output_buffer = (Byte *)malloc( input_len );
+	if(!output_buffer)
+		return PyErr_NoMemory();
+	output_len = decode_buffer_usenet(input_buffer, output_buffer, input_len, &crc, &escape);
+	Py_output_string = PyString_FromStringAndSize((char *)output_buffer, output_len);
+	if(!Py_output_string)
+		goto out;
+
+	retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc.crc);
+	Py_DECREF(Py_output_string);
+	
+out:
+	free(output_buffer);
+	return retval;
+}
+
+
+void initsabyenc()
+{
+	Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
 }
 

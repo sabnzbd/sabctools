@@ -3,9 +3,10 @@
 ##=============================================================================
  #
  # Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
- #
+ # Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd 
+ # 
  # This library is free software; you can redistribute it and/or
- #modify it under the terms of the GNU Lesser General Public
+ # modify it under the terms of the GNU Lesser General Public
  # License as published by the Free Software Foundation; either
  # version 2.1 of the License, or (at your option) any later version.
  #
@@ -24,16 +25,15 @@
 from distutils.core import setup, Extension
 
 setup(	
-	name		 = "yenc",
-	version		 = "0.4.0",
-	author		 = "Alessandro Duca",
-	author_email	 = "alessandro.duca@gmail.com",
+	name		 = "sabyenc",
+	version		 = "0.1.0",
+	author		 = "Safihre",
+	author_email = "safihre@sabnzbd.org",
         url		 = "https://bitbucket.org/dual75/yenc",
 	license		 = "LGPL",
-        platforms        = ["Unix"],
+    platforms        = ["Unix", "Windows"],
 	package_dir	 = { '': 'lib' },
-	py_modules	 = ["yenc"],
-	ext_modules	 = [Extension("_yenc",["src/_yenc.c"],extra_compile_args=["-O2","-g"])],
+	ext_modules	 = [Extension("sabyenc",["src/sabyenc.c"],extra_compile_args=["-O2","-g"])],
         classifiers      = [
             "Programming Language :: Python",
             "Programming Language :: Python :: 2.5",
@@ -48,11 +48,12 @@ setup(
             "Topic :: Software Development :: Libraries :: Python Modules",
             "Topic :: Communications :: Usenet News"
             ],
-	description	 = "yEnc Module for Python",
+	description	 = "yEnc Module for Python modified for SABnzbd",
         long_description = """
 yEnc Encoding/Decoding for Python
 ---------------------------------
-
+Mofied the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
+for use within SABnzbd.
 This a fairly simple module, it provide only raw yEnc encoding/decoding with
 builitin crc32 calculation. Header parsing, checkings and yenc formatting are 
 left to you (see examples directory for possible implementations). 

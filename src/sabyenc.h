@@ -1,6 +1,7 @@
  /*=============================================================================
  *
  * Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
+ * Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd 
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,11 +22,7 @@
 #include <Python.h>
 #include <stdio.h>
 #include <fcntl.h>
-#ifdef __unix__
-#include <unistd.h>
-#elif _WIN32
-#include <io.h>
-#endif
+#include <string.h>
 
 /* Constants			*/
 #define	LINESIZE	128
@@ -69,9 +66,9 @@ typedef unsigned char Byte;
 typedef int Bool;
 
 /* Functions */
+PyObject* encode_file(PyObject*, PyObject*, PyObject*);
 PyObject* decode_file(PyObject*, PyObject*, PyObject*);
+PyObject* encode_string(PyObject* ,PyObject* ,PyObject*);
 PyObject* decode_string(PyObject* ,PyObject* , PyObject*);
-void init_yenc(void);
-
-
-
+PyObject* decode_string_usenet(PyObject* ,PyObject* , PyObject*);
+void initsabyenc(void);
