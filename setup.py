@@ -31,9 +31,8 @@ setup(
 	author_email = "safihre@sabnzbd.org",
         url		 = "https://bitbucket.org/dual75/yenc",
 	license		 = "LGPL",
-    platforms        = ["Unix", "Windows"],
 	package_dir	 = { '': 'lib' },
-	ext_modules	 = [Extension("sabyenc",["src/sabyenc.c"],extra_compile_args=["-O2","-g"])],
+	ext_modules	 = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2","-g"])],
         classifiers      = [
             "Programming Language :: Python",
             "Programming Language :: Python :: 2.5",
@@ -49,7 +48,7 @@ setup(
             "Topic :: Communications :: Usenet News"
             ],
 	description	 = "yEnc Module for Python modified for SABnzbd",
-        long_description = """
+    long_description = """
 yEnc Encoding/Decoding for Python
 ---------------------------------
 Mofied the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
@@ -61,6 +60,5 @@ left to you (see examples directory for possible implementations).
 Supports encoding and decoding directly to files or to memory buffers
 with helper classes Encoder and Decoder.
 """
-
-	)
+)
 

@@ -50,3 +50,5 @@ Temporary Items
 Build
 *.out
 build
+examples
+test
