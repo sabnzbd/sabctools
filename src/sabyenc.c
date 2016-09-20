@@ -81,14 +81,14 @@ static void crc_update(Crc32 *, uInt);
 void initsabyenc(void);
 static int encode_buffer(Byte *, Byte *, uInt, Crc32 *, uInt *);
 static int decode_buffer(Byte *, Byte *, uInt, Crc32 *, Bool *);
-static int decode_buffer_usenet(Byte *, Byte *, uInt, Crc32 *, Bool *);
+static int decode_buffer_usenet(Byte *, Byte *, Byte **, Crc32 *, uInt *,  Bool *);
 
 /* Python API requirements */
 static char encode_doc[] = "encode(input_file, output_file, <size>)";
 static char decode_doc[] = "decode(input_file, output_file, <size>)";
 static char encode_string_doc[] = "encode_string(string, crc32, column)";
 static char decode_string_doc[] = "decode_string(string, crc32, escape)";
-static char decode_string_usenet_doc[] = "decode_string_usenet(string, crc32, escape)";
+static char decode_string_usenet_doc[] = "decode_string_usenet(string)";
 
 static PyMethodDef funcs[] = {
         {"encode", (PyCFunction) encode_file, METH_KEYWORDS | METH_VARARGS, encode_doc},
@@ -275,27 +275,28 @@ static int decode_buffer(
 }
 
 
-static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt bytes, Crc32 *crc, Bool *escape)
+static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **filename, 
+	                            Crc32 *crc, uInt *crc_yenc, Bool *crc_correct)
 {
-	// Search helpers
+	// Search variables
     char *cur_char; // Pointer to search result
     char *start_loc; // Pointer to current char
     char *end_loc;
-    // Output vars
-    int part;
-    uInt size;
-    uInt decoded_bytes;
-    Byte byte;
-    char *filename = NULL;
-    Bool is_part = 0; 
     
-
-
+    // Other vars
+    Byte byte;
+    uInt part_begin = 0;
+    uInt part_size = 0;
+    uInt decoded_bytes = 0;
+    uInt safe_nr_bytes = 0;
+    
     /*
      ANALYZE HEADER
      Always in the same format, e.g.:
+     
      =ybegin part=41 line=128 size=49152000 name=90E2Sdvsmds0801dvsmds90E.part06.rar
 	 =ypart begin=15360001 end=15744000
+	 
 	 But we only care about the filename and the size
 	*/
 
@@ -305,33 +306,17 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt by
     	// Move forward to start of header
     	cur_char = start_loc+8;
 
-    	// Find part-number
-    	start_loc = strstr(cur_char, "part=");
-    	if(start_loc) {
-    		start_loc += 5;
-    		part = strtoul(start_loc, NULL, 0);
-    	}
-
-    	// Find size
-    	start_loc = strstr(cur_char, "size=");
-    	if(start_loc) {
-    		start_loc += 5;
-    		size = strtoul(start_loc, NULL, 0);
-    		//printf("size=%d\n", size);
-    	}
-
 		// Find name
     	start_loc = strstr(cur_char, "name=");
     	if(start_loc) {
     		start_loc += 5;
     		// Skip over everything untill end of line
-    		for (end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
+    		for(end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
 
     		// Now copy this part to the output
-    		filename = (char*)malloc(end_loc - start_loc + 1);
-            memcpy(filename, start_loc, end_loc - start_loc);
-            filename[end_loc - start_loc] = '\0';
-            //printf("%s\n", filename);
+    		*filename = (Byte *)malloc(end_loc - start_loc + 1);
+            strncpy(*filename, start_loc, end_loc - start_loc);
+            (*filename)[strlen(*filename)] = '\0';
             
             // Move pointer
             cur_char = end_loc;
@@ -340,35 +325,71 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt by
     	// Is there a part-indicator?
     	start_loc = strstr(cur_char, "=ypart");
     	if(start_loc) {
-    		start_loc += 6;
-    		// Partial file, so we need to find "pcrc=" and not "crc="
-    		is_part = 1;
+    		// Mover over a bit
+    		cur_char = start_loc+6;
+    		
+    		// Find part-begin
+	    	start_loc = strstr(cur_char, "begin=");
+	    	if(start_loc) {
+	    		cur_char = start_loc+6;
+	    		part_begin = strtoul(cur_char, NULL, 0);
+	    	}
+
+	    	// Find part-begin
+	    	start_loc = strstr(cur_char, "end=");
+	    	if(start_loc) {
+	    		cur_char = start_loc+4;
+	    		part_size = strtoul(cur_char, NULL, 0) - part_begin;
+	    	}
+	    	
     		// Skip over everything untill end of line
-    		for (end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
-    		// Set the new startpoint
-    		cur_char = end_loc;
+    		for(end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
+    		// Move pointer
+            cur_char = end_loc;
     	}
 
+    	// How many bytes can be checked safely?
+    	safe_nr_bytes = part_size ? part_size - 200 : 0;
+
     	// Let's loop over all the data
-    	decoded_bytes = 0;
     	while(1) {
-    		// At the end?
-    		if(decoded_bytes>381995) {
-    			if (!strncmp(cur_char, "=yend ", 6)) {
-	    			break;
-	    		}
+    		// Saftey net
+    		if(*cur_char == '\0') {
+    			break;
     		}
-    		
+
     		// Get current char and increment pointer
     		cur_char++;
 
-    		if(*escape) {
+    		// Special charaters
+    		if(*cur_char == ESC) {
+    			// strncmp is expensive, only perform near the end
+    			if(decoded_bytes > safe_nr_bytes) {
+    				// Looking for the end, format:
+    				// =yend size=384000 part=41 pcrc32=084e170f
+	    			if (!strncmp(cur_char, "=yend ", 6)) {
+	    				// Find part-begin
+				    	start_loc = strstr(cur_char, "crc32=");
+				    	if(start_loc) {
+				    		cur_char = start_loc+6;
+				    		*crc_yenc = strtoul(cur_char, NULL, 16);
+
+				    		// Change format to CRC-style (don't ask me why..)
+				    		*crc_yenc = -1*(*crc_yenc)-1;
+
+				    		// Check if CRC is correct
+				    		if(crc->crc == *crc_yenc) {
+				    			*crc_correct = 1;
+				    		}
+				    	}
+		    			break;
+		    		}
+		    	}
+
+	    		// Escape character
+	    		cur_char++;
 				byte = (Byte)(*cur_char - 106);
-				*escape = 0;
-			} else if(*cur_char == ESC) {
-				*escape = 1;
-				continue;
-			} else if(*cur_char == LF || *cur_char == CR) {
+    		} else if(*cur_char == LF || *cur_char == CR) {
 				continue;
 			} else if(*cur_char == DOT && *(cur_char-1) == DOT && *(cur_char-2) == LF) {
 				continue;
@@ -381,32 +402,7 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, uInt by
 			crc_update(crc, byte);
     	}
     }
-    printf("%d\n", decoded_bytes);
-    printf("%d\n", size);
 	return decoded_bytes;
-	
-	/*decoded_bytes = 0;
-	for(read_ind = 0; read_ind < bytes; read_ind++) {
-		byte = input_buffer[read_ind];
-
-		if(*escape) {
-			byte = (Byte)(byte - 106);
-			*escape = 0;
-		} else if(byte == ESC) {
-			*escape = 1;
-			continue;
-		} else if(byte == LF || byte == CR) {
-			continue;
-		} else if(byte == DOT && input_buffer[read_ind+1] == DOT && input_buffer[read_ind-1] == LF) {
-			continue;
-		} else {
-			byte = (Byte)(byte - 42);
-		}
-		output_buffer[decoded_bytes] = byte;
-		decoded_bytes++;
-		crc_update(crc, byte);
-	}
-	return decoded_bytes;*/
 }
 
 PyObject* encode_string(
@@ -566,42 +562,49 @@ out:
 
 PyObject* decode_string_usenet(PyObject* self, PyObject* args, PyObject* kwds)
 {
+	// The output PyObjects
 	PyObject *Py_input_string;
-	PyObject *Py_output_string;
+	PyObject *Py_output_buffer;
+	PyObject *Py_output_filename;
 	PyObject *retval = NULL;
 	
 	Byte *input_buffer = NULL;
 	Byte *output_buffer = NULL;
+	Crc32 crc;
+	uInt crc_yenc;
+	Bool crc_correct = 0;
+	Byte *filename = NULL;
 	long long crc_value = 0xffffffffll;
 	uInt input_len = 0;
 	uInt output_len = 0;
-	int escape = 0;
-	Crc32 crc;
+
 	
-	static char *kwlist[] = { "string", "crc32", "escape", NULL };
-	if(!PyArg_ParseTupleAndKeywords(args, 
-				kwds,
-				"O!|Li", 
-				kwlist,
-				&PyString_Type,
-				&Py_input_string, 
-				&crc_value,
-				&escape
-				)) 
+	static char *kwlist[] = { "string" };
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!|Li", kwlist, &PyString_Type, &Py_input_string)) 
 		return NULL;
+	
 	crc_init(&crc, (uInt)crc_value);
 	input_len = PyString_Size(Py_input_string);
 	input_buffer = (Byte *)PyString_AsString(Py_input_string);
-	output_buffer = (Byte *)malloc( input_len );
+	output_buffer = (Byte *)malloc(input_len);
+	
 	if(!output_buffer)
 		return PyErr_NoMemory();
-	output_len = decode_buffer_usenet(input_buffer, output_buffer, input_len, &crc, &escape);
-	Py_output_string = PyString_FromStringAndSize((char *)output_buffer, output_len);
-	if(!Py_output_string)
+	
+	// Calculate
+	output_len = decode_buffer_usenet(input_buffer, output_buffer, &filename, &crc, &crc_yenc, &crc_correct);
+	
+	// Prepare output
+	Py_output_buffer = PyString_FromStringAndSize((char *)output_buffer, output_len);
+
+	// Use special Python function to go from Latin-1 to Unicode
+	Py_output_filename = PyUnicode_DecodeLatin1(filename, strlen(filename), NULL);
+	
+	if(!Py_output_buffer)
 		goto out;
 
-	retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc.crc);
-	Py_DECREF(Py_output_string);
+	retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
+	Py_DECREF(Py_output_buffer);
 	
 out:
 	free(output_buffer);

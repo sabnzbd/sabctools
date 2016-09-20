@@ -74,8 +74,8 @@ def ySplit(line, splits=None):
 # Real test
 ###################
 
-nr_runs = 100
-data_raw = open("test_noheader.txt", "rb").read()
+nr_runs = 200
+data_raw = open("logo.ync", "rb").read()
 
 
 
@@ -93,7 +93,7 @@ for i in xrange(nr_runs):
     timet_new += time.clock()-time2
 
     # Different from homemade
-    decoded_data_new, crc = sabyenc.decode_string_usenet(data_raw)
+    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_string_usenet(data_raw)
 
 
 print "---"
@@ -142,7 +142,9 @@ for i in xrange(nr_runs):
         crcname = 'crc32'
 
     if crcname in yend:
+
         _partcrc = '0' * (8 - len(yend[crcname])) + yend[crcname].upper()
+        #print _partcrc
     else:
         _partcrc = None
         print "Corrupt header detected => yend: %s" % yend
@@ -151,6 +153,8 @@ for i in xrange(nr_runs):
 
 
 print decoded_data_new == decoded_data
+print len(decoded_data_new)
+
 
 time1_disp = 1000*(time.clock()-time1)
 timet_disp = 1000*timet
