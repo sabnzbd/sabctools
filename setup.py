@@ -29,10 +29,10 @@ setup(
 	version		 = "0.1.0",
 	author		 = "Safihre",
 	author_email = "safihre@sabnzbd.org",
-        url		 = "https://bitbucket.org/dual75/yenc",
+        url		 = "https://github.com/Safihre/sabnzbd-yenc",
 	license		 = "LGPL",
 	package_dir	 = { '': 'lib' },
-	ext_modules	 = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2","-g"])],
+	ext_modules	 = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
         classifiers      = [
             "Programming Language :: Python",
             "Programming Language :: Python :: 2.5",

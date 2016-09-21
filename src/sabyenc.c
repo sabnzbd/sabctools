@@ -275,7 +275,7 @@ static int decode_buffer(
 }
 
 
-static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **filename, 
+static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **filename_out, 
 	                            Crc32 *crc, uInt *crc_yenc, Bool *crc_correct)
 {
 	// Search variables
@@ -302,6 +302,7 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
 
     // Start of header
     start_loc = strstr(input_buffer, "=ybegin");
+
     if(start_loc) {
     	// Move forward to start of header
     	cur_char = start_loc+8;
@@ -311,12 +312,12 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
     	if(start_loc) {
     		start_loc += 5;
     		// Skip over everything untill end of line
-    		for(end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
+    		for(end_loc = start_loc; *end_loc != CR && *end_loc != LF && *end_loc != '\0'; end_loc++);
 
     		// Now copy this part to the output
-    		*filename = (Byte *)malloc(end_loc - start_loc + 1);
-            strncpy(*filename, start_loc, end_loc - start_loc);
-            (*filename)[strlen(*filename)] = '\0';
+    		*filename_out = (Byte *)calloc(end_loc - start_loc + 1, sizeof(Byte));
+            strncpy(*filename_out, start_loc, end_loc - start_loc);
+            (*filename_out)[strlen(*filename_out)] = '\0';
             
             // Move pointer
             cur_char = end_loc;
@@ -573,7 +574,7 @@ PyObject* decode_string_usenet(PyObject* self, PyObject* args, PyObject* kwds)
 	Crc32 crc;
 	uInt crc_yenc;
 	Bool crc_correct = 0;
-	Byte *filename = NULL;
+	Byte *filename_out = NULL;
 	long long crc_value = 0xffffffffll;
 	uInt input_len = 0;
 	uInt output_len = 0;
@@ -592,19 +593,23 @@ PyObject* decode_string_usenet(PyObject* self, PyObject* args, PyObject* kwds)
 		return PyErr_NoMemory();
 	
 	// Calculate
-	output_len = decode_buffer_usenet(input_buffer, output_buffer, &filename, &crc, &crc_yenc, &crc_correct);
+	output_len = decode_buffer_usenet(input_buffer, output_buffer, &filename_out, &crc, &crc_yenc, &crc_correct);
 	
 	// Prepare output
 	Py_output_buffer = PyString_FromStringAndSize((char *)output_buffer, output_len);
 
-	// Use special Python function to go from Latin-1 to Unicode
-	Py_output_filename = PyUnicode_DecodeLatin1(filename, strlen(filename), NULL);
-	
-	if(!Py_output_buffer)
+	// Catch if there's nothing
+	if(!Py_output_buffer || !filename_out) {
 		goto out;
+	}
+	
+	// Use special Python function to go from Latin-1 to Unicode
+	Py_output_filename = PyUnicode_DecodeLatin1(filename_out, strlen(filename_out), NULL);
 
+	// Build output
 	retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
 	Py_DECREF(Py_output_buffer);
+	Py_DECREF(Py_output_filename);
 	
 out:
 	free(output_buffer);

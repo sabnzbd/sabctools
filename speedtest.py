@@ -74,8 +74,8 @@ def ySplit(line, splits=None):
 # Real test
 ###################
 
-nr_runs = 200
-data_raw = open("logo.ync", "rb").read()
+nr_runs = 2000
+data_raw = open("test_noheader_n.txt", "rb").read()
 
 
 
@@ -215,7 +215,6 @@ for i in xrange(nr_runs):
 
 print "%15s took %d ms" % ("yEnc Python", 1000*(time.clock()-time1))
 
-
 sys.exit()
 ###################
 # YENC PYTHON 2
@@ -227,7 +226,7 @@ time1 = time.clock()
 
 for i in xrange(nr_runs*10):
     data = data_raw
-    data.find('\r\n')
+    print data[-3:] == '.\r\n'
 
 print "%15s took %d ms" % ("Python1", 1000*(time.clock()-time1))
 
