@@ -160,7 +160,7 @@ A typical trailer line should look similar to this:
 
 
 =yend size=123456
-		
+        
 
 Trailer lines must always begin with the "yend" keyword, and must contain
 the size of the original unencoded binary (in bytes).
@@ -183,7 +183,7 @@ trailer line.  Such a trailer line might look similar to this:
 
 
 =yend size=123456 crc32=abcdef12
-		
+        
 
 It should be noted that CRC32 values are not mandatory, but should, if
 possible, be processed if present.  
@@ -261,7 +261,7 @@ A sample multipart encoded binary might look similar to this:
 =ypart begin=400001 end=500000 
 .... data
 =yend size=100000 part=10 pcrc32=12a45c78 crc32=abcdef12 
-		
+        
 
 It should be noted that if a decoder does not implement multipart support,
 or fails to detect a multipart encoded binary, then it will not

@@ -1,9 +1,14 @@
+import os 
+os.system('python setup.py install')
+
 import _yenc
 import sabyenc
 import re
 import time
 import binascii
 import sys
+
+
 
 ###################
 # SUPPORT FUNCTIONS
@@ -74,8 +79,11 @@ def ySplit(line, splits=None):
 # Real test
 ###################
 
-nr_runs = 2000
+nr_runs = 100
 data_raw = open("test_noheader_n.txt", "rb").read()
+
+n = 2**14
+data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
 
 
 
@@ -89,18 +97,19 @@ timet_new = 0.0
 for i in xrange(nr_runs):
     time2 = time.clock()
 
+    data_in = ''.join(data_chunks)
 
     timet_new += time.clock()-time2
 
     # Different from homemade
-    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_string_usenet(data_raw)
+    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_string_usenet(data_in)
 
 
 print "---"
 time1_new_disp = 1000*(time.clock()-time1_new)
 timet_new_disp = 1000*timet_new
-print "%15s  took  %3d ms" % ("yEnc C New", time1_new_disp)
-print "%15s  took  %3d ms = %d%%" % ("Base Python", timet_new_disp, 100*timet_new_disp/time1_new_disp)
+print "%15s  took  %4d ms" % ("yEnc C New", time1_new_disp)
+print "%15s  took  %4d ms = %d%%" % ("Base Python", timet_new_disp, 100*timet_new_disp/time1_new_disp)
 print "---"
 
 
@@ -113,17 +122,21 @@ print "---"
 # Time it!
 time1 = time.clock()
 timet = 0.0
+
+
+
 for i in xrange(nr_runs):
     time2=time.clock()
-    data = data_raw
+    data = []
+    for chunk in data_chunks:
+        new_lines = chunk.split('\r\n')
+        for i in xrange(len(new_lines)):
+            if new_lines[i][:2] == '..':
+                new_lines[i] = new_lines[i][1:]
+        if new_lines[-1] == '.':
+            new_lines = new_lines[1:-1]
+        data.extend(new_lines)
 
-    new_lines = data.split('\r\n')
-    for i in xrange(len(new_lines)):
-        if new_lines[i][:2] == '..':
-            new_lines[i] = new_lines[i][1:]
-    if new_lines[-1] == '.':
-        new_lines = new_lines[1:-1]
-    data = new_lines
 
     # Filter out empty ones
     data = filter(None, data)
@@ -151,15 +164,15 @@ for i in xrange(nr_runs):
     if not _partcrc == partcrc:
         print 'shit'
 
-
 print decoded_data_new == decoded_data
 print len(decoded_data_new)
+print "---"
 
 
 time1_disp = 1000*(time.clock()-time1)
 timet_disp = 1000*timet
-print "%15s  took  %3d ms   Diff %3d ms (%d%%)" % ("yEnc C Old", time1_disp, time1_disp-time1_new_disp, 100*(time1_disp-time1_new_disp)/time1_disp)
-print "%15s  took  %3d ms   Diff %3d ms" % ("Base Python", timet_disp, timet_disp-timet_new_disp)
+print "%15s  took  %4d ms   Diff %4d ms (%d%%)" % ("yEnc C Old", time1_disp, time1_disp-time1_new_disp, 100*(time1_disp-time1_new_disp)/time1_disp)
+print "%15s  took  %4d ms   Diff %4d ms" % ("Base Python", timet_disp, timet_disp-timet_new_disp)
 print "---"
 
 
@@ -178,15 +191,15 @@ time1 = time.clock()
 
 YDEC_TRANS = ''.join([chr((i + 256 - 42) % 256) for i in xrange(256)])
 for i in xrange(nr_runs):
-    data = data_raw
-    new_lines = data.split('\r\n')
-    for i in xrange(len(new_lines)):
-        if new_lines[i][:2] == '..':
-            new_lines[i] = new_lines[i][1:]
-    if new_lines[-1] == '.':
-        new_lines = new_lines[1:-1]
-
-    data = new_lines
+    data = []
+    for chunk in data_chunks:
+        new_lines = chunk.split('\r\n')
+        for i in xrange(len(new_lines)):
+            if new_lines[i][:2] == '..':
+                new_lines[i] = new_lines[i][1:]
+        if new_lines[-1] == '.':
+            new_lines = new_lines[1:-1]
+        data.extend(new_lines)
 
     # Filter out empty ones
     data = filter(None, data)
@@ -213,7 +226,8 @@ for i in xrange(nr_runs):
         _partcrc = None
         print "Corrupt header detected => yend: %s" % yend
 
-print "%15s took %d ms" % ("yEnc Python", 1000*(time.clock()-time1))
+print "%15s  took  %4d ms" % ("yEnc Python", 1000*(time.clock()-time1))
+print "---"
 
 sys.exit()
 ###################
@@ -239,5 +253,5 @@ for i in xrange(nr_runs*10):
         l += 1
 
 print "%15s took %d ms" % ("Python2", 1000*(time.clock()-time1))
-
+print "---"
 
