@@ -449,14 +449,13 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     int i; 
     char * line;        /* pointer to the line as a string */ 
  
- 
-
     if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_string, &listObj))  
         return NULL; 
 
 
     /* get the number of lines passed to us */ 
     numLines = PyList_Size(listObj); 
+    printf("%d\n", PyObject_Length(listObj));
     for (i=0; i<numLines; i++){ 
         /* grab the string object from the next element of the list */ 
         strObj = PyList_GetItem(listObj, i); /* Can't fail */ 
@@ -467,9 +466,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     } 
 
     
-    static char *kwlist[] = { "string" };
-    if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!|Li", kwlist, &PyString_Type, &Py_input_string)) 
-        return NULL;
+
 
     
     crc_init(&crc, (uInt)crc_value);
