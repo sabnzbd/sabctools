@@ -84,20 +84,17 @@ static int decode_buffer(Byte *, Byte *, uInt, Crc32 *, Bool *);
 static int decode_buffer_usenet(Byte *, Byte *, Byte **, Crc32 *, uInt *,  Bool *);
 
 /* Python API requirements */
-static char encode_doc[] = "encode(input_file, output_file, <size>)";
-static char decode_doc[] = "decode(input_file, output_file, <size>)";
 static char encode_string_doc[] = "encode_string(string, crc32, column)";
 static char decode_string_doc[] = "decode_string(string, crc32, escape)";
 static char decode_string_usenet_doc[] = "decode_string_usenet(string)";
 
 static PyMethodDef funcs[] = {
-        {"encode", (PyCFunction) encode_file, METH_KEYWORDS | METH_VARARGS, encode_doc},
-        {"decode", (PyCFunction) decode_file, METH_KEYWORDS | METH_VARARGS, decode_doc},
         {"encode_string", (PyCFunction) encode_string, METH_KEYWORDS | METH_VARARGS, encode_string_doc},
         {"decode_string", (PyCFunction) decode_string, METH_KEYWORDS | METH_VARARGS, decode_string_doc},
         {"decode_string_usenet", (PyCFunction) decode_string_usenet, METH_KEYWORDS | METH_VARARGS, decode_string_usenet_doc},
         {NULL, NULL, 0, NULL}
 };
+
 /* Function definitions */
 static void crc_init(Crc32 *crc, uInt value)
 {
@@ -111,23 +108,6 @@ static void crc_update(Crc32 *crc, uInt c)
 	crc->bytes++;
 }
 
-/*
- * Todo: provide alternatives for this to work on win32
- *
-static Bool writable(FILE *file)
-{
-	int mode = fcntl(fileno(file),F_GETFL) & O_ACCMODE;
-	return (mode == O_WRONLY) || (mode == O_RDWR);
-}
-
-static Bool readable(FILE *file)
-{
-	int mode = fcntl(fileno(file),F_GETFL) & O_ACCMODE;
-	return (mode == O_RDONLY) || (mode == O_RDWR);
-}
-/*
- * 
- */
 
 static int encode_buffer(
 		Byte *input_buffer, 
@@ -179,66 +159,6 @@ static int encode_buffer(
 	return out_ind;
 }
 
-PyObject* encode_file(
-		PyObject* self,
-		PyObject* args,
-		PyObject* kwds
-		)
-{
-	Byte read_buffer[BLOCK];
-	Byte write_buffer[LONGBUFF];
-	uLong encoded = 0;
-	uInt col = 0;
-	uInt read_bytes;
-	uInt in_ind;
-	uInt encoded_bytes;
-	uLong bytes = 0;
-	Crc32 crc;
-
-	FILE *infile = NULL, *outfile = NULL;
-	PyObject *Py_infile = NULL, *Py_outfile = NULL;
-	
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!|l", argnames, \
-				&PyFile_Type, &Py_infile, \
-				&PyFile_Type, &Py_outfile, \
-				&bytes)) return NULL;
-
-	infile = PyFile_AsFile(Py_infile);
-	outfile = PyFile_AsFile(Py_outfile);
-	
-	/*
-	if(!readable(infile) || !writable(outfile) ) {
-		return PyErr_Format(PyExc_ValueError, "file objects not writeable/readable");
-	} 
-	*/
-	
-	crc_init(&crc, 0xffffffffl);
-	while(encoded < bytes || bytes == 0){
-		if( bytes && (bytes - encoded) < BLOCK) {
-			in_ind = bytes - encoded;
-		} else {
-			in_ind = BLOCK;
-		}
-		read_bytes = fread(&read_buffer, 1, in_ind, infile);
-		if(read_bytes < 1) {
-                        break;
-                }
-		encoded_bytes = encode_buffer(&read_buffer[0], &write_buffer[0], read_bytes, &crc, &col);
-		if(fwrite(&write_buffer, 1, encoded_bytes, outfile) != encoded_bytes) {
-			break;
-		}
-		encoded += read_bytes;
-	}
-	if(ferror(infile) || ferror(outfile)) {
-		return PyErr_Format(PyExc_IOError, "I/O Error while encoding");
-	}
-	if(col > 0) {
-		fputc(CR, outfile);
-		fputc(LF, outfile);
-	}
-	fflush(outfile);
-	return Py_BuildValue("(l,L)", encoded, (long long)crc.crc);
-}
 
 static int decode_buffer(
 		Byte *input_buffer, 
@@ -455,63 +375,6 @@ out:
 	return retval;
 }
 
-PyObject* decode_file(
-		PyObject* self, 
-		PyObject* args, 
-		PyObject* kwds
-		)
-{
-	Byte read_buffer[BLOCK];
-	Byte write_buffer[LONGBUFF];
-	uLong decoded = 0;
-	uInt decoded_bytes;
-	uInt read_bytes;
-	uLong read_max;
-	
-	Bool escape = 0;
-	uLong bytes = 0;
-	Crc32 crc;
-
-	FILE *infile = NULL, *outfile = NULL;
-	PyObject *Py_infile = NULL, *Py_outfile = NULL;
-	
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!O!|l", argnames, \
-				&PyFile_Type, &Py_infile, \
-				&PyFile_Type, &Py_outfile, \
-				&bytes)) return NULL;
-
-	infile = PyFile_AsFile(Py_infile);
-	outfile = PyFile_AsFile(Py_outfile);
-
-	/*
-	if(!readable(infile) || !writable(outfile)) {
-		return PyErr_Format(PyExc_ValueError,
-				"file objects not writeable/readable");
-	} 
-	*/
-
-	crc_init(&crc, 0xffffffffl);
-	while(decoded < bytes || bytes == 0){
-		if(bytes){
-			read_max=(bytes-decoded)<BLOCK?(bytes-decoded):BLOCK;
-		} else {
-			read_max=BLOCK;
-		};
-		read_bytes = fread((Byte *)&read_buffer, 1, read_max, infile);
-		if(read_bytes == 0) break;
-		decoded_bytes = decode_buffer(&read_buffer[0],
-				&write_buffer[0],read_bytes, &crc, &escape);
-		if(fwrite(&write_buffer[0],1,decoded_bytes,outfile)!=decoded_bytes){
-			break;
-		}
-		decoded += decoded_bytes;
-	}
-	if(ferror(infile) || ferror(outfile)) {
-		return PyErr_Format(PyExc_IOError, "I/O Error while decoding");
-	}
-	fflush(outfile);
-	return Py_BuildValue("(l,L)", decoded, (long long)crc.crc);
-}
 
 PyObject* decode_string(
 		PyObject* self, 

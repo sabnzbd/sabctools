@@ -69,8 +69,6 @@ typedef unsigned char Byte;
 typedef int Bool;
 
 /* Functions */
-PyObject* encode_file(PyObject*, PyObject*, PyObject*);
-PyObject* decode_file(PyObject*, PyObject*, PyObject*);
 PyObject* encode_string(PyObject* ,PyObject* ,PyObject*);
 PyObject* decode_string(PyObject* ,PyObject* , PyObject*);
 PyObject* decode_string_usenet(PyObject* ,PyObject* , PyObject*);
