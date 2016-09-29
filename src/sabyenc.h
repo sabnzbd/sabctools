@@ -25,44 +25,26 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION    "1.0"
+#define SABYENC_VERSION "1.0"
 
-/* Constants			*/
-#define	LINESIZE	128
+/* Constants */
+#define LINESIZE    128
+#define ZERO        0x00
+#define CR          0x0d
+#define LF          0x0a
+#define ESC         0x3d
+#define TAB         0x09
+#define SPACE       0x20
+#define DOT         0x2e
 
-/* BLOCK defines the size of the input buffer used while encoding data.
- */
-#define BLOCK		65536
+#define E_MODE      1
+#define E_EOF       2
+#define E_IO        3
 
-/* LONGBUFF: ((2 * BLOCK) / 128 + 2 ) * 128
- * In the worst case we will escape every byte thus doubling output's size,
- * since we write out lines of LINESIZE characters, we must add 2 more bytes for
- * CRLF sequence at the end of each line.
- * This is the maximum encoded size of BLOCK bytes.
- */
-#define LONGBUFF	( 2 * BLOCK / LINESIZE + 1) * ( LINESIZE + 2 ) 
+#define E_MODE_MSG  "Invalide mode for '*file' arguments"
+#define E_IO_MSG    "I/O Error"
 
-#define SMALLBUFF 	512
-
-#define ZERO		0x00
-#define CR		0x0d
-#define	LF		0x0a
-#define	ESC		0x3d
-#define TAB		0x09
-#define SPACE		0x20
-#define DOT             0x2e
-
-#define E_MODE		1
-#define E_EOF 		2
-#define E_IO		3
-
-#define E_MODE_MSG	"Invalide mode for '*file' arguments"
-#define E_IO_MSG	"I/O Error"
-
-#define _DDEBUG_
-
-
-/* Customized types		*/
+/* Customized types */
 typedef unsigned long uLong;
 typedef unsigned int uInt;
 typedef unsigned char Byte;

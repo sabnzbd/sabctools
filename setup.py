@@ -24,15 +24,15 @@
 
 from distutils.core import setup, Extension
 
-setup(	
-	name		 = "sabyenc",
-	version		 = "0.1.0",
-	author		 = "Safihre",
-	author_email = "safihre@sabnzbd.org",
-        url		 = "https://github.com/Safihre/sabnzbd-yenc",
-	license		 = "LGPL",
-	package_dir	 = { '': 'lib' },
-	ext_modules	 = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
+setup(    
+    name            = "sabyenc",
+    version         = "1.0.0",
+    author          = "Safihre",
+    author_email    = "safihre@sabnzbd.org",
+    url             = "https://github.com/Safihre/sabnzbd-yenc",
+    license         = "LGPL",
+    package_dir     = { '': 'lib' },
+    ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
         classifiers      = [
             "Programming Language :: Python",
             "Programming Language :: Python :: 2.5",
@@ -47,12 +47,14 @@ setup(
             "Topic :: Software Development :: Libraries :: Python Modules",
             "Topic :: Communications :: Usenet News"
             ],
-	description	 = "yEnc Module for Python modified for SABnzbd",
+    description     = "yEnc Module for Python modified for SABnzbd",
     long_description = """
 yEnc Encoding/Decoding for Python
 ---------------------------------
+
 Mofied the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
 for use within SABnzbd.
+
 This a fairly simple module, it provide only raw yEnc encoding/decoding with
 builitin crc32 calculation. Header parsing, checkings and yenc formatting are 
 left to you (see examples directory for possible implementations). 
