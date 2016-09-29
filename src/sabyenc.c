@@ -451,7 +451,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
  
  
 
-    if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_string, &listObj))  
+    if(!PyArg_ParseTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_string, &listObj))  
         return NULL; 
 
 
@@ -466,10 +466,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
         printf("%s\n", line); 
     } 
 
-    
-    static char *kwlist[] = { "string" };
-    if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!|Li", kwlist, &PyString_Type, &Py_input_string)) 
-        return NULL;
 
     
     crc_init(&crc, (uInt)crc_value);
