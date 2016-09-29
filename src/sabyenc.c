@@ -86,12 +86,12 @@ static int decode_buffer_usenet(Byte *, Byte *, Byte **, Crc32 *, uInt *,  Bool 
 /* Python API requirements */
 static char encode_string_doc[] = "encode_string(string, crc32, column)";
 static char decode_string_doc[] = "decode_string(string, crc32, escape)";
-static char decode_string_usenet_doc[] = "decode_string_usenet(string)";
+static char decode_usenet_chunks_doc[] = "decode_usenet_chunks(string)";
 
 static PyMethodDef funcs[] = {
         {"encode_string", (PyCFunction) encode_string, METH_KEYWORDS | METH_VARARGS, encode_string_doc},
         {"decode_string", (PyCFunction) decode_string, METH_KEYWORDS | METH_VARARGS, decode_string_doc},
-        {"decode_string_usenet", (PyCFunction) decode_string_usenet, METH_KEYWORDS | METH_VARARGS, decode_string_usenet_doc},
+        {"decode_usenet_chunks", (PyCFunction) decode_usenet_chunks, METH_KEYWORDS | METH_VARARGS, decode_usenet_chunks_doc},
         {NULL, NULL, 0, NULL}
 };
 
@@ -424,7 +424,7 @@ out:
     return retval;
 }
 
-PyObject* decode_string_usenet(PyObject* self, PyObject* args, PyObject* kwds)
+PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
 {
     // The output PyObjects
     PyObject *Py_input_string;
@@ -442,10 +442,35 @@ PyObject* decode_string_usenet(PyObject* self, PyObject* args, PyObject* kwds)
     uInt input_len = 0;
     uInt output_len = 0;
 
+    // Stuff for the list-passing 
+    PyObject * listObj; /* the list of strings */ 
+    PyObject * strObj;  /* one string in the list */ 
+    int numLines;       /* how many lines we passed for parsing */ 
+    int i; 
+    char * line;        /* pointer to the line as a string */ 
+ 
+ 
+
+    if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_string, &listObj))  
+        return NULL; 
+
+
+    /* get the number of lines passed to us */ 
+    numLines = PyList_Size(listObj); 
+    for (i=0; i<numLines; i++){ 
+        /* grab the string object from the next element of the list */ 
+        strObj = PyList_GetItem(listObj, i); /* Can't fail */ 
+
+        /* make it a string */ 
+        line = PyString_AsString( strObj ); 
+        printf("%s\n", line); 
+    } 
+
     
     static char *kwlist[] = { "string" };
     if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!|Li", kwlist, &PyString_Type, &Py_input_string)) 
         return NULL;
+
     
     crc_init(&crc, (uInt)crc_value);
     input_len = PyString_Size(Py_input_string);

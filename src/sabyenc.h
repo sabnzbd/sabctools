@@ -53,5 +53,5 @@ typedef int Bool;
 /* Functions */
 PyObject* encode_string(PyObject* ,PyObject* ,PyObject*);
 PyObject* decode_string(PyObject* ,PyObject* , PyObject*);
-PyObject* decode_string_usenet(PyObject* ,PyObject* , PyObject*);
+PyObject* decode_usenet_chunks(PyObject* ,PyObject* , PyObject*);
 void initsabyenc(void);

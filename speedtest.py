@@ -93,7 +93,7 @@ for i in xrange(nr_runs):
     timet_new += time.clock()-time2
 
     # Different from homemade
-    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_string_usenet(data_raw)
+    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_raw)
 
 
 print "---"
