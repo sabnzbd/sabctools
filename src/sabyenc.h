@@ -24,6 +24,9 @@
 #include <fcntl.h>
 #include <string.h>
 
+/* Version information */
+#define SABYENC_VERSION    "1.0"
+
 /* Constants			*/
 #define	LINESIZE	128
 

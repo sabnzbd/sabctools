@@ -619,6 +619,8 @@ out:
 
 void initsabyenc()
 {
-	Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
+    PyObject *module;
+    module = Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
+    PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
 }
 
