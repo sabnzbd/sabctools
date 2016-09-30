@@ -81,7 +81,7 @@ static void crc_update(Crc32 *, uInt);
 void initsabyenc(void);
 static int encode_buffer(Byte *, Byte *, uInt, Crc32 *, uInt *);
 static int decode_buffer(Byte *, Byte *, uInt, Crc32 *, Bool *);
-static int decode_buffer_usenet(Byte *, Byte *, Byte **, Crc32 *, uInt *,  Bool *);
+static int decode_buffer_usenet(PyObject *, Byte *, uInt, Byte **, Crc32 *, uInt *,  Bool *);
 
 /* Python API requirements */
 static char encode_string_doc[] = "encode_string(string, crc32, column)";
@@ -195,9 +195,14 @@ static int decode_buffer(
 }
 
 
-static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **filename_out, 
-                                Crc32 *crc, uInt *crc_yenc, Bool *crc_correct)
+static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uInt num_bytes_reserved, 
+                                Byte **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct)
 {
+    // For the list
+    int num_lines;
+    int list_index = 0;
+    char *input_buffer;
+
     // Search variables
     char *cur_char; // Pointer to search result
     char *start_loc; // Pointer to current char
@@ -209,7 +214,15 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
     uInt part_size = 0;
     uInt decoded_bytes = 0;
     uInt safe_nr_bytes = 0;
-    
+    Bool escape_char = 0;
+
+    // Get number of lines
+    num_lines = PyList_Size(Py_input_list); 
+
+    // Get first chunk 
+    // TODO: assumes it's long enough to have the header
+    input_buffer = PyString_AsString(PyList_GetItem(Py_input_list, 0));
+
     /*
      ANALYZE HEADER
      Always in the same format, e.g.:
@@ -222,7 +235,7 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
 
     // Start of header
     start_loc = strstr(input_buffer, "=ybegin");
-
+    
     if(start_loc) {
         // Move forward to start of header
         cur_char = start_loc+8;
@@ -253,14 +266,14 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
             start_loc = strstr(cur_char, "begin=");
             if(start_loc) {
                 cur_char = start_loc+6;
-                part_begin = strtoul(cur_char, NULL, 0);
+                part_begin = strtol(cur_char, NULL, 0);
             }
 
             // Find part-begin
             start_loc = strstr(cur_char, "end=");
             if(start_loc) {
                 cur_char = start_loc+4;
-                part_size = strtoul(cur_char, NULL, 0) - part_begin;
+                part_size = strtol(cur_char, NULL, 0) - part_begin + 1;
             }
             
             // Skip over everything untill end of line
@@ -269,21 +282,35 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
             cur_char = end_loc;
         }
 
+        // Saftey check if we reserved enough bytes
+        printf("%d\n", part_size);
+        printf("%d\n", num_bytes_reserved);
+
         // How many bytes can be checked safely?
         safe_nr_bytes = part_size ? part_size - 200 : 0;
-
+        
         // Let's loop over all the data
         while(1) {
-            // Saftey net
-            if(*cur_char == '\0') {
-                break;
-            }
-
             // Get current char and increment pointer
             cur_char++;
+            
+            // End of the line
+            if(*cur_char == '\0') {
+                // Are we outside the list?
+                list_index++;
+                if(list_index == num_lines) {
+                    break;
+                }
+                // Get the new line
+                input_buffer = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
+                cur_char = input_buffer;
+            }
 
             // Special charaters
-            if(*cur_char == ESC) {
+            if(escape_char) {
+                byte = (Byte)(*cur_char - 106);
+                escape_char = 0;
+            } else if(*cur_char == ESC) {
                 // strncmp is expensive, only perform near the end
                 if(decoded_bytes > safe_nr_bytes) {
                     // Looking for the end, format:
@@ -307,9 +334,10 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
                     }
                 }
 
-                // Escape character
-                cur_char++;
-                byte = (Byte)(*cur_char - 106);
+                // Becaus the escape might be at the end of the chunk
+                // we need to do it in the next loop
+                escape_char = 1;
+                continue;
             } else if(*cur_char == LF || *cur_char == CR) {
                 continue;
             } else if(*cur_char == DOT && *(cur_char-1) == DOT && *(cur_char-2) == LF) {
@@ -317,12 +345,19 @@ static int decode_buffer_usenet(Byte *input_buffer, Byte *output_buffer, Byte **
             } else {
                 byte = (Byte)(*cur_char - 42);
             }
+
+            // Place the byte and go to the next
             output_buffer[decoded_bytes] = byte;
             decoded_bytes++;
-
             crc_update(crc, byte);
+
+            // Saftey check 
+            if(decoded_bytes > num_bytes_reserved) {
+                break;
+            }
         }
     }
+    printf("%d\n", decoded_bytes);
     return decoded_bytes;
 }
 
@@ -426,59 +461,38 @@ out:
 
 PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
 {
-    // The output PyObjects
-    PyObject *Py_input_string;
+    // The input/output PyObjects
+    PyObject *Py_input_list;
+    PyObject *Py_num_bytes;
     PyObject *Py_output_buffer;
     PyObject *Py_output_filename;
     PyObject *retval = NULL;
     
-    Byte *input_buffer = NULL;
-    Byte *output_buffer = NULL;
+    // CRC
     Crc32 crc;
     uInt crc_yenc;
     Bool crc_correct = 0;
+    uInt crc_value = 0xffffffffll;
+
+    // Buffers
+    Byte *output_buffer = NULL;
     Byte *filename_out = NULL;
-    long long crc_value = 0xffffffffll;
-    uInt input_len = 0;
     uInt output_len = 0;
+    uInt num_bytes_reserved;
 
-    // Stuff for the list-passing 
-    PyObject * listObj; /* the list of strings */ 
-    PyObject * strObj;  /* one string in the list */ 
-    int numLines;       /* how many lines we passed for parsing */ 
-    int i; 
-    char * line;        /* pointer to the line as a string */ 
- 
-    if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_string, &listObj))  
-        return NULL; 
+    if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_list, &Py_num_bytes))  
+        return NULL;
 
-
-    /* get the number of lines passed to us */ 
-    numLines = PyList_Size(listObj); 
-    printf("%d\n", PyObject_Length(listObj));
-    for (i=0; i<numLines; i++){ 
-        /* grab the string object from the next element of the list */ 
-        strObj = PyList_GetItem(listObj, i); /* Can't fail */ 
-
-        /* make it a string */ 
-        line = PyString_AsString( strObj ); 
-        printf("%s\n", line); 
-    } 
-
-    
-
-
-    
-    crc_init(&crc, (uInt)crc_value);
-    input_len = PyString_Size(Py_input_string);
-    input_buffer = (Byte *)PyString_AsString(Py_input_string);
-    output_buffer = (Byte *)malloc(input_len);
+    // Initial CRC and reserve bytes
+    crc_init(&crc, crc_value);
+    num_bytes_reserved = PyInt_AsLong(Py_num_bytes);
+    output_buffer = (Byte *)malloc(num_bytes_reserved);
     
     if(!output_buffer)
         return PyErr_NoMemory();
     
     // Calculate
-    output_len = decode_buffer_usenet(input_buffer, output_buffer, &filename_out, &crc, &crc_yenc, &crc_correct);
+    output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc, &crc_yenc, &crc_correct);
     
     // Prepare output
     Py_output_buffer = PyString_FromStringAndSize((char *)output_buffer, output_len);
@@ -489,7 +503,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     }
     
     // Use special Python function to go from Latin-1 to Unicode
-    Py_output_filename = PyUnicode_DecodeLatin1(filename_out, strlen(filename_out), NULL);
+    Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
     // Build output
     retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
@@ -502,7 +516,7 @@ out:
 }
 
 
-void initsabyenc()
+void initsabyenc(void)
 {
     PyObject *module;
     module = Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
