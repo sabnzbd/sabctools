@@ -1,12 +1,24 @@
 import os 
-os.system('python setup.py install')
-
 import _yenc
 import sabyenc
 import re
 import time
 import binascii
 import sys
+
+###################
+# Real test
+###################
+
+nr_runs = 100
+#data_raw = open("test_single_part.txt", "rb").read()
+#data_raw = open("test_yenc.txt", "rb").read()
+data_raw = open("test_yenc_new.txt", "rb").read()
+data_bytes = len(data_raw)
+
+n = 2**16
+data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
+
 
 
 ###################
@@ -74,16 +86,6 @@ def ySplit(line, splits=None):
 
 
 
-###################
-# Real test
-###################
-
-nr_runs = 100
-data_raw = open("test_noheader_n.txt", "rb").read()
-data_bytes = len(data_raw)
-
-n = 2**16
-data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
 
 
 
@@ -162,8 +164,8 @@ for i in xrange(nr_runs):
     if not _partcrc == partcrc:
         print 'shit'
 
-print decoded_data_new == decoded_data
-print len(decoded_data_new)
+print "Correct result:", decoded_data_new == decoded_data
+print "Size:", len(decoded_data_new)
 print "---"
 
 
@@ -172,9 +174,6 @@ timet_disp = 1000*timet
 print "%15s  took  %4d ms   Diff %4d ms (%d%%)" % ("yEnc C Old", time1_disp, time1_disp-time1_new_disp, 100*(time1_disp-time1_new_disp)/time1_disp)
 print "%15s  took  %4d ms   Diff %4d ms" % ("Base Python", timet_disp, timet_disp-timet_new_disp)
 print "---"
-
-
-
 
 
 
