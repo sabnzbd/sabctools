@@ -348,7 +348,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             crc_update(crc, byte);
 
             // Saftey check 
-            if(decoded_bytes > num_bytes_reserved) {
+            if(decoded_bytes > num_bytes_reserved - 1) {
                 break;
             }
         }
@@ -478,6 +478,12 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_list, &Py_num_bytes))  
         return NULL;
 
+    // Did we get anything?
+    if(!PyList_Size(Py_input_list)) {
+        PyErr_SetString(PyExc_ValueError, "No valid data recieved");
+        return (PyObject *) NULL;
+    }
+
     // Initial CRC and reserve bytes
     crc_init(&crc, crc_value);
     num_bytes_reserved = PyInt_AsLong(Py_num_bytes);
@@ -494,7 +500,8 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
 
     // Catch if there's nothing
     if(!Py_output_buffer || !filename_out) {
-        goto out;
+        PyErr_SetString(PyExc_ValueError, "No valid data recieved");
+        return (PyObject *) NULL;
     }
     
     // Use special Python function to go from Latin-1 to Unicode
@@ -504,8 +511,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
     Py_DECREF(Py_output_buffer);
     Py_DECREF(Py_output_filename);
-    
-out:
     free(output_buffer);
     return retval;
 }
@@ -513,8 +518,11 @@ out:
 
 void initsabyenc(void)
 {
+    // Add module
     PyObject *module;
     module = Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
+
+    // Add version
     PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
 }
 

@@ -26,7 +26,7 @@ from setuptools import setup, Extension
 
 setup(    
     name            = "sabyenc",
-    version         = "2.0.3",
+    version         = "2.0.5",
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
     url             = "https://github.com/Safihre/sabnzbd-yenc",

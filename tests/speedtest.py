@@ -13,7 +13,7 @@ import sys
 nr_runs = 100
 #data_raw = open("test_single_part.txt", "rb").read()
 #data_raw = open("test_yenc.txt", "rb").read()
-data_raw = open("test_yenc_new.txt", "rb").read()
+data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
 data_bytes = len(data_raw)
 
 n = 2**16
