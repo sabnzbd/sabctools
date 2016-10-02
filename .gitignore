@@ -48,7 +48,7 @@ Temporary Items
 
 # Building
 Build
-*.out
+*.egg-info
 build
 examples
 test

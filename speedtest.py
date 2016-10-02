@@ -82,7 +82,7 @@ nr_runs = 100
 data_raw = open("test_noheader_n.txt", "rb").read()
 data_bytes = len(data_raw)
 
-n = 2**14
+n = 2**16
 data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
 
 

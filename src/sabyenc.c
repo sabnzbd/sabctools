@@ -282,10 +282,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             cur_char = end_loc;
         }
 
-        // Saftey check if we reserved enough bytes
-        printf("%d\n", part_size);
-        printf("%d\n", num_bytes_reserved);
-
         // How many bytes can be checked safely?
         safe_nr_bytes = part_size ? part_size - 200 : 0;
         
@@ -357,7 +353,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             }
         }
     }
-    printf("%d\n", decoded_bytes);
     return decoded_bytes;
 }
 
