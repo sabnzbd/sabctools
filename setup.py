@@ -22,31 +22,27 @@
  # 
 ##=============================================================================
 
-from distutils.core import setup, Extension
+from setuptools import setup, Extension
 
 setup(    
     name            = "sabyenc",
-    version         = "1.0.0",
+    version         = "2.0.1",
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
     url             = "https://github.com/Safihre/sabnzbd-yenc",
     license         = "LGPL",
-    package_dir     = { '': 'lib' },
     ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
-        classifiers      = [
-            "Programming Language :: Python",
-            "Programming Language :: Python :: 2.5",
-            "Programming Language :: Python :: 2.6",
-            "Programming Language :: Python :: 2.7",
-            "Programming Language :: C",
-            "License :: OSI Approved :: GNU Library or Lesser General Public License (LGPL)",
-            "Operating System :: Unix",
-            "Development Status :: 4 - Beta",
-            "Environment :: Other Environment",
-            "Intended Audience :: Developers",
-            "Topic :: Software Development :: Libraries :: Python Modules",
-            "Topic :: Communications :: Usenet News"
-            ],
+    classifiers     = [
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: C",
+        "License :: OSI Approved :: GNU Library or Lesser General Public License (LGPL)",
+        "Operating System :: Unix",
+        "Development Status :: 4 - Beta",
+        "Environment :: Other Environment",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: Communications :: Usenet News"
+    ],
     description     = "yEnc Module for Python modified for SABnzbd",
     long_description = """
 yEnc Encoding/Decoding for Python

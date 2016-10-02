@@ -9,7 +9,6 @@ import binascii
 import sys
 
 
-
 ###################
 # SUPPORT FUNCTIONS
 ###################
@@ -81,8 +80,9 @@ def ySplit(line, splits=None):
 
 nr_runs = 100
 data_raw = open("test_noheader_n.txt", "rb").read()
+data_bytes = len(data_raw)
 
-n = 2**14
+n = 2**16
 data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
 
 
@@ -97,12 +97,10 @@ timet_new = 0.0
 for i in xrange(nr_runs):
     time2 = time.clock()
 
-    data_in = ''.join(data_chunks)
-
     timet_new += time.clock()-time2
 
     # Different from homemade
-    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_string_usenet(data_in)
+    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_bytes)
 
 
 print "---"

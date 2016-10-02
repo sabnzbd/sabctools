@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "1.0"
+#define SABYENC_VERSION "2.0"
 
 /* Constants */
 #define LINESIZE    128
@@ -53,5 +53,5 @@ typedef int Bool;
 /* Functions */
 PyObject* encode_string(PyObject* ,PyObject* ,PyObject*);
 PyObject* decode_string(PyObject* ,PyObject* , PyObject*);
-PyObject* decode_string_usenet(PyObject* ,PyObject* , PyObject*);
+PyObject* decode_usenet_chunks(PyObject* ,PyObject* , PyObject*);
 void initsabyenc(void);
