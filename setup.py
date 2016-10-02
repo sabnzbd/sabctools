@@ -26,11 +26,12 @@ from setuptools import setup, Extension
 
 setup(    
     name            = "sabyenc",
-    version         = "2.0.1",
+    version         = "2.0.3",
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
     url             = "https://github.com/Safihre/sabnzbd-yenc",
     license         = "LGPL",
+    package_dir     = {'sabyenc': 'src'},
     ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
     classifiers     = [
         "Programming Language :: Python",
@@ -51,12 +52,8 @@ yEnc Encoding/Decoding for Python
 Mofied the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
 for use within SABnzbd.
 
-This a fairly simple module, it provide only raw yEnc encoding/decoding with
-builitin crc32 calculation. Header parsing, checkings and yenc formatting are 
-left to you (see examples directory for possible implementations). 
-
-Supports encoding and decoding directly to files or to memory buffers
-with helper classes Encoder and Decoder.
+The module was extended to do header parsing and full yEnc decoding from a Python
+list of chunks, the way in which data is retrieved from usenet.
 """
 )
 
