@@ -7,7 +7,9 @@ print
  
 #data_raw = open(".\\tests\\test_single_part.txt", "rb").read()
 #data_raw = open(".\\tests\\test_partial.txt", "rb").read()
-data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
+#data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
+data_raw = open(".\\tests\\test_nocontent.txt", "rb").read()
+
 data_size =  len(data_raw)
 print data_size
 #data_raw = open(".\\tests\\test_nocontent.txt", "rb").read() 

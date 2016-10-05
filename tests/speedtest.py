@@ -1,4 +1,6 @@
-import os 
+import os  
+os.system('python setup.py install') 
+
 import _yenc
 import sabyenc
 import re
@@ -10,10 +12,12 @@ import sys
 # Real test
 ###################
 
-nr_runs = 100
-#data_raw = open("test_single_part.txt", "rb").read()
-#data_raw = open("test_yenc.txt", "rb").read()
+nr_runs = 1000
+#data_raw = open(".\\tests\\test_single_part.txt", "rb").read()
 data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
+#data_raw = open(".\\tests\\test_partial.txt", "rb").read()
+#data_raw = open(".\\tests\\test_nocontent.txt", "rb").read()
+
 data_bytes = len(data_raw)
 
 n = 2**16
@@ -102,8 +106,10 @@ for i in xrange(nr_runs):
     timet_new += time.clock()-time2
 
     # Different from homemade
-    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_bytes)
-
+    try:
+        decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_bytes)
+    except:
+        pass
 
 print "---"
 time1_new_disp = 1000*(time.clock()-time1_new)
@@ -111,8 +117,6 @@ timet_new_disp = 1000*timet_new
 print "%15s  took  %4d ms" % ("yEnc C New", time1_new_disp)
 print "%15s  took  %4d ms = %d%%" % ("Base Python", timet_new_disp, 100*timet_new_disp/time1_new_disp)
 print "---"
-
-
 
 
 ###################
@@ -161,8 +165,6 @@ for i in xrange(nr_runs):
     else:
         _partcrc = None
         print "Corrupt header detected => yend: %s" % yend
-    if not _partcrc == partcrc:
-        print 'shit'
 
 print "Correct result:", decoded_data_new == decoded_data
 print "Size:", len(decoded_data_new)

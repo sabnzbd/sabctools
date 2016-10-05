@@ -249,6 +249,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
 
             // Now copy this part to the output
             *filename_out = (Byte *)calloc(end_loc - start_loc + 1, sizeof(Byte));
+            
+            // Saftey check, required in case the allocation fails
+            if(!*filename_out) {
+                return PyErr_NoMemory();
+            }
+            
+            // Copy the text
             strncpy(*filename_out, start_loc, end_loc - start_loc);
             (*filename_out)[strlen(*filename_out)] = '\0';
             
@@ -481,7 +488,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     // Did we get anything?
     if(!PyList_Size(Py_input_list)) {
         PyErr_SetString(PyExc_ValueError, "No valid data recieved");
-        return (PyObject *) NULL;
+        goto out;
     }
 
     // Initial CRC and reserve bytes
@@ -489,29 +496,36 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     num_bytes_reserved = PyInt_AsLong(Py_num_bytes);
     output_buffer = (Byte *)malloc(num_bytes_reserved);
     
-    if(!output_buffer)
-        return PyErr_NoMemory();
+    if(!output_buffer) {
+        retval = PyErr_NoMemory();
+        goto out;
+    }
     
     // Calculate
     output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc, &crc_yenc, &crc_correct);
-    
-    // Prepare output
-    Py_output_buffer = PyString_FromStringAndSize((char *)output_buffer, output_len);
 
     // Catch if there's nothing
-    if(!Py_output_buffer || !filename_out) {
+    if(!output_len || !filename_out) {
         PyErr_SetString(PyExc_ValueError, "No valid data recieved");
-        return (PyObject *) NULL;
+        retval = (PyObject *) NULL;
+        goto out;
     }
+
+    // Prepare output
+    Py_output_buffer = PyString_FromStringAndSize((char *)output_buffer, output_len);
     
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
     // Build output
     retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
-    Py_DECREF(Py_output_buffer);
-    Py_DECREF(Py_output_filename);
+    
+out:
+    // Make sure we free all the buffers!
+    Py_XDECREF(Py_output_buffer);
+    Py_XDECREF(Py_output_filename);
     free(output_buffer);
+    free(filename_out);
     return retval;
 }
 
