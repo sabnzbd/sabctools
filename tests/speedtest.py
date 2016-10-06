@@ -12,7 +12,7 @@ import sys
 # Real test
 ###################
 
-nr_runs = 1000
+nr_runs = 200
 #data_raw = open(".\\tests\\test_single_part.txt", "rb").read()
 data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
 #data_raw = open(".\\tests\\test_partial.txt", "rb").read()

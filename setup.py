@@ -3,8 +3,8 @@
 ##=============================================================================
  #
  # Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
- # Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd 
- # 
+ # Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd
+ #
  # This library is free software; you can redistribute it and/or
  # modify it under the terms of the GNU Lesser General Public
  # License as published by the Free Software Foundation; either
@@ -19,17 +19,17 @@
  # License along with this library; if not, write to the Free Software
  # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  #=============================================================================
- # 
+ #
 ##=============================================================================
 
 from setuptools import setup, Extension
 
-setup(    
+setup(
     name            = "sabyenc",
-    version         = "2.0.5",
+    version         = "2.1.0",
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
-    url             = "https://github.com/Safihre/sabnzbd-yenc",
+    url             = "https://github.com/sabnzbd/sabnzbd-yenc",
     license         = "LGPLv3",
     package_dir     = {'sabyenc': 'src'},
     ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
