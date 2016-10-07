@@ -1,5 +1,5 @@
-import os  
-os.system('python setup.py install') 
+import os
+os.system('python setup.py install')
 
 import _yenc
 import sabyenc
@@ -12,7 +12,7 @@ import sys
 # Real test
 ###################
 
-nr_runs = 200
+nr_runs = 250
 #data_raw = open(".\\tests\\test_single_part.txt", "rb").read()
 data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
 #data_raw = open(".\\tests\\test_partial.txt", "rb").read()
@@ -20,9 +20,8 @@ data_raw = open(".\\tests\\test_yenc_new.txt", "rb").read()
 
 data_bytes = len(data_raw)
 
-n = 2**16
+n = 2**12
 data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
-
 
 
 ###################
@@ -106,10 +105,8 @@ for i in xrange(nr_runs):
     timet_new += time.clock()-time2
 
     # Different from homemade
-    try:
-        decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_bytes)
-    except:
-        pass
+    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_bytes)
+
 
 print "---"
 time1_new_disp = 1000*(time.clock()-time1_new)
@@ -166,10 +163,21 @@ for i in xrange(nr_runs):
         _partcrc = None
         print "Corrupt header detected => yend: %s" % yend
 
-print "Correct result:", decoded_data_new == decoded_data
-print "Size:", len(decoded_data_new)
+print "Results equal:", decoded_data_new == decoded_data
+print "Size new:", len(decoded_data_new)
+print "Size old:", len(decoded_data)
 print "---"
 
+# for u in xrange(0,len(decoded_data_new)):
+#     if decoded_data_new[u] != decoded_data[u]:
+#         print u
+#         print u/2**12
+#         print len(data_chunks)
+#         print data_chunks[u/2**12][0]
+#         print decoded_data_new[u]
+#         print decoded_data_new[u+1]
+#         print decoded_data[u]
+#         break
 
 time1_disp = 1000*(time.clock()-time1)
 timet_disp = 1000*timet

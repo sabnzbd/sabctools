@@ -201,7 +201,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     // For the list
     int num_lines;
     int list_index = 0;
-    char *input_buffer;
 
     // Search variables
     char *cur_char; // Pointer to search result
@@ -222,7 +221,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
 
     // Get first chunk
     // TODO: assumes it's long enough to have the header
-    input_buffer = PyString_AsString(PyList_GetItem(Py_input_list, 0));
+    cur_char = PyString_AsString(PyList_GetItem(Py_input_list, 0));
 
     /*
      ANALYZE HEADER
@@ -235,7 +234,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     */
 
     // Start of header
-    start_loc = strstr(input_buffer, "=ybegin");
+    start_loc = strstr(cur_char, "=ybegin");
 
     if(start_loc) {
         // Move forward to start of header
@@ -262,6 +261,9 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
 
             // Move pointer
             cur_char = end_loc;
+        } else {
+            // Don't go on without a name
+            return 0;
         }
 
         // Is there a part-indicator?
@@ -296,29 +298,28 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
         /*
             During the loop we need to take care of special cases.
             The escape "=" and whatever it escapes might be on the
-            next list-item. Also the sequence "\n.." should only
-            convert one dot, but this sequence might also be split
-            across list items.
+            next Python-list-item. Also the sequence "\n.." should
+            onlyconvert one dot, but this sequence might also be
+            split across list items.
         */
         while(1) {
             // Get current char and increment pointer
             cur_char++;
 
-            // End of the line
+            // End of the line of list-item
             if(*cur_char == '\0') {
                 // Are we outside the list?
                 list_index++;
                 if(list_index == num_lines) {
                     break;
                 }
-                // Get the new line
-                input_buffer = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
-                cur_char = input_buffer;
+                // Get reference to the new line
+                cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
             }
 
             // Special charaters
             if(escape_char) {
-                byte = (Byte)(*cur_char - 106);
+                byte = (*cur_char - 106);
                 escape_char = 0;
                 double_point_escape = 0;
             } else if(*cur_char == ESC) {
@@ -326,7 +327,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                 if(decoded_bytes > safe_nr_bytes) {
                     // Looking for the end, format:
                     // =yend size=384000 part=41 pcrc32=084e170f
-                    if (!strncmp(cur_char, "=yend ", 6)) {
+                    if (!strncmp(cur_char, "=yend ", 5)) {
                         // Find part-begin
                         start_loc = strstr(cur_char, "crc32=");
                         if(start_loc) {
@@ -354,7 +355,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             } else if(*cur_char == LF) {
                 double_point_escape = 1;
                 continue;
-            } else if(*cur_char == DOT && double_point_escape == 2) {
+            } else if(double_point_escape == 2 && *cur_char == DOT) {
                 // We found "\n.."! Ignore that second dot.
                 double_point_escape = 0;
                 continue;
@@ -364,9 +365,9 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                     double_point_escape = 2;
                 }
                 // We do include this dot
-                byte = (Byte)(*cur_char - 42);
+                byte = (*cur_char - 42);
             } else {
-                byte = (Byte)(*cur_char - 42);
+                byte = (*cur_char - 42);
                 // Reset exception
                 double_point_escape = 0;
             }
