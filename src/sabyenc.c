@@ -215,6 +215,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     uInt decoded_bytes = 0;
     uInt safe_nr_bytes = 0;
     Bool escape_char = 0;
+    int double_point_escape = 0;
 
     // Get number of lines
     num_lines = PyList_Size(Py_input_list);
@@ -252,7 +253,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
 
             // Saftey check, required in case the allocation fails
             if(!*filename_out) {
-                return PyErr_NoMemory();
+                return 0;
             }
 
             // Copy the text
@@ -292,7 +293,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
         // How many bytes can be checked safely?
         safe_nr_bytes = part_size ? part_size - 200 : 0;
 
-        // Let's loop over all the data
+        /*
+            During the loop we need to take care of special cases.
+            The escape "=" and whatever it escapes might be on the
+            next list-item. Also the sequence "\n.." should only
+            convert one dot, but this sequence might also be split
+            across list items.
+        */
         while(1) {
             // Get current char and increment pointer
             cur_char++;
@@ -313,6 +320,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             if(escape_char) {
                 byte = (Byte)(*cur_char - 106);
                 escape_char = 0;
+                double_point_escape = 0;
             } else if(*cur_char == ESC) {
                 // strncmp is expensive, only perform near the end
                 if(decoded_bytes > safe_nr_bytes) {
@@ -341,12 +349,26 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                 // we need to do it in the next loop
                 escape_char = 1;
                 continue;
-            } else if(*cur_char == LF || *cur_char == CR) {
+            } else if(*cur_char == CR) {
                 continue;
-            } else if(*cur_char == DOT && *(cur_char-1) == DOT && *(cur_char-2) == LF) {
+            } else if(*cur_char == LF) {
+                double_point_escape = 1;
                 continue;
+            } else if(*cur_char == DOT && double_point_escape == 2) {
+                // We found "\n.."! Ignore that second dot.
+                double_point_escape = 0;
+                continue;
+            } else if(*cur_char == DOT) {
+                // Special case for "\n.." that can be split between list items
+                if(double_point_escape == 1) {
+                    double_point_escape = 2;
+                }
+                // We do include this dot
+                byte = (Byte)(*cur_char - 42);
             } else {
                 byte = (Byte)(*cur_char - 42);
+                // Reset exception
+                double_point_escape = 0;
             }
 
             // Place the byte and go to the next
@@ -494,7 +516,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
     // Initial CRC and reserve bytes
     // We reserve 10% extra, just to be sure
     crc_init(&crc, crc_value);
-    num_bytes_reserved = PyInt_AsLong(Py_num_bytes) * 1.10;
+    num_bytes_reserved = (uInt)(PyInt_AsLong(Py_num_bytes) * 1.10);
     output_buffer = (Byte *)malloc(num_bytes_reserved);
 
     if(!output_buffer) {
