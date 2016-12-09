@@ -1,3 +1,6 @@
+Work in progress, not intended for public testing!
+===============================
+
 SABYenc - yEnc Encoding/Decoding for Python
 ===============================
 

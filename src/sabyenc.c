@@ -236,6 +236,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     // Start of header
     start_loc = strstr(cur_char, "=ybegin");
 
+    // If not found, get the next line and try again
+    while(!start_loc && list_index < num_lines) {
+        list_index += 1;
+        cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
+        start_loc = strstr(cur_char, "=ybegin");
+    }
+
     if(start_loc) {
         // Move forward to start of header
         cur_char = start_loc+8;
@@ -510,7 +517,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
 
     // Did we get anything?
     if(!PyList_Size(Py_input_list)) {
-        PyErr_SetString(PyExc_ValueError, "No valid data recieved");
+        PyErr_SetString(PyExc_ValueError, "No valid list recieved");
         goto out;
     }
 
@@ -530,7 +537,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
 
     // Catch if there's nothing
     if(!output_len || !filename_out) {
-        PyErr_SetString(PyExc_ValueError, "No valid data recieved");
+        PyErr_SetString(PyExc_ValueError, "Could not get filename");
         retval = (PyObject *) NULL;
         goto out;
     }
