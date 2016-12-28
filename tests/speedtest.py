@@ -1,10 +1,10 @@
 import os
-os.system('python setup.py install')
+import time
 
 import _yenc
 import sabyenc
 import re
-import time
+
 import binascii
 import sys
 

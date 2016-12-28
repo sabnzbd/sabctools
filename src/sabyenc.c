@@ -82,6 +82,7 @@ void initsabyenc(void);
 static int encode_buffer(Byte *, Byte *, uInt, Crc32 *, uInt *);
 static int decode_buffer(Byte *, Byte *, uInt, Crc32 *, Bool *);
 static int decode_buffer_usenet(PyObject *, Byte *, uInt, Byte **, Crc32 *, uInt *,  Bool *);
+static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 
 /* Python API requirements */
 static char encode_string_doc[] = "encode_string(string, crc32, column)";
@@ -216,13 +217,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     Bool escape_char = 0;
     int double_point_escape = 0;
 
-    // Get number of lines
-    num_lines = PyList_Size(Py_input_list);
-
-    // Get first chunk
-    // TODO: assumes it's long enough to have the header
-    cur_char = PyString_AsString(PyList_GetItem(Py_input_list, 0));
-
     /*
      ANALYZE HEADER
      Always in the same format, e.g.:
@@ -231,26 +225,30 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
      =ypart begin=15360001 end=15744000
 
      But we only care about the filename and the size
+     For single-part yEnc we need to get size from the first line, for
+     multi-part we need to substract end-begin from second line
     */
 
-    // Start of header
-    start_loc = strstr(cur_char, "=ybegin");
+    // Get number of lines
+    num_lines = PyList_Size(Py_input_list);
 
-    // If not found, get the next line and try again
-    while(!start_loc && list_index < num_lines) {
-        list_index += 1;
-        cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
-        start_loc = strstr(cur_char, "=ybegin");
-    }
+    // Get first chunk
+    cur_char = PyString_AsString(PyList_GetItem(Py_input_list, 0));
+
+    // Start of header (which doesn't have to be part of first chunk)
+    start_loc = find_text_in_pylist(Py_input_list, "=ybegin", &cur_char, &list_index);
 
     if(start_loc) {
-        // Move forward to start of header
-        cur_char = start_loc+8;
+        // First we find the size (for single-part files)
+        start_loc = find_text_in_pylist(Py_input_list, "size=", &cur_char, &list_index);
+        if(start_loc) {
+            // Move over a bit
+            part_size = strtol(cur_char, NULL, 0);
+        }
 
         // Find name
-        start_loc = strstr(cur_char, "name=");
+        start_loc = find_text_in_pylist(Py_input_list, "name=", &cur_char, &list_index);
         if(start_loc) {
-            start_loc += 5;
             // Skip over everything untill end of line
             for(end_loc = start_loc; *end_loc != CR && *end_loc != LF && *end_loc != '\0'; end_loc++);
 
@@ -262,7 +260,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                 return 0;
             }
 
-            // Copy the text
+            // Copy the text and add terminator
             strncpy(*filename_out, start_loc, end_loc - start_loc);
             (*filename_out)[strlen(*filename_out)] = '\0';
 
@@ -273,28 +271,23 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             return 0;
         }
 
-        // Is there a part-indicator?
-        start_loc = strstr(cur_char, "=ypart");
+        // Is there a multi-part indicator?
+        start_loc = find_text_in_pylist(Py_input_list, "=ypart", &cur_char, &list_index);
         if(start_loc) {
-            // Mover over a bit
-            cur_char = start_loc+6;
-
             // Find part-begin
-            start_loc = strstr(cur_char, "begin=");
+            start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
             if(start_loc) {
-                cur_char = start_loc+6;
                 part_begin = strtol(cur_char, NULL, 0);
             }
 
             // Find part-begin
-            start_loc = strstr(cur_char, "end=");
+            start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
             if(start_loc) {
-                cur_char = start_loc+4;
                 part_size = strtol(cur_char, NULL, 0) - part_begin + 1;
             }
 
             // Skip over everything untill end of line
-            for(end_loc = start_loc; *end_loc != '\n' && *end_loc != '\r' && *end_loc != '\0'; end_loc++);
+            for(end_loc = start_loc; *end_loc != LF && *end_loc != CR && *end_loc != '\0'; end_loc++);
             // Move pointer
             cur_char = end_loc;
         }
@@ -320,6 +313,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                 if(list_index == num_lines) {
                     break;
                 }
+
                 // Get reference to the new line
                 cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
             }
@@ -334,11 +328,12 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                 if(decoded_bytes > safe_nr_bytes) {
                     // Looking for the end, format:
                     // =yend size=384000 part=41 pcrc32=084e170f
-                    if (!strncmp(cur_char, "=yend ", 5)) {
-                        // Find part-begin
-                        start_loc = strstr(cur_char, "crc32=");
+                    if (!strncmp(cur_char, "=yend", 5)) {
+                        // Find CRC
+                        start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
+
+                        // Process CRC
                         if(start_loc) {
-                            cur_char = start_loc+6;
                             *crc_yenc = strtoul(cur_char, NULL, 16);
 
                             // Change format to CRC-style (don't ask me why..)
@@ -390,7 +385,61 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             }
         }
     }
+    free(cur_char);
     return decoded_bytes;
+}
+
+static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, char **cur_char, int *cur_index) {
+    // Temp variables
+    char *next_string;
+    char *start_loc = NULL;
+    char *search_placeholder;
+    int cur_len;
+    int num_lines = PyList_Size(Py_input_list);
+
+    // First we try to do a fast location
+    start_loc = strstr(*cur_char, search_term);
+
+    // We didn't find it..
+    if(!start_loc) {
+        // We do maximum of 5 times extra lines, otherwise to slow
+        num_lines = min(*cur_index+5, num_lines-1);
+
+        // Start by adding the current string to the placeholder
+        cur_len = strlen(*cur_char)+1;
+        search_placeholder = (Byte *) calloc(cur_len, sizeof(Byte *));
+        strcpy(search_placeholder, *cur_char);
+
+        // Add the next item and try again
+        while(!start_loc && *cur_index < num_lines) {
+            // Need to get the next one
+            *cur_index = *cur_index+1;
+            next_string = PyString_AsString(PyList_GetItem(Py_input_list, *cur_index));
+
+            // Reserve the next bit
+            cur_len = cur_len + strlen(next_string);
+            search_placeholder = (Byte *) realloc(search_placeholder, cur_len);
+            strcat(search_placeholder, next_string);
+
+            // Try to find it again
+            start_loc = strstr(search_placeholder, search_term);
+        }
+
+        // Decrease the index again and cleanup!
+        if(!start_loc) {
+            free(search_placeholder);
+            *cur_index -= num_lines;
+        }
+    }
+
+    // Did we find it now?
+    if(start_loc) {
+        start_loc += strlen(search_term);
+        *cur_char = start_loc;
+    }
+
+    // Found it directly
+    return start_loc;
 }
 
 PyObject* encode_string(
