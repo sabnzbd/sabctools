@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "2.3.0"
+#define SABYENC_VERSION "2.4.0"
 
 /* Constants */
 #define LINESIZE    128
@@ -44,7 +44,5 @@ typedef unsigned char Byte;
 typedef int Bool;
 
 /* Functions */
-PyObject* encode_string(PyObject* ,PyObject* ,PyObject*);
-PyObject* decode_string(PyObject* ,PyObject* , PyObject*);
 PyObject* decode_usenet_chunks(PyObject* ,PyObject* , PyObject*);
 void initsabyenc(void);

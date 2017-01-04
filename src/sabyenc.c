@@ -79,126 +79,30 @@ static char* argnames[] = {"infile", "outfile", "bytez", NULL};
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
 void initsabyenc(void);
-static int encode_buffer(Byte *, Byte *, uInt, Crc32 *, uInt *);
-static int decode_buffer(Byte *, Byte *, uInt, Crc32 *, Bool *);
 static int decode_buffer_usenet(PyObject *, Byte *, uInt, Byte **, Crc32 *, uInt *,  Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 
 /* Python API requirements */
-static char encode_string_doc[] = "encode_string(string, crc32, column)";
-static char decode_string_doc[] = "decode_string(string, crc32, escape)";
 static char decode_usenet_chunks_doc[] = "decode_usenet_chunks(string)";
 
 static PyMethodDef funcs[] = {
-        {"encode_string", (PyCFunction) encode_string, METH_KEYWORDS | METH_VARARGS, encode_string_doc},
-        {"decode_string", (PyCFunction) decode_string, METH_KEYWORDS | METH_VARARGS, decode_string_doc},
         {"decode_usenet_chunks", (PyCFunction) decode_usenet_chunks, METH_KEYWORDS | METH_VARARGS, decode_usenet_chunks_doc},
         {NULL, NULL, 0, NULL}
 };
 
 /* Function definitions */
-static void crc_init(Crc32 *crc, uInt value)
-{
+static void crc_init(Crc32 *crc, uInt value) {
     crc->crc = value;
     crc->bytes = 0UL;
 }
 
-static void crc_update(Crc32 *crc, uInt c)
-{
+static void crc_update(Crc32 *crc, uInt c) {
     crc->crc=crc_tab[(crc->crc^c)&0xff]^((crc->crc>>8)&0xffffff);
     crc->bytes++;
 }
 
-
-static int encode_buffer(
-        Byte *input_buffer,
-        Byte *output_buffer,
-        uInt bytes,
-        Crc32 *crc,
-        uInt *col
-        )
-{
-    uInt in_ind;
-    uInt out_ind;
-    Byte byte;
-
-    out_ind = 0;
-    for(in_ind=0; in_ind < bytes; in_ind++) {
-        byte = (Byte)(input_buffer[in_ind] + 42);
-        crc_update(crc, input_buffer[in_ind]);
-        switch(byte){
-            case ZERO:
-            case LF:
-            case CR:
-            case ESC:
-                goto escape_string;
-            case TAB:
-            case SPACE:
-                if(*col == 0 || *col == LINESIZE-1) {
-                    goto escape_string;
-                }
-                        case DOT:
-                                if(*col == 0) {
-                                        goto escape_string;
-                                }
-            default:
-                goto plain_string;
-        }
-        escape_string:
-        byte = (Byte)(byte + 64);
-        output_buffer[out_ind++] = ESC;
-        (*col)++;
-        plain_string:
-        output_buffer[out_ind++] = byte;
-        (*col)++;
-        if(*col >= LINESIZE) {
-            output_buffer[out_ind++] = CR;
-            output_buffer[out_ind++] = LF;
-            *col = 0;
-        }
-    }
-    return out_ind;
-}
-
-
-static int decode_buffer(
-        Byte *input_buffer,
-        Byte *output_buffer,
-        uInt bytes,
-        Crc32 *crc,
-        Bool *escape
-        )
-{
-    uInt read_ind;
-    uInt decoded_bytes;
-    Byte byte;
-
-    decoded_bytes = 0;
-    for(read_ind = 0; read_ind < bytes; read_ind++) {
-        byte = input_buffer[read_ind];
-
-        if(*escape) {
-            byte = (Byte)(byte - 106);
-            *escape = 0;
-        } else if(byte == ESC) {
-            *escape = 1;
-            continue;
-        } else if(byte == LF || byte == CR) {
-            continue;
-        } else {
-            byte = (Byte)(byte - 42);
-        }
-        output_buffer[decoded_bytes] = byte;
-        decoded_bytes++;
-        crc_update(crc, byte);
-    }
-    return decoded_bytes;
-}
-
-
 static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uInt num_bytes_reserved,
-                                Byte **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct)
-{
+                                Byte **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct) {
     // For the list
     int num_lines;
     int list_index = 0;
@@ -207,6 +111,8 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     char *cur_char; // Pointer to search result
     char *start_loc; // Pointer to current char
     char *end_loc;
+    char *crc_holder;
+    int crc_holder_len;
 
     // Other vars
     Byte byte;
@@ -332,6 +238,21 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                         // Find CRC
                         start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
 
+                        /*
+                            Especially with the CRC, the code is
+                            often split between the 2 last chunks..
+                        */
+                        if(list_index+1 < num_lines) {
+                            // Let's add the extra line to be sure
+                            crc_holder = (Byte *) calloc(strlen(cur_char)+1, sizeof(Byte *));
+                            strcpy(crc_holder, cur_char);
+                            cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index+1));
+                            crc_holder = (Byte *) realloc(crc_holder, strlen(cur_char)+strlen(crc_holder)+1);
+                            strcat(crc_holder, cur_char);
+                            cur_char = crc_holder;
+                        }
+
+
                         // Process CRC
                         if(start_loc) {
                             *crc_yenc = strtoul(cur_char, NULL, 16);
@@ -344,6 +265,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                                 *crc_correct = 1;
                             }
                         }
+
+                        // Cleanup
+                        if(list_index+1 < num_lines) {
+                            free(cur_char);
+                            free(crc_holder);
+                        }
+
                         break;
                     }
                 }
@@ -385,9 +313,9 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
             }
         }
     }
-    free(cur_char);
     return decoded_bytes;
 }
+
 
 static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, char **cur_char, int *cur_index) {
     // Temp variables
@@ -395,6 +323,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
     char *start_loc = NULL;
     char *search_placeholder;
     int cur_len;
+    int start_index;
     int num_lines = PyList_Size(Py_input_list);
 
     // First we try to do a fast location
@@ -425,11 +354,23 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
             start_loc = strstr(search_placeholder, search_term);
         }
 
-        // Decrease the index again and cleanup!
-        if(!start_loc) {
-            free(search_placeholder);
+        /*
+            Problem: If we return start_loc now, we will have a memory leak
+            because search_placeholder is never free'd. So we need to get
+            the correct location in the original string from the list.
+        */
+        if(start_loc) {
+            // How much in the new string are we?
+            start_index = (start_loc - search_placeholder) - strlen(*cur_char);
+            // Point to the location in the item from the list
+            start_loc = next_string + start_index;
+        } else {
+            // Decrease the index again just to be sure
             *cur_index -= num_lines;
         }
+
+        // Cleanup
+        free(search_placeholder);
     }
 
     // Did we find it now?
@@ -442,106 +383,8 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
     return start_loc;
 }
 
-PyObject* encode_string(
-        PyObject* self,
-        PyObject* args,
-        PyObject* kwds
-        )
-{
-    PyObject *Py_input_string;
-    PyObject *Py_output_string;
-    PyObject *retval = NULL;
 
-    Byte *input_buffer = NULL;
-    Byte *output_buffer = NULL;
-    long long crc_value = 0xffffffffll;
-    uInt input_len = 0;
-    uInt output_len = 0;
-    uInt col = 0;
-    Crc32 crc;
-
-    static char *kwlist[] = { "string", "crc32", "column", NULL };
-    if(!PyArg_ParseTupleAndKeywords(args,
-                kwds,
-                "O!|Li",
-                kwlist,
-                &PyString_Type,
-                &Py_input_string,
-                &crc_value,
-                &col
-                ))
-        return NULL;
-
-    crc_init(&crc, (uInt)crc_value);
-    input_len = PyString_Size(Py_input_string);
-    input_buffer = (Byte *) PyString_AsString(Py_input_string);
-    output_buffer = (Byte *) malloc((2 * input_len / LINESIZE + 1) * (LINESIZE + 2));
-    if(!output_buffer)
-        return PyErr_NoMemory();
-    output_len = encode_buffer(input_buffer, output_buffer, input_len, &crc, &col);
-    Py_output_string = PyString_FromStringAndSize((char *)output_buffer, output_len);
-    if(!Py_output_string)
-        goto out;
-
-    retval = Py_BuildValue("(S,L,i)", Py_output_string, (long long)crc.crc, col);
-    Py_DECREF(Py_output_string);
-
-out:
-    free(output_buffer);
-    return retval;
-}
-
-
-PyObject* decode_string(
-        PyObject* self,
-        PyObject* args,
-        PyObject* kwds
-        )
-{
-    PyObject *Py_input_string;
-    PyObject *Py_output_string;
-    PyObject *retval = NULL;
-
-    Byte *input_buffer = NULL;
-    Byte *output_buffer = NULL;
-    long long crc_value = 0xffffffffll;
-    uInt input_len = 0;
-    uInt output_len = 0;
-    int escape = 0;
-    Crc32 crc;
-
-    static char *kwlist[] = { "string", "crc32", "escape", NULL };
-    if(!PyArg_ParseTupleAndKeywords(args,
-                kwds,
-                "O!|Li",
-                kwlist,
-                &PyString_Type,
-                &Py_input_string,
-                &crc_value,
-                &escape
-                ))
-        return NULL;
-    crc_init(&crc, (uInt)crc_value);
-    input_len = PyString_Size(Py_input_string);
-    input_buffer = (Byte *)PyString_AsString(Py_input_string);
-    output_buffer = (Byte *)malloc( input_len );
-    if(!output_buffer)
-        return PyErr_NoMemory();
-    output_len = decode_buffer(input_buffer, output_buffer, input_len, &crc, &escape);
-    Py_output_string = PyString_FromStringAndSize((char *)output_buffer, output_len);
-    if(!Py_output_string)
-        goto out;
-
-    retval = Py_BuildValue("(S,L,i)", Py_output_string, (long long)crc.crc, escape);
-    Py_DECREF(Py_output_string);
-
-out:
-    free(output_buffer);
-    return retval;
-}
-
-PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds)
-{
+PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     // The input/output PyObjects
     PyObject *Py_input_list;
     PyObject *Py_num_bytes;
@@ -610,8 +453,7 @@ out:
 }
 
 
-void initsabyenc(void)
-{
+void initsabyenc(void) {
     // Add module
     PyObject *module;
     module = Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
