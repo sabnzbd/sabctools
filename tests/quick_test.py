@@ -25,15 +25,17 @@ for fname in all_crc_fails:
     print fname
     data_p = open(fname, "rb")
     data_chunks, data_size = pickle.load(data_p)
-    for i in range(100000):
+    for i in range(1):
         output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_size)
-    import pdb; pdb.set_trace()  # breakpoint a5c02678 //
 
     print 'Filename:', output_filename
     print 'Size', len(output_buffer)
     print 'CRC Calc:', crc
     print 'CRC Yenc:', crc_yenc
     print 'CRC Bool:', crc_correct
+#    if not crc_correct:
+
+
 
     #\if not crc_correct:
     #    print data_chunks[-1]

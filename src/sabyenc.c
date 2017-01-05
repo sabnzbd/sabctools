@@ -79,7 +79,7 @@ static char* argnames[] = {"infile", "outfile", "bytez", NULL};
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
 void initsabyenc(void);
-static int decode_buffer_usenet(PyObject *, Byte *, uInt, Byte **, Crc32 *, uInt *,  Bool *);
+static int decode_buffer_usenet(PyObject *, Byte *, int, Byte **, Crc32 *, uInt *,  Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 
 /* Python API requirements */
@@ -101,7 +101,7 @@ static void crc_update(Crc32 *crc, uInt c) {
     crc->bytes++;
 }
 
-static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uInt num_bytes_reserved,
+static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, int num_bytes_reserved,
                                 Byte **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct) {
     // For the list
     int num_lines;
@@ -112,14 +112,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
     char *start_loc; // Pointer to current char
     char *end_loc;
     char *crc_holder;
-    int crc_holder_len;
 
     // Other vars
     Byte byte;
     uInt part_begin = 0;
     uInt part_size = 0;
-    uInt decoded_bytes = 0;
-    uInt safe_nr_bytes = 0;
+    int decoded_bytes = 0;
+    int safe_nr_bytes = 0;
     Bool escape_char = 0;
     int double_point_escape = 0;
 
@@ -234,7 +233,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, uI
                 if(decoded_bytes > safe_nr_bytes) {
                     // Looking for the end, format:
                     // =yend size=384000 part=41 pcrc32=084e170f
-                    if (!strncmp(cur_char, "=yend", 5)) {
+                    if (!strncmp(cur_char, "=y", 2)) {
                         // Find CRC
                         start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
 
@@ -357,11 +356,15 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
         /*
             Problem: If we return start_loc now, we will have a memory leak
             because search_placeholder is never free'd. So we need to get
-            the correct location in the original string from the list.
+            the correct location in the current string from the list.
         */
         if(start_loc) {
             // How much in the new string are we?
-            start_index = (start_loc - search_placeholder) - strlen(*cur_char);
+            start_index = (start_loc - search_placeholder) - (strlen(search_placeholder) - strlen(next_string));
+            // Just make sure it's valid
+            if(start_index < 0 || start_index > (int)strlen(next_string)) {
+                start_loc = NULL;
+            }
             // Point to the location in the item from the list
             start_loc = next_string + start_index;
         } else {
@@ -402,7 +405,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     Byte *output_buffer = NULL;
     Byte *filename_out = NULL;
     uInt output_len = 0;
-    uInt num_bytes_reserved;
+    int num_bytes_reserved;
 
     if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_list, &Py_num_bytes))
         return NULL;
@@ -416,7 +419,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     // Initial CRC and reserve bytes
     // We reserve 10% extra, just to be sure
     crc_init(&crc, crc_value);
-    num_bytes_reserved = (uInt)(PyInt_AsLong(Py_num_bytes) * 1.10);
+    num_bytes_reserved = (int)(PyInt_AsLong(Py_num_bytes) * 1.10);
     output_buffer = (Byte *)malloc(num_bytes_reserved);
 
     if(!output_buffer) {
