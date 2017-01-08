@@ -267,8 +267,8 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
 
                         // Cleanup
                         if(list_index+1 < num_lines) {
+                            // This also cleans crc_holder
                             free(cur_char);
-                            free(crc_holder);
                         }
 
                         break;
