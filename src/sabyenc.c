@@ -331,7 +331,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
     // We didn't find it..
     if(!start_loc) {
         // We do maximum of 5 times extra lines, otherwise to slow
-        num_lines = min(*cur_index+5, num_lines-1);
+        num_lines = (*cur_index+5 > num_lines-1) ?  num_lines-1 : *cur_index+5;
 
         // Start by adding the current string to the placeholder
         cur_len = strlen(*cur_char)+1;
