@@ -251,7 +251,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
                             cur_char = crc_holder;
                         }
 
-
                         // Process CRC
                         if(start_loc) {
                             *crc_yenc = strtoul(cur_char, NULL, 16);
@@ -267,8 +266,8 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
 
                         // Cleanup
                         if(list_index+1 < num_lines) {
-                            // This also cleans crc_holder
-                            free(cur_char);
+                            // This also cleans linked cur_char
+                            free(crc_holder);
                         }
 
                         break;
@@ -416,9 +415,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
         goto out;
     }
 
-    // Initial CRC and reserve bytes
     // We reserve 10% extra, just to be sure
-    crc_init(&crc, crc_value);
     num_bytes_reserved = (int)(PyInt_AsLong(Py_num_bytes) * 1.10);
     output_buffer = (Byte *)malloc(num_bytes_reserved);
 
@@ -427,8 +424,17 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
         goto out;
     }
 
+    // Byeeeeeeee GIL!
+    Py_BEGIN_ALLOW_THREADS;
+
+    // Initial CRC
+    crc_init(&crc, crc_value);
+
     // Calculate
     output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc, &crc_yenc, &crc_correct);
+
+    // Aaah there you are again GIL..
+    Py_END_ALLOW_THREADS;
 
     // Catch if there's nothing
     if(!output_len || !filename_out) {
