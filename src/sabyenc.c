@@ -231,12 +231,22 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             } else if(*cur_char == ESC) {
                 // strncmp is expensive, only perform near the end
                 if(decoded_bytes > safe_nr_bytes) {
-                    if(*(cur_char+1) == '\0') {
-                        printf("dasdsd\n");
+
+                    /*
+                        Looking for the end, format:
+                        =yend size=384000 part=41 pcrc32=084e170f
+                        If a = is followed by an end-of-line, it's very
+                        likely that the yend part is on the next line
+                        and thus we would miss it
+                    */
+                    if(*(cur_char+1) == ZERO && list_index+1 < num_lines) {
+                        list_index++;
+                        // Get reference to the new line
+                        cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
                     }
-                    // Looking for the end, format:
-                    // =yend size=384000 part=41 pcrc32=084e170f
-                    if (!strncmp(cur_char, "=y", 2)) {
+
+                    // Find it!
+                    if (!strncmp(cur_char, "=y", 2) || !strncmp(cur_char, "yend", 4)) {
                         // Find CRC
                         start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
 
@@ -272,7 +282,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
                             // This also cleans linked cur_char
                             free(crc_holder);
                         }
-
                         break;
                     }
                 }
