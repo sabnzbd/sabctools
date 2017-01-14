@@ -231,7 +231,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             } else if(*cur_char == ESC) {
                 // strncmp is expensive, only perform near the end
                 if(decoded_bytes > safe_nr_bytes) {
-
                     /*
                         Looking for the end, format:
                         =yend size=384000 part=41 pcrc32=084e170f
@@ -318,7 +317,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             crc_update(crc, byte);
 
             // Saftey check
-            if(decoded_bytes > num_bytes_reserved - 1) {
+            if(decoded_bytes >= num_bytes_reserved) {
                 break;
             }
         }
@@ -428,7 +427,8 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
         return NULL;
     }
 
-    // Reserve the output buffer
+    // Reserve the output buffer, 10% more just to be safe
+    num_bytes_reserved = (int)(num_bytes_reserved*1.10);
     output_buffer = (Byte *)malloc(num_bytes_reserved);
     if(!output_buffer) {
         retval = PyErr_NoMemory();
