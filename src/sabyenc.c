@@ -83,7 +83,7 @@ static int decode_buffer_usenet(PyObject *, Byte *, int, Byte **, Crc32 *, uInt 
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 
 /* Python API requirements */
-static char decode_usenet_chunks_doc[] = "decode_usenet_chunks(string)";
+static char decode_usenet_chunks_doc[] = "decode_usenet_chunks(list_of_chunks, nr_bytes)";
 
 static PyMethodDef funcs[] = {
         {"decode_usenet_chunks", (PyCFunction) decode_usenet_chunks, METH_KEYWORDS | METH_VARARGS, decode_usenet_chunks_doc},
@@ -155,7 +155,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
         start_loc = find_text_in_pylist(Py_input_list, "name=", &cur_char, &list_index);
         if(start_loc) {
             // Skip over everything untill end of line
-            for(end_loc = start_loc; *end_loc != CR && *end_loc != LF && *end_loc != '\0'; end_loc++);
+            for(end_loc = start_loc; *end_loc != CR && *end_loc != LF && *end_loc != ZERO; end_loc++);
 
             // Now copy this part to the output
             *filename_out = (Byte *)calloc(end_loc - start_loc + 1, sizeof(Byte));
@@ -167,7 +167,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
 
             // Copy the text and add terminator
             strncpy(*filename_out, start_loc, end_loc - start_loc);
-            (*filename_out)[strlen(*filename_out)] = '\0';
+            (*filename_out)[strlen(*filename_out)] = ZERO;
 
             // Move pointer
             cur_char = end_loc;
@@ -192,7 +192,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             }
 
             // Skip over everything untill end of line
-            for(end_loc = start_loc; *end_loc != LF && *end_loc != CR && *end_loc != '\0'; end_loc++);
+            for(end_loc = start_loc; *end_loc != LF && *end_loc != CR && *end_loc != ZERO; end_loc++);
             // Move pointer
             cur_char = end_loc;
         }
@@ -212,7 +212,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             cur_char++;
 
             // End of the line of list-item
-            if(*cur_char == '\0') {
+            if(*cur_char == ZERO) {
                 // Are we outside the list?
                 list_index++;
                 if(list_index == num_lines) {
@@ -231,6 +231,9 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             } else if(*cur_char == ESC) {
                 // strncmp is expensive, only perform near the end
                 if(decoded_bytes > safe_nr_bytes) {
+                    if(*(cur_char+1) == '\0') {
+                        printf("dasdsd\n");
+                    }
                     // Looking for the end, format:
                     // =yend size=384000 part=41 pcrc32=084e170f
                     if (!strncmp(cur_char, "=y", 2)) {
@@ -389,7 +392,6 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
 PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     // The input/output PyObjects
     PyObject *Py_input_list;
-    PyObject *Py_num_bytes;
     PyObject *Py_output_buffer;
     PyObject *Py_output_filename;
     PyObject *retval = NULL;
@@ -406,19 +408,19 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     uInt output_len = 0;
     int num_bytes_reserved;
 
-    if(!PyArg_UnpackTuple(args, "decode_usenet_chunks", 2, 2, &Py_input_list, &Py_num_bytes))
+    // Parse input
+    if (!PyArg_ParseTuple(args, "Oi:decode_usenet_chunks", &Py_input_list, &num_bytes_reserved)) {
         return NULL;
+    }
 
-    // Did we get anything?
-    if(!PyList_Size(Py_input_list)) {
+    // Verify it's a list
+    if(!PyList_Check(Py_input_list)) {
         PyErr_SetString(PyExc_ValueError, "No valid list recieved");
         goto out;
     }
 
-    // We reserve 10% extra, just to be sure
-    num_bytes_reserved = (int)(PyInt_AsLong(Py_num_bytes) * 1.10);
+    // Reserve the output buffer
     output_buffer = (Byte *)malloc(num_bytes_reserved);
-
     if(!output_buffer) {
         retval = PyErr_NoMemory();
         goto out;
@@ -439,7 +441,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     // Catch if there's nothing
     if(!output_len || !filename_out) {
         PyErr_SetString(PyExc_ValueError, "Could not get filename");
-        retval = (PyObject *) NULL;
         goto out;
     }
 
