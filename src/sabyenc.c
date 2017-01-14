@@ -424,15 +424,15 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
 
     // Verify it's a list
     if(!PyList_Check(Py_input_list)) {
-        PyErr_SetString(PyExc_ValueError, "No valid list recieved");
-        goto out;
+        PyErr_SetString(PyExc_ValueError, "Expected list");
+        return NULL;
     }
 
     // Reserve the output buffer
     output_buffer = (Byte *)malloc(num_bytes_reserved);
     if(!output_buffer) {
         retval = PyErr_NoMemory();
-        goto out;
+        return NULL;
     }
 
     // Byeeeeeeee GIL!
@@ -450,7 +450,10 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     // Catch if there's nothing
     if(!output_len || !filename_out) {
         PyErr_SetString(PyExc_ValueError, "Could not get filename");
-        goto out;
+        // Saftey free's
+        if(output_buffer) free(output_buffer);
+        if(filename_out) free(filename_out);
+        return NULL;
     }
 
     // Prepare output
@@ -462,7 +465,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     // Build output
     retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
 
-out:
     // Make sure we free all the buffers!
     Py_XDECREF(Py_output_buffer);
     Py_XDECREF(Py_output_filename);
