@@ -1,47 +1,51 @@
-#import pytest
+import pytest
 import re
+import binascii
 import sabyenc
-import _yenc
 
 
 def test_regular():
-    data_chunks, data_bytes = read_and_split('test_regular.txt')
-    assert old_yenc(data_chunks) == sabyenc_wrapper(data_chunks, data_bytes)
-    data_chunks, data_bytes = read_and_split('test_regular_2.txt')
-    assert old_yenc(data_chunks) == sabyenc_wrapper(data_chunks, data_bytes)
+    data_plain, data_chunks, data_bytes = read_and_split('test_regular.txt')
+    assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
+    data_plain, data_chunks, data_bytes = read_and_split('test_regular_2.txt')
+    assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
 
 def test_regular_small_chunks():
     # Chunks of 512 chars
-    data_chunks, data_bytes = read_and_split('test_regular.txt', 9)
-    assert old_yenc(data_chunks) == sabyenc_wrapper(data_chunks, data_bytes)
+    data_plain, data_chunks, data_bytes = read_and_split('test_regular.txt', 9)
+    assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
+    data_plain, data_chunks, data_bytes = read_and_split('test_regular_2.txt', 9)
+    assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
 
 def test_single_part():
-    data_chunks, data_bytes = read_and_split('test_single_part.txt')
+    data_plain, data_chunks, data_bytes = read_and_split('test_single_part.txt')
     decoded_data, filename, crc_correct = sabyenc_wrapper(data_chunks, data_bytes)
     assert filename == 'logo.gif'
     assert crc_correct == True
     assert len(decoded_data) == 16335
 
 def test_partial():
-    data_chunks, data_bytes = read_and_split('test_partial.txt')
+    data_plain, data_chunks, data_bytes = read_and_split('test_partial.txt')
     decoded_data, filename, crc_correct = sabyenc_wrapper(data_chunks, data_bytes)
     assert filename == '90E2Sdvsmds0801dvsmds90E.part06.rar'
     assert crc_correct == False
     assert len(decoded_data) == 587
 
 def test_special_chars():
-    data_chunks, data_bytes = read_and_split('test_special_chars.txt')
+    data_plain, data_chunks, data_bytes = read_and_split('test_special_chars.txt')
     # We only compare the data and the filename
-    assert old_yenc(data_chunks) == sabyenc_wrapper(data_chunks, data_bytes)
+    assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
 
 def test_bad_crc():
-    data_chunks, data_bytes = read_and_split('test_badcrc.txt')
+    data_plain, data_chunks, data_bytes = read_and_split('test_badcrc.txt')
     # We only compare the data and the filename
-    assert old_yenc(data_chunks) == sabyenc_wrapper(data_chunks, data_bytes)
+    assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
+
 
 ###################
 # SUPPORT FUNCTIONS
 ###################
+
 def read_and_split(filename, chunk_size=14):
     # Default to chunks of 16K, as used in SSL
     with open('yencfiles/%s' % filename, 'rb') as yencfile:
@@ -49,25 +53,25 @@ def read_and_split(filename, chunk_size=14):
         data_bytes = len(data_raw)
         n = 2**chunk_size
         data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
-    return data_chunks, data_bytes
+    return data_raw, data_chunks, data_bytes
 
 def sabyenc_wrapper(data_chunks, data_bytes):
     """ CRC's are """
     decoded_data, filename, crc_calc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_bytes)
     return decoded_data, filename, crc_correct
 
-def old_yenc(data_chunks):
-    """ Use the older decoder to verify the new one """
-    data = []
-    for chunk in data_chunks:
-        new_lines = chunk.split('\r\n')
-        for i in xrange(len(new_lines)):
-            if new_lines[i][:2] == '..':
-                new_lines[i] = new_lines[i][1:]
-        if new_lines[-1] == '.':
-            new_lines = new_lines[1:-1]
-        data.extend(new_lines)
 
+def old_yenc(data_plain):
+    """ Use the older decoder to verify the new one """
+    YDEC_TRANS = ''.join([chr((i + 256 - 42) % 256) for i in xrange(256)])
+    data = []
+    new_lines = data_plain.split('\r\n')
+    for i in xrange(len(new_lines)):
+        if new_lines[i][:2] == '..':
+            new_lines[i] = new_lines[i][1:]
+    if new_lines[-1] == '.':
+        new_lines = new_lines[1:-1]
+    data.extend(new_lines)
 
     # Filter out empty ones
     data = filter(None, data)
@@ -75,8 +79,13 @@ def old_yenc(data_chunks):
     ybegin, ypart, yend = yenc
 
     # Different from homemade
-    decoded_data, partcrc = _yenc.decode_string(''.join(data))[:2]
-    partcrc = '%08X' % ((partcrc ^ -1) & 2 ** 32L - 1)
+    data = ''.join(data)
+    for i in (0, 9, 10, 13, 27, 32, 46, 61):
+        j = '=%c' % (i + 64)
+        data = data.replace(j, chr(i))
+    decoded_data = data.translate(YDEC_TRANS)
+    crc = binascii.crc32(decoded_data)
+    partcrc = '%08X' % (crc & 2 ** 32L - 1)
 
     if ypart:
         crcname = 'pcrc32'
@@ -154,3 +163,5 @@ def yenc_name_fixer(p):
         return p.decode('utf-8')
     except:
         return p.decode('cp1252', errors='replace').replace('?', '!')
+
+test_regular_small_chunks()
