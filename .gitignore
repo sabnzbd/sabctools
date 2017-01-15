@@ -53,4 +53,7 @@ build
 examples
 test
 dist
+
+# Compiled python
+*.py[cod]
 __pycache__

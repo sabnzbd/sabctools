@@ -1,6 +1,6 @@
 import pytest
 import sabyenc
-
+from testsupport import *
 
 # ----- Data list part -----
 def test_list_none():
