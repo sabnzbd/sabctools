@@ -423,7 +423,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
 
     // Verify it's a list
     if(!PyList_Check(Py_input_list)) {
-        PyErr_SetString(PyExc_ValueError, "Expected list");
+        PyErr_SetString(PyExc_TypeError, "Expected list");
         return NULL;
     }
 
