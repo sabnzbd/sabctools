@@ -8,7 +8,7 @@ import sabyenc
 
 def read_and_split(filename, chunk_size=14):
     # Default to chunks of 16K, as used in SSL
-    with open('yencfiles/%s' % filename, 'rb') as yencfile:
+    with open('tests/yencfiles/%s' % filename, 'rb') as yencfile:
         data_raw = yencfile.read()
         data_bytes = len(data_raw)
         n = 2**chunk_size
