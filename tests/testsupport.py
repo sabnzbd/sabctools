@@ -1,6 +1,7 @@
 import re
 import binascii
 import sabyenc
+import cPickle
 
 ###################
 # SUPPORT FUNCTIONS
@@ -14,6 +15,13 @@ def read_and_split(filename, chunk_size=14):
         n = 2**chunk_size
         data_chunks = [data_raw[i:i+n] for i in range(0, len(data_raw), n)]
     return data_raw, data_chunks, data_bytes
+
+
+def read_pickle(filename):
+    with open(filename, 'r') as yencfile:
+        data_chunks, data_bytes = cPickle.load(yencfile)
+    return ''.join(data_chunks), data_chunks, data_bytes
+
 
 def sabyenc_wrapper(data_chunks, data_bytes):
     """ CRC's are """

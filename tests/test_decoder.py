@@ -1,5 +1,6 @@
 import pytest
 import sabyenc
+import glob
 from testsupport import *
 
 def test_regular():
@@ -83,7 +84,11 @@ def test_no_filename():
         sabyenc_wrapper(data_chunks, data_bytes)
     assert 'Could not get filename' in str(excinfo.value)
 
-
+def test_crc_picles():
+    all_crc_fails = glob.glob('tests/yencfiles/crc_*')
+    for fname in all_crc_fails:
+        data_plain, data_chunks, data_bytes = read_pickle(fname)
+        assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
 
 
 
