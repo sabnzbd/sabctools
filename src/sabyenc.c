@@ -238,10 +238,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
                         likely that the yend part is on the next line
                         and thus we would miss it
                     */
-                    if(*cur_char+1 == ZERO && list_index+1 < num_lines) {
-                        list_index++;
-                        // Get reference to the new line
-                        cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
+                    if(*(cur_char+1) == ZERO && list_index+1 < num_lines) {
+                        // Quick and dirty check if it's in next line
+                        crc_holder = PyString_AsString(PyList_GetItem(Py_input_list, list_index+1));
+                        // If that's not the case, we don't want to mess with the regular flow!!
+                        if(!strncmp(crc_holder, "yend", 4)) {
+                            cur_char = crc_holder;
+                        }
                     }
 
                     // Find it!
@@ -333,15 +336,16 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
     char *search_placeholder;
     int cur_len;
     int start_index;
-    int num_lines = PyList_Size(Py_input_list);
+    int init_index = *cur_index;
+    int max_extra_lines = PyList_Size(Py_input_list) - 1;
 
     // First we try to do a fast location
     start_loc = strstr(*cur_char, search_term);
 
     // We didn't find it..
     if(!start_loc) {
-        // We do maximum of 5 times extra lines, otherwise to slow
-        num_lines = (*cur_index+5 > num_lines-1) ?  num_lines-1 : *cur_index+5;
+        // We do maximum of 3 times extra lines, otherwise to slow
+        max_extra_lines = (*cur_index+3 >= max_extra_lines) ?  max_extra_lines : *cur_index+3;
 
         // Start by adding the current string to the placeholder
         cur_len = strlen(*cur_char)+1;
@@ -349,7 +353,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
         strcpy(search_placeholder, *cur_char);
 
         // Add the next item and try again
-        while(!start_loc && *cur_index < num_lines) {
+        while(!start_loc && *cur_index < max_extra_lines) {
             // Need to get the next one
             *cur_index = *cur_index+1;
             next_string = PyString_AsString(PyList_GetItem(Py_input_list, *cur_index));
@@ -378,8 +382,8 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
             // Point to the location in the item from the list
             start_loc = next_string + start_index;
         } else {
-            // Decrease the index again just to be sure
-            *cur_index -= num_lines;
+            // Decrease the index to where we begun
+            *cur_index = init_index;
         }
 
         // Cleanup
