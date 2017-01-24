@@ -198,7 +198,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
         }
 
         // How many bytes can be checked safely?
-        safe_nr_bytes = part_size ? part_size - 200 : 0;
+        safe_nr_bytes = part_size ? part_size - 50 : 0;
 
         /*
             During the loop we need to take care of special cases.
@@ -238,7 +238,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
                         likely that the yend part is on the next line
                         and thus we would miss it
                     */
-                    if(*(cur_char+1) == ZERO && list_index+1 < num_lines) {
+                    if(*cur_char+1 == ZERO && list_index+1 < num_lines) {
                         list_index++;
                         // Get reference to the new line
                         cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
