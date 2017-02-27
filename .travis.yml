@@ -1,24 +1,27 @@
 notifications:
   email: false
-
 matrix:
   include:
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686
-           PRE_CMD=linux32
-
+  - sudo: required
+    services:
+    - docker
+    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
+  - sudo: required
+    services:
+    - docker
+    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686 PRE_CMD=linux32
 install:
-  - docker pull $DOCKER_IMAGE
-
+- docker pull $DOCKER_IMAGE
 script:
-  - ls -al
-  - mkdir wheelhouse
-  - docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/travis/build-wheels.sh
-  - ls -al wheelhouse/
-  - ls -al
+- ls -al
+- mkdir wheelhouse
+- docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/travis/build-wheels.sh
+- ls -al wheelhouse/
+deploy:
+  provider: pypi
+  user: Safihre
+  password:
+    secure: WkxVXp6FGoPI2osNCvlbl/wlUaBngUMnfSc+MO6uH2WkqjtPkA88iPZ/uowBrCufvEb47mdR02Gq7xaUd6thqGiUeUJc+hkZs3ToHg3kacPtrJX2dpS50Xf09teT5X64sp1uatBqQgNKeU8f4Q0W/BUfii5LnvMU3z0GCNZ8DnuyKZHmUeae0x9uUyO0ze3EYDQnkmXQK2gjeYGXrGha/33bFz5o5+6tPMnUblNpr5tIBNTAjQclObSfHtKpOjDAujAxLoYxOCph4E/lWd139fCjMXTdNrRb3NLgCIFr3Ytian24c+O7lsuVK8kc1m6MVXpcO6fB3Rr3dIzaHzjyqtNO+L0Wv+ORgBhlrzVQcvpUcdiJbQ35q15Pmtx7rzoAfa0KRjU5wDmzFUJx8MLrQwwzd/fW4KplU3vcrJ/lyIo37QaLkdRlPsH7HIB+eLBV0Z3n67F8zPCDRnNjahKB1L4UWS1PZZgo0d30/LSIZc2MzFFl2GjWTbbr0vsiL9Nrv32dSR7eWQULsnbGNIef/eVwhhsHRcO3QkluvFxpaN26pCKY4vIM3/Q0aPKhQBlQahQ9Hpb8ltW/7yrgCL/h215yPyS0opgCTiX4z8RvfERkEh44rtu4OOCZF77Wddg5s6SoAN084uw9vXMHxIrEM0XpK7/PtYQdm+fc8kAtfd4=
+  distributions: bdist_wheel
+#  on:
+#    tags: true
