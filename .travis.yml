@@ -22,4 +22,4 @@ script:
 - ls -al wheelhouse/
 - pip install --upgrade pip
 - pip install twine
-- twine upload --repository-url https://upload.pypi.org/legacy/ -u Safihre -p $pypassword wheelhouse/*
+- twine upload --repository-url https://upload.pypi.org/legacy/ --skip-existing -u Safihre -p $pypassword wheelhouse/*
