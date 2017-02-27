@@ -9,12 +9,6 @@ for PYBIN in /opt/python/cp27*/bin; do
     "${PYBIN}/pip" wheel /io/ -w wheelhouse/
 done
 
-
-# Compile wheels for all platforms
-#for PYBIN in /opt/python/*/bin; do
-#    "${PYBIN}/pip" wheel /io/ -w wheelhouse/
-#done
-
 # Bundle external shared libraries into the wheels
 for whl in wheelhouse/*.whl; do
     auditwheel repair "$whl" -w /io/wheelhouse/
