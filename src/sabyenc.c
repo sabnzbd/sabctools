@@ -73,13 +73,12 @@ static uInt crc_tab[256] = {
     0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
     0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
-static char* argnames[] = {"infile", "outfile", "bytez", NULL};
 
 /* Function declarations */
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
 void initsabyenc(void);
-static int decode_buffer_usenet(PyObject *, Byte *, int, Byte **, Crc32 *, uInt *,  Bool *);
+static int decode_buffer_usenet(PyObject *, char *, int, char **, Crc32 *, uInt *,  Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 
 /* Python API requirements */
@@ -101,22 +100,22 @@ static void crc_update(Crc32 *crc, uInt c) {
     crc->bytes++;
 }
 
-static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, int num_bytes_reserved,
-                                Byte **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct) {
+static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
+                                char **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct) {
     // For the list
-    int num_lines;
+    Py_ssize_t num_lines;
     int list_index = 0;
 
     // Search variables
     char *cur_char; // Pointer to search result
     char *start_loc; // Pointer to current char
     char *end_loc;
-    char *crc_holder;
+    char *crc_holder = NULL;
 
     // Other vars
-    Byte byte;
-    uInt part_begin = 0;
-    uInt part_size = 0;
+    char byte;
+    int part_begin = 0;
+    int part_size = 0;
     int decoded_bytes = 0;
     int safe_nr_bytes = 0;
     Bool escape_char = 0;
@@ -158,7 +157,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             for(end_loc = start_loc; *end_loc != CR && *end_loc != LF && *end_loc != ZERO; end_loc++);
 
             // Now copy this part to the output
-            *filename_out = (Byte *)calloc(end_loc - start_loc + 1, sizeof(Byte));
+            *filename_out = (char *)calloc(end_loc - start_loc + 1, sizeof(char));
 
             // Saftey check, required in case the allocation fails
             if(!*filename_out) {
@@ -183,15 +182,27 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
             start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
             if(start_loc) {
                 part_begin = strtol(cur_char, NULL, 0);
+
+                // Find part-end
+                start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
+                if(start_loc) {
+                    part_size = strtol(cur_char, &start_loc, 0) - part_begin + 1;
+                }
             }
 
-            // Find part-begin
-            start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
-            if(start_loc) {
-                part_size = strtol(cur_char, NULL, 0) - part_begin + 1;
+            /*
+                Like anything also this part can be split over multiple
+                lines and thus we need to be aware of false values. In those
+                cases we ignore the information and set a very safe treshold.
+                It can also be that the newline (=start of data) is in the next chunk.
+            */
+            if((part_size <= 0  || part_size > num_bytes_reserved || *start_loc == ZERO) && num_lines > 1) {
+                part_size = (int)(num_bytes_reserved*0.75);
+                list_index = 1 ? num_lines > 1 : 0;
+                start_loc = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
             }
 
-            // Skip over everything untill end of line
+            // Skip over everything untill end of line, where the content starts
             for(end_loc = start_loc; *end_loc != LF && *end_loc != CR && *end_loc != ZERO; end_loc++);
             // Move pointer
             cur_char = end_loc;
@@ -258,10 +269,10 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
                         */
                         if(list_index+1 < num_lines) {
                             // Let's add the extra line to be sure
-                            crc_holder = (Byte *) calloc(strlen(cur_char)+1, sizeof(Byte *));
+                            crc_holder = (char *) calloc(strlen(cur_char)+1, sizeof(char *));
                             strcpy(crc_holder, cur_char);
                             cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index+1));
-                            crc_holder = (Byte *) realloc(crc_holder, strlen(cur_char)+strlen(crc_holder)+1);
+                            crc_holder = (char *) realloc(crc_holder, strlen(cur_char)+strlen(crc_holder)+1);
                             strcat(crc_holder, cur_char);
                             cur_char = crc_holder;
                         }
@@ -331,13 +342,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, Byte *output_buffer, in
 
 static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, char **cur_char, int *cur_index) {
     // Temp variables
-    char *next_string;
+    char *next_string = NULL;
     char *start_loc = NULL;
     char *search_placeholder;
-    int cur_len;
+    size_t cur_len;
     int start_index;
     int init_index = *cur_index;
-    int max_extra_lines = PyList_Size(Py_input_list) - 1;
+    Py_ssize_t max_extra_lines = PyList_Size(Py_input_list) - 1;
 
     // First we try to do a fast location
     start_loc = strstr(*cur_char, search_term);
@@ -349,7 +360,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
 
         // Start by adding the current string to the placeholder
         cur_len = strlen(*cur_char)+1;
-        search_placeholder = (Byte *) calloc(cur_len, sizeof(Byte *));
+        search_placeholder = (char *) calloc(cur_len, sizeof(char *));
         strcpy(search_placeholder, *cur_char);
 
         // Add the next item and try again
@@ -360,7 +371,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
 
             // Reserve the next bit
             cur_len = cur_len + strlen(next_string);
-            search_placeholder = (Byte *) realloc(search_placeholder, cur_len);
+            search_placeholder = (char *) realloc(search_placeholder, cur_len);
             strcat(search_placeholder, next_string);
 
             // Try to find it again
@@ -374,7 +385,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
         */
         if(start_loc) {
             // How much in the new string are we?
-            start_index = (start_loc - search_placeholder) - (strlen(search_placeholder) - strlen(next_string));
+            start_index = (int)(start_loc - search_placeholder) - (int)(strlen(search_placeholder) - strlen(next_string));
             // Just make sure it's valid
             if(start_index < 0 || start_index > (int)strlen(next_string)) {
                 start_loc = NULL;
@@ -410,13 +421,13 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
 
     // CRC
     Crc32 crc;
-    uInt crc_yenc;
+    uInt crc_yenc = 0;
     Bool crc_correct = 0;
     uInt crc_value = 0xffffffffll;
 
     // Buffers
-    Byte *output_buffer = NULL;
-    Byte *filename_out = NULL;
+    char *output_buffer = NULL;
+    char *filename_out = NULL;
     uInt output_len = 0;
     int num_bytes_reserved;
 
@@ -433,7 +444,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
 
     // Reserve the output buffer, 10% more just to be safe
     num_bytes_reserved = (int)(num_bytes_reserved*1.10);
-    output_buffer = (Byte *)malloc(num_bytes_reserved);
+    output_buffer = (char *)malloc(num_bytes_reserved);
     if(!output_buffer) {
         retval = PyErr_NoMemory();
         return NULL;

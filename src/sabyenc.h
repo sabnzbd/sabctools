@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "2.7.0"
+#define SABYENC_VERSION "2.8.0"
 
 /* Constants */
 #define LINESIZE    128
@@ -40,7 +40,6 @@
 /* Customized types */
 typedef unsigned long uLong;
 typedef unsigned int uInt;
-typedef unsigned char Byte;
 typedef int Bool;
 
 /* Functions */

@@ -19,7 +19,12 @@ def read_and_split(filename, chunk_size=14):
 
 def read_pickle(filename):
     with open(filename, 'r') as yencfile:
-        data_chunks, data_bytes = cPickle.load(yencfile)
+        try:
+            data_chunks, data_bytes = cPickle.load(yencfile)
+        except:
+            # Reset the pointer and try again
+            yencfile.seek(0)
+            data_chunks, data_bytes, lines = cPickle.load(yencfile)
     return ''.join(data_chunks), data_chunks, data_bytes
 
 
