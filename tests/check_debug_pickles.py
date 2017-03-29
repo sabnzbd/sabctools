@@ -14,7 +14,7 @@ import binascii
 import sys
 import json
 
-all_crc_fails = glob.glob('./tests/debugfiles/*_*')
+all_crc_fails = glob.glob('./tests/debugfiles/special_*')
 
 
 def yCheck(data):
@@ -82,4 +82,10 @@ for fname in all_crc_fails:
     data_p = open(fname, "r")
     data_chunks, data_size, lines = pickle.load(data_p)
     data_p.close()
+
+    data_p = open(fname.replace('special', 'crc'), "r")
+    data_chunks2, data_size2, lines2 = pickle.load(data_p)
+    data_p.close()
+
+
     import pdb; pdb.set_trace()  # breakpoint fe42284c //

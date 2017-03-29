@@ -114,8 +114,8 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
     // Other vars
     char byte;
-    uInt part_begin = 0;
-    uInt part_size = 0;
+    int part_begin = 0;
+    int part_size = 0;
     int decoded_bytes = 0;
     int safe_nr_bytes = 0;
     Bool escape_char = 0;
@@ -182,15 +182,27 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
             if(start_loc) {
                 part_begin = strtol(cur_char, NULL, 0);
+
+                // Find part-end
+                start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
+                if(start_loc) {
+                    part_size = strtol(cur_char, &start_loc, 0) - part_begin + 1;
+                }
             }
 
-            // Find part-begin
-            start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
-            if(start_loc) {
-                part_size = strtol(cur_char, NULL, 0) - part_begin + 1;
+            /*
+                Like anything also this part can be split over multiple
+                lines and thus we need to be aware of false values. In those
+                cases we ignore the information and set a very safe treshold.
+                It can also be that the newline (=start of data) is in the next chunk.
+            */
+            if((part_size <= 0  || part_size > num_bytes_reserved || *start_loc == ZERO) && num_lines > 1) {
+                part_size = (int)(num_bytes_reserved*0.75);
+                list_index = 1 ? num_lines > 1 : 0;
+                start_loc = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
             }
 
-            // Skip over everything untill end of line
+            // Skip over everything untill end of line, where the content starts
             for(end_loc = start_loc; *end_loc != LF && *end_loc != CR && *end_loc != ZERO; end_loc++);
             // Move pointer
             cur_char = end_loc;

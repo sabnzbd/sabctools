@@ -16,7 +16,7 @@ import sys
 import testsupport
 import json
 
-all_crc_fails = glob.glob('./*_*')
+all_crc_fails = glob.glob('./tests/yencfiles/crc_*')
 
 failed_checks = 0
 
@@ -28,7 +28,11 @@ for fname in all_crc_fails:
     print '\n\n ======================================= \n\n'
     print fname
     data_p = open(fname, "r")
-    data_chunks, data_size = pickle.load(data_p)
+    try:
+        data_chunks, data_size, lines = pickle.load(data_p)
+    except:
+        data_p.seek(0)
+        data_chunks, data_size = pickle.load(data_p)
     data_p.close()
 
     """
@@ -37,9 +41,13 @@ for fname in all_crc_fails:
     output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_size)
     print 'Filename:', output_filename
     print 'Size', len(output_buffer)
+    print 'NZB size', data_size
     print 'CRC Calc:', crc
     print 'CRC Yenc:', crc_yenc
     print 'CRC Bool:', crc_correct
+    if not crc_correct:
+        import pdb; pdb.set_trace()  # breakpoint 492ae7f3 //
+
 
     """
     Validate using _yenc
