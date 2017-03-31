@@ -13,8 +13,9 @@ import re
 import binascii
 import sys
 import json
+import sabyenc
 
-all_crc_fails = glob.glob('./tests/yencfiles/special_*')
+all_crc_fails = glob.glob('./tests/debugfiles/crc_*')
 
 
 def yCheck(data):
@@ -83,9 +84,7 @@ for fname in all_crc_fails:
     data_chunks, data_size, lines = pickle.load(data_p)
     data_p.close()
 
-    data_p = open(fname.replace('special', 'crc'), "r")
-    data_chunks2, data_size2, lines2 = pickle.load(data_p)
-    data_p.close()
-
+    output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_size)
+    print crc_correct
 
     import pdb; pdb.set_trace()  # breakpoint fe42284c //

@@ -186,7 +186,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                 // Find part-end
                 start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
                 if(start_loc) {
-                    part_size = strtol(cur_char, &start_loc, 0) - part_begin + 1;
+                    part_size = strtol(cur_char, &cur_char, 0) - part_begin + 1;
                 }
             }
 
@@ -196,10 +196,15 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                 cases we ignore the information and set a very safe treshold.
                 It can also be that the newline (=start of data) is in the next chunk.
             */
-            if((part_size <= 0  || part_size > num_bytes_reserved || *start_loc == ZERO) && num_lines > 1) {
+            if(part_size <= 0  || part_size > num_bytes_reserved || *cur_char == ZERO) {
+                // Set safe value
                 part_size = (int)(num_bytes_reserved*0.75);
-                list_index = 1 ? num_lines > 1 : 0;
-                start_loc = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
+                // We only move to next section if we didn't find "end=" yet
+                // If we found "end=" it means the value we found was just to small
+                if((part_size > num_bytes_reserved || *cur_char == ZERO) && (list_index + 1 < num_lines)) {
+                    list_index = list_index+1;
+                    start_loc = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
+                }
             }
 
             // Skip over everything untill end of line, where the content starts
