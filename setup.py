@@ -46,7 +46,7 @@ setup(
     ],
     description     = "yEnc Module for Python modified for SABnzbd",
     long_description = """
-yEnc Encoding/Decoding for Python
+yEnc Decoding for Python
 ---------------------------------
 
 Mofied the original yenc module by Alessandro Duca for use within SABnzbd.

@@ -1,4 +1,4 @@
-SABYenc - yEnc Encoding/Decoding for Python
+SABYenc - yEnc Decoding for Python
 ===============================
 
 Mofied the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
