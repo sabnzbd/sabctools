@@ -178,6 +178,9 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
         // Is there a multi-part indicator?
         start_loc = find_text_in_pylist(Py_input_list, "=ypart", &cur_char, &list_index);
         if(start_loc) {
+            // Reset size, so we for sure don't use the previously found "size=" value
+            part_size = 0;
+
             // Find part-begin
             start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
             if(start_loc) {

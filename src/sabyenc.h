@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "2.9.0"
+#define SABYENC_VERSION "2.9.1"
 
 /* Constants */
 #define LINESIZE    128
