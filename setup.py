@@ -26,13 +26,13 @@ from setuptools import setup, Extension
 
 setup(
     name            = "sabyenc",
-    version         = "2.9.1",
+    version         = "3.0.0",
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
     url             = "https://github.com/sabnzbd/sabnzbd-yenc",
     license         = "LGPLv3",
     package_dir     = {'sabyenc': 'src'},
-    ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
+    ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2", "-Wall"])],
     classifiers     = [
         "Programming Language :: Python",
         "Programming Language :: Python :: 2.7",

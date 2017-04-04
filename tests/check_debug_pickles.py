@@ -83,8 +83,8 @@ for fname in all_crc_fails:
     data_p = open(fname, "r")
     data_chunks, data_size, lines = pickle.load(data_p)
     data_p.close()
+    import pdb; pdb.set_trace()  # breakpoint 612b4eac //
 
     output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_size)
     print crc_correct
 
-    import pdb; pdb.set_trace()  # breakpoint fe42284c //
