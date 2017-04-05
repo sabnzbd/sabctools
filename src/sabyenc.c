@@ -115,6 +115,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
     // Other vars
     char byte;
+    int part_begin = 0;
     int part_size = 0;
     int decoded_bytes = 0;
     int safe_nr_bytes = 0;
@@ -168,14 +169,14 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             // Find part-begin
             start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
             if(start_loc) {
-                // Move over a bit
-                part_size = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
+                // Get begin
+                part_begin = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
 
                 // Find part-end
                 start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
                 if(start_loc) {
                     // Move over a bit
-                    part_size = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
+                    part_size = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0) - part_begin + 1;
                 }
             }
 
