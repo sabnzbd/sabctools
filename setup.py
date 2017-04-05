@@ -32,7 +32,7 @@ setup(
     url             = "https://github.com/sabnzbd/sabnzbd-yenc",
     license         = "LGPLv3",
     package_dir     = {'sabyenc': 'src'},
-    ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2", "-Wall"])],
+    ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
     classifiers     = [
         "Programming Language :: Python",
         "Programming Language :: Python :: 2.7",
