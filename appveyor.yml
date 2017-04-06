@@ -25,4 +25,4 @@ after_test:
 build: off
 
 on_success:
-  - "%PYTHON%\\python.exe -m twine upload --repository-url https://upload.pypi.org/legacy/ --skip-existing -u Safihre -p %pypassword% dist/*"
+  - "%PYTHON%\\python.exe -m twine upload --repository-url https://pypi.python.org/pypi --skip-existing -u Safihre -p %pypassword% dist/*"
