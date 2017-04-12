@@ -1,7 +1,7 @@
 SABYenc - yEnc Decoding for Python
 ===============================
 
-Mofied the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
+Modified the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
 for use within SABnzbd.
 
 The module was extended to do header parsing and full yEnc decoding from a Python
