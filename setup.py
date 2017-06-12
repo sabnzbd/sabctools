@@ -30,7 +30,7 @@ setup(
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
     url             = "https://github.com/sabnzbd/sabnzbd-yenc",
-    license         = "LGPLv3",
+    license         = "GPLv3",
     package_dir     = {'sabyenc': 'src'},
     ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
     classifiers     = [
