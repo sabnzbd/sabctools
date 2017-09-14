@@ -27,6 +27,9 @@
 /* Version information */
 #define SABYENC_VERSION "3.0.2"
 
+/* Do we CRC check? */
+#define CRC_CHECK   0
+
 /* Constants */
 #define LINESIZE    128
 #define ZERO        0x00

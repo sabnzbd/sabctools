@@ -98,7 +98,7 @@ static void crc_init(Crc32 *crc, uInt value) {
 }
 
 static void crc_update(Crc32 *crc, uInt c) {
-    crc->crc=crc_tab[(crc->crc^c)&0xff]^((crc->crc>>8)&0xffffff);
+    crc->crc = crc_tab[(crc->crc^c)&0xff]^((crc->crc>>8)&0xffffff);
     crc->bytes++;
 }
 
@@ -242,6 +242,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
                     // Find it!
                     if (!strncmp(cur_char, "=y", 2) || !strncmp(cur_char, "yend", 4)) {
+#if CRC_CHECK
                         // Find CRC
                         start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
 
@@ -257,6 +258,10 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                                 *crc_correct = 1;
                             }
                         }
+#else
+                        // Overwrite if we don't check CRC
+                        *crc_correct = 1;
+#endif
                         break;
                     }
                 }
@@ -292,8 +297,11 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             // Place the byte and go to the next
             output_buffer[decoded_bytes] = byte;
             decoded_bytes++;
-            crc_update(crc, byte);
 
+#if CRC_CHECK
+            // Check CRC value
+            crc_update(crc, byte);
+#endif
             // Saftey check
             if(decoded_bytes >= num_bytes_reserved) {
                 break;
