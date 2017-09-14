@@ -270,11 +270,13 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             } else if(*cur_char == LF) {
                 double_point_escape = 1;
                 continue;
-            } else if(double_point_escape == 2 && *cur_char == DOT) {
-                // We found "\n.."! Ignore that second dot.
-                double_point_escape = 0;
-                continue;
             } else if(*cur_char == DOT) {
+                // "The NNTP-protocol requires to double a dot in the first colum when a line is sent"
+                // We found "\n.."! Ignore that second dot.
+                if(double_point_escape == 2) {
+                    double_point_escape = 0;
+                    continue;
+                }
                 // Special case for "\n.." that can be split between list items
                 if(double_point_escape == 1) {
                     double_point_escape = 2;
