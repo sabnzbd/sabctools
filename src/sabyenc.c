@@ -259,8 +259,12 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                             }
                         }
 #else
-                        // Overwrite if we don't check CRC
-                        *crc_correct = 1;
+                        // Do a simple check based on size, faster than CRC
+                        if(part_size != decoded_bytes) {
+                            *crc_correct = 0;
+                        } else {
+                            *crc_correct = 1;
+                        }
 #endif
                         break;
                     }
