@@ -18,9 +18,9 @@ install:
 
 after_test:
   # This step builds your wheels.
-  # You need to use %PYTHON% to get the correct
-  # interpreter
+  # You need to use %PYTHON% to get the correct interpreter
   - "%PYTHON%\\python.exe setup.py bdist_wheel"
+  - "%PYTHON%\\python.exe setup.py sdist"
 
 build: off
 
