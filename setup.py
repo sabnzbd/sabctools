@@ -26,7 +26,7 @@ from setuptools import setup, Extension
 
 setup(
     name            = "sabyenc",
-    version         = "3.0.2",
+    version         = "3.1.0",
     author          = "Safihre",
     author_email    = "safihre@sabnzbd.org",
     url             = "https://github.com/sabnzbd/sabnzbd-yenc",
@@ -39,8 +39,8 @@ setup(
         "Programming Language :: C",
         "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
         "Operating System :: Unix",
-        "Development Status :: 4 - Beta",
-        "Environment :: Other Environment",
+        "Development Status :: 5 - Production/Stable",
+        "Environment :: Plugins",
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Communications :: Usenet News"
     ],
