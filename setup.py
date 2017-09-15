@@ -33,6 +33,7 @@ setup(
     license         = "LGPLv3",
     package_dir     = {'sabyenc': 'src'},
     ext_modules     = [Extension("sabyenc", ["src/sabyenc.c"], extra_compile_args=["-O2"])],
+    headers         = ['src/sabyenc.h'],
     classifiers     = [
         "Programming Language :: Python",
         "Programming Language :: Python :: 2.7",

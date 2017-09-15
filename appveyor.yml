@@ -13,8 +13,7 @@ environment:
 
 install:
   # We need wheel installed to build wheels
-  - "%PYTHON%\\python.exe -m pip install wheel"
-  - "%PYTHON%\\python.exe -m pip install twine"
+  - "%PYTHON%\\python.exe -m pip install --upgrade setuptools wheel twine"
 
 after_test:
   # This step builds your wheels.
