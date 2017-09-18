@@ -15,7 +15,7 @@ from testsupport import *
 nr_runs = 500
 
 # Read some data (can pick any of the files from the yencfiles folder)
-data_plain, data_chunks, data_bytes = read_pickle('tests/yencfiles/crc_5nCweVA4aKnlBTG1s0K8_4o22@JBinUp.local')
+data_plain, data_chunks, data_bytes = read_pickle('tests/yencfiles/crc_QDnu3FWODC48Sphi9dSF_5o22@JBinUp.local')
 
 ###################
 # SUPPORT FUNCTIONS

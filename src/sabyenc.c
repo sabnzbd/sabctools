@@ -114,7 +114,6 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     char *crc_holder = NULL;
 
     // Other vars
-    char byte;
     int part_begin = 0;
     int part_size = 0;
     int decoded_bytes = 0;
@@ -218,7 +217,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
             // Special charaters
             if(escape_char) {
-                byte = (*cur_char - 106);
+                *output_buffer++ = (*cur_char - 106);
                 escape_char = 0;
                 double_point_escape = 0;
             } else if(*cur_char == ESC) {
@@ -242,7 +241,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
                     // Find it!
                     if (!strncmp(cur_char, "=y", 2) || !strncmp(cur_char, "yend", 4)) {
-#if CRC_CHECK
+                        #if CRC_CHECK
                         // Find CRC
                         start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
 
@@ -258,14 +257,14 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                                 *crc_correct = 1;
                             }
                         }
-#else
+                        #else
                         // Do a simple check based on size, faster than CRC
                         if(part_size != decoded_bytes) {
                             *crc_correct = 0;
                         } else {
                             *crc_correct = 1;
                         }
-#endif
+                        #endif
                         break;
                     }
                 }
@@ -291,23 +290,23 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                     double_point_escape = 2;
                 }
                 // We do include this dot
-                byte = (*cur_char - 42);
+                *output_buffer++ = (*cur_char - 42);
             } else {
-                byte = (*cur_char - 42);
+                *output_buffer++ = (*cur_char - 42);
                 // Reset exception
                 double_point_escape = 0;
             }
 
-            // Place the byte and go to the next
-            output_buffer[decoded_bytes] = byte;
+            // Increase byte counter for saftey check
             decoded_bytes++;
 
-#if CRC_CHECK
+            #if CRC_CHECK
             // Check CRC value
             crc_update(crc, byte);
-#endif
+            #endif
+
             // Saftey check
-            if(decoded_bytes >= num_bytes_reserved) {
+            if(decoded_bytes == num_bytes_reserved) {
                 break;
             }
         }
