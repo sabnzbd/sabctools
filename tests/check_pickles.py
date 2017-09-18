@@ -20,9 +20,6 @@ all_crc_fails = glob.glob('./tests/yencfiles/crc_*')
 
 failed_checks = 0
 
-# Turn on to rename succesfull files
-rename_on_success = True
-
 for fname in all_crc_fails:
     # Open file
     print '\n\n ======================================= \n\n'
@@ -39,8 +36,9 @@ for fname in all_crc_fails:
     First we check SABYenc
     """
     output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_size)
+    print '\n---- SABYenc output ----\n'
     print 'Filename:', output_filename
-    print 'Size', len(output_buffer)
+    print 'Size:', len(output_buffer)
     print 'NZB size', data_size
     print 'CRC Calc:', crc
     print 'CRC Yenc:', crc_yenc
@@ -50,14 +48,13 @@ for fname in all_crc_fails:
     Validate using _yenc
     """
     data = []
-    for chunk in data_chunks:
-        new_lines = chunk.split('\r\n')
-        for i in xrange(len(new_lines)):
-            if new_lines[i][:2] == '..':
-                new_lines[i] = new_lines[i][1:]
-        if new_lines[-1] == '.':
-            new_lines = new_lines[1:-1]
-        data.extend(new_lines)
+    new_lines = ''.join(data_chunks).split('\r\n')
+    for i in xrange(len(new_lines)):
+        if new_lines[i][:2] == '..':
+            new_lines[i] = new_lines[i][1:]
+    if new_lines[-1] == '.':
+        new_lines = new_lines[1:-1]
+    data.extend(new_lines)
 
     # Filter out empty ones
     data = filter(None, data)
@@ -79,12 +76,12 @@ for fname in all_crc_fails:
     else:
         _partcrc = None
 
-    if not crc_correct and (_partcrc == partcrc):
+    if output_buffer != decoded_data:
         # Discrepancy between _yenc and sabyenc
         failed_checks += 1
-        print ''
+        print '\n---- Old-method output ----\n'
         print 'Filename:', ybegin['name']
-        print 'Size', len(decoded_data)
+        print 'Size:', len(decoded_data)
         print 'CRC Calc:', _partcrc
         print 'CRC Yenc:', partcrc
 
@@ -96,10 +93,6 @@ for fname in all_crc_fails:
                 print output_buffer[n]
                 print decoded_data[n]
                 break
-
-    # Rename successes?
-    elif rename_on_success:
-        os.rename(fname, fname.replace('data_', 'crc_'))
 
 print ''
 print 'FAILS: ', failed_checks

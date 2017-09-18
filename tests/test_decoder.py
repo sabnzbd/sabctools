@@ -84,13 +84,17 @@ def test_no_filename():
         sabyenc_wrapper(data_chunks, data_bytes)
     assert 'Could not get filename' in str(excinfo.value)
 
-def test_crc_picles():
+def test_bad_filename_pickle():
+    # This one fails in the old yEnc in different way
+    data_plain, data_chunks, data_bytes = read_pickle('tests/yencfiles/split_filename')
+    decoded_data, filename, crc_correct = sabyenc_wrapper(data_chunks, data_bytes)
+    assert filename == 'Low.Winter.Sun.US.S01E01.720p.BluRay.x264-DEMAND.part04.rar'
+    assert crc_correct == False
+    assert len(decoded_data) == 384000
+
+def test_crc_pickles():
     all_crc_fails = glob.glob('tests/yencfiles/crc_*')
     for fname in all_crc_fails:
         data_plain, data_chunks, data_bytes = read_pickle(fname)
-        # For now only CRC and data-length have to match
-        assert old_yenc(data_plain)[1:2] == sabyenc_wrapper(data_chunks, data_bytes)[1:2]
-
-
-
+        assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
 
