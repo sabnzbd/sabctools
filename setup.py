@@ -18,22 +18,21 @@
  # License along with this library; if not, write to the Free Software
  # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  #=============================================================================
- # 
+ #
 ##=============================================================================
 
-from distutils.core import setup, Extension
+from setuptools import setup, Extension
 
-setup(	
-	name		 = "yenc",
-	version		 = "0.4.0",
-	author		 = "Alessandro Duca",
-	author_email	 = "alessandro.duca@gmail.com",
-        url		 = "https://bitbucket.org/dual75/yenc",
-	license		 = "LGPL",
-        platforms        = ["Unix"],
-	package_dir	 = { '': 'lib' },
-	py_modules	 = ["yenc"],
-	ext_modules	 = [Extension("_yenc",["src/_yenc.c"],extra_compile_args=["-O2","-g"])],
+setup(
+    name            = "yenc",
+    version         = "0.4.0",
+    author          = "Alessandro Duca",
+    author_email    = "alessandro.duca@gmail.com",
+    url             = "https://bitbucket.org/dual75/yenc",
+    license         = "LGPL",
+    package_dir     = { '': 'lib' },
+    py_modules      = ["yenc"],
+    ext_modules     = [Extension("_yenc",["src/_yenc.c"])],
         classifiers      = [
             "Programming Language :: Python",
             "Programming Language :: Python :: 2.5",
@@ -48,18 +47,18 @@ setup(
             "Topic :: Software Development :: Libraries :: Python Modules",
             "Topic :: Communications :: Usenet News"
             ],
-	description	 = "yEnc Module for Python",
+    description     = "yEnc Module for Python",
         long_description = """
 yEnc Encoding/Decoding for Python
 ---------------------------------
 
 This a fairly simple module, it provide only raw yEnc encoding/decoding with
-builitin crc32 calculation. Header parsing, checkings and yenc formatting are 
-left to you (see examples directory for possible implementations). 
+builitin crc32 calculation. Header parsing, checkings and yenc formatting are
+left to you (see examples directory for possible implementations).
 
 Supports encoding and decoding directly to files or to memory buffers
 with helper classes Encoder and Decoder.
 """
 
-	)
+    )
 

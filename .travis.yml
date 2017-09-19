@@ -1,0 +1,29 @@
+notifications:
+  email: false
+
+matrix:
+  include:
+  - sudo: required
+    services:
+    - docker
+    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
+    language: python
+    python: "2.7"
+  - sudo: required
+    services:
+    - docker
+    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686 PRE_CMD=linux32
+    language: python
+    python: "2.7"
+  - os: osx
+
+install:
+- if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then docker pull $DOCKER_IMAGE; fi
+
+script:
+- mkdir wheelhouse
+- if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/travis/build-wheels.sh; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then python setup.py bdist_wheel --dist-dir wheelhouse; fi
+- ls -al wheelhouse/
+- pip install twine
+- twine upload --skip-existing -u Safihre -p $pypassword wheelhouse/*

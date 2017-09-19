@@ -16,15 +16,13 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *=============================================================================
- */ 
+ */
 
 #include <Python.h>
 #include <stdio.h>
 #include <fcntl.h>
-#ifdef __unix__
+#ifndef _WIN32
 #include <unistd.h>
-#elif _WIN32
-#include <io.h>
 #endif
 
 /* Constants			*/
@@ -40,7 +38,7 @@
  * CRLF sequence at the end of each line.
  * This is the maximum encoded size of BLOCK bytes.
  */
-#define LONGBUFF	( 2 * BLOCK / LINESIZE + 1) * ( LINESIZE + 2 ) 
+#define LONGBUFF	( 2 * BLOCK / LINESIZE + 1) * ( LINESIZE + 2 )
 
 #define SMALLBUFF 	512
 
@@ -69,7 +67,9 @@ typedef unsigned char Byte;
 typedef int Bool;
 
 /* Functions */
+PyObject* encode_file(PyObject*, PyObject*, PyObject*);
 PyObject* decode_file(PyObject*, PyObject*, PyObject*);
+PyObject* encode_string(PyObject* ,PyObject* ,PyObject*);
 PyObject* decode_string(PyObject* ,PyObject* , PyObject*);
 void init_yenc(void);
 
