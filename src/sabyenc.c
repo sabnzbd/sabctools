@@ -241,7 +241,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
                     // Find it!
                     if (!strncmp(cur_char, "=y", 2) || !strncmp(cur_char, "yend", 4)) {
-                        #if CRC_CHECK
+#if CRC_CHECK
                         // Find CRC
                         start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
 
@@ -257,14 +257,14 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                                 *crc_correct = 1;
                             }
                         }
-                        #else
+#else
                         // Do a simple check based on size, faster than CRC
                         if(part_size != decoded_bytes) {
                             *crc_correct = 0;
                         } else {
                             *crc_correct = 1;
                         }
-                        #endif
+#endif
                         break;
                     }
                 }
@@ -278,6 +278,28 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             } else if(*cur_char == LF) {
                 double_point_escape = 1;
                 continue;
+
+            /*
+                "The NNTP-protocol requires to double a dot
+                in the first colum when a line is sent"
+
+                For some magical reason clang gets 2x slower
+                overall when using the second approach.
+                It does make things 15% faster for gcc and msvc
+                So we take this convoluted approach to be safe.
+            */
+#ifdef __clang__
+            } else if(double_point_escape == 2 && *cur_char == DOT) {
+                //
+                // We found "\n.."! Ignore that second dot.
+                double_point_escape = 0;
+                continue;
+            } else if(*cur_char == DOT) {
+                // Special case for "\n.." that can be split between list items
+                if(double_point_escape == 1) {
+                    double_point_escape = 2;
+                }
+#else
             } else if(*cur_char == DOT) {
                 // "The NNTP-protocol requires to double a dot in the first colum when a line is sent"
                 // We found "\n.."! Ignore that second dot.
@@ -289,6 +311,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                 if(double_point_escape == 1) {
                     double_point_escape = 2;
                 }
+#endif
                 // We do include this dot
                 *output_buffer++ = (*cur_char - 42);
             } else {
@@ -300,10 +323,10 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             // Increase byte counter for saftey check
             decoded_bytes++;
 
-            #if CRC_CHECK
+#if CRC_CHECK
             // Check CRC value
-            crc_update(crc, byte);
-            #endif
+            crc_update(crc, *(output_buffer-1));
+#endif
 
             // Saftey check
             if(decoded_bytes == num_bytes_reserved) {
