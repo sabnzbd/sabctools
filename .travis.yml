@@ -19,11 +19,13 @@ matrix:
 
 install:
 - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then docker pull $DOCKER_IMAGE; fi
+# On macOS we need to build with GCC, because CLang is somehow much slower
+- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install gcc; fi
 
 script:
 - mkdir wheelhouse
 - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/travis/build-wheels.sh; fi
-- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then python setup.py bdist_wheel --dist-dir wheelhouse; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then env CC=gcc-7 python setup.py bdist_wheel --dist-dir wheelhouse; fi
 - ls -al wheelhouse/
 - pip install twine
 - twine upload --skip-existing -u Safihre -p $pypassword wheelhouse/*

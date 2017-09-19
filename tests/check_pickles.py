@@ -39,7 +39,7 @@ for fname in all_crc_fails:
     print '\n---- SABYenc output ----\n'
     print 'Filename:', output_filename
     print 'Size:', len(output_buffer)
-    print 'NZB size', data_size
+    print 'NZB size:', data_size
     print 'CRC Calc:', crc
     print 'CRC Yenc:', crc_yenc
     print 'CRC Bool:', crc_correct
