@@ -19,7 +19,7 @@
  *=============================================================================
  */
 
-#include "sabyenc.h"
+#include "sabyenc3.h"
 
 /* Typedefs */
 typedef struct {
@@ -77,19 +77,40 @@ static uInt crc_tab[256] = {
 /* Function declarations */
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
-void initsabyenc(void);
+PyMODINIT_FUNC PyInit_sabyenc3(void);
 static int decode_buffer_usenet(PyObject *, char *, int, char **, Crc32 *, uInt *,  Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **, int);
 
-/* Python API requirements */
-static char decode_usenet_chunks_doc[] = "decode_usenet_chunks(list_of_chunks, nr_bytes)";
 
-static PyMethodDef funcs[] = {
-        {"decode_usenet_chunks", (PyCFunction) decode_usenet_chunks, METH_KEYWORDS | METH_VARARGS, decode_usenet_chunks_doc},
-        {NULL, NULL, 0, NULL}
+/* Python API requirements */
+static PyMethodDef sabyenc3_methods[] = {
+    {
+        "decode_usenet_chunks",
+        decode_usenet_chunks,
+        METH_VARARGS,
+        "decode_usenet_chunks(list_of_chunks, nr_bytes)"
+    },
+    {NULL, NULL, 0, NULL}
 };
+
+static struct PyModuleDef sabyenc3_definition = {
+    PyModuleDef_HEAD_INIT,
+    "sabyenc3",
+    "Processing of raw NNTP-yEnc streams for SABnzbd.",
+    -1,
+    sabyenc3_methods
+};
+
+PyMODINIT_FUNC PyInit_sabyenc3(void) {
+    // Initialize and add version information
+    Py_Initialize();
+    PyObject* module = PyModule_Create(&sabyenc3_definition);
+    PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
+    return module;
+}
+
 
 /* Function definitions */
 static void crc_init(Crc32 *crc, uInt value) {
@@ -137,7 +158,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     num_lines = PyList_Size(Py_input_list);
 
     // Get first chunk
-    cur_char = PyString_AsString(PyList_GetItem(Py_input_list, 0));
+    cur_char = PyBytes_AsString(PyList_GetItem(Py_input_list, 0));
 
     // Start of header (which doesn't have to be part of first chunk)
     start_loc = find_text_in_pylist(Py_input_list, "=ybegin", &cur_char, &list_index);
@@ -216,7 +237,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                 }
 
                 // Get reference to the new line
-                cur_char = PyString_AsString(PyList_GetItem(Py_input_list, list_index));
+                cur_char = PyBytes_AsString(PyList_GetItem(Py_input_list, list_index));
             }
 
             // Special charaters
@@ -236,7 +257,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                     */
                     if(*(cur_char+1) == ZERO && list_index+1 < num_lines) {
                         // Quick and dirty check if it's in next line
-                        crc_holder = PyString_AsString(PyList_GetItem(Py_input_list, list_index+1));
+                        crc_holder = PyBytes_AsString(PyList_GetItem(Py_input_list, list_index+1));
                         // If that's not the case, we don't want to mess with the regular flow!!
                         if(!strncmp(crc_holder, "yend", 4)) {
                             cur_char = crc_holder;
@@ -374,7 +395,7 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
         while(!start_loc && *cur_index < max_extra_lines) {
             // Need to get the next one
             *cur_index = *cur_index+1;
-            next_string = PyString_AsString(PyList_GetItem(Py_input_list, *cur_index));
+            next_string = PyBytes_AsString(PyList_GetItem(Py_input_list, *cur_index));
 
             // Reserve the next bit
             cur_len = cur_len + strlen(next_string);
@@ -447,7 +468,7 @@ uLong extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **st
         combi_holder = (char *) calloc(strlen(*start_loc)+1, sizeof(char *));
         strcpy(combi_holder, *start_loc);
         *cur_index = *cur_index+1;
-        item_holder = PyString_AsString(PyList_GetItem(Py_input_list, *cur_index));
+        item_holder = PyBytes_AsString(PyList_GetItem(Py_input_list, *cur_index));
         combi_holder = (char *) realloc(combi_holder, strlen(*start_loc)+strlen(item_holder)+1);
         strcat(combi_holder, item_holder);
 
@@ -505,7 +526,7 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
                     if(*cur_index+1 >= max_lines) return 0;
                     // Need to get the next one
                     *cur_index = *cur_index+1;
-                    *start_loc = end_loc = PyString_AsString(PyList_GetItem(Py_input_list, *cur_index));
+                    *start_loc = end_loc = PyBytes_AsString(PyList_GetItem(Py_input_list, *cur_index));
                 }
             } else {
                 // Expand the result to hold this new bit (plus current char and terminator)
@@ -528,7 +549,7 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
 }
 
 
-PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
+PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // The input/output PyObjects
     PyObject *Py_input_list;
     PyObject *Py_output_buffer;
@@ -564,7 +585,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     if(num_bytes_reserved <= 0) {
         lp_max = (int)PyList_Size(Py_input_list);
         for(lp = 0; lp < lp_max; lp++) {
-            num_bytes_reserved += (int)PyString_Size(PyList_GetItem(Py_input_list, lp));
+            num_bytes_reserved += (int)PyByteArray_GET_SIZE(PyList_GetItem(Py_input_list, lp));
         }
     }
 
@@ -598,7 +619,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     }
 
     // Prepare output
-    Py_output_buffer = PyString_FromStringAndSize((char *)output_buffer, output_len);
+    Py_output_buffer = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
 
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
@@ -612,15 +633,5 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     free(output_buffer);
     free(filename_out);
     return retval;
-}
-
-
-void initsabyenc(void) {
-    // Add module
-    PyObject *module;
-    module = Py_InitModule3("sabyenc", funcs, "Raw yenc operations");
-
-    // Add version
-    PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
 }
 

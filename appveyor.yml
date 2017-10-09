@@ -1,6 +1,3 @@
-# Only build tags
-skip_non_tags: true
-
 environment:
   pypassword:
     secure: fYF+6TvQdqbg7u+c+NraAg==

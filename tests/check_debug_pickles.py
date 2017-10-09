@@ -13,9 +13,9 @@ import re
 import binascii
 import sys
 import json
-import sabyenc
+import sabyenc3
 
-all_crc_fails = glob.glob('./tests/debugfiles/crc_*')
+all_crc_fails = glob.glob("./tests/debugfiles/crc_*")
 
 
 def yCheck(data):
@@ -24,31 +24,31 @@ def yCheck(data):
     yend = None
 
     # Check head
-    for i in xrange(min(40, len(data))):
+    for i in range(min(40, len(data))):
         try:
-            if data[i].startswith('=ybegin '):
+            if data[i].startswith("=ybegin "):
                 splits = 3
-                if data[i].find(' part=') > 0:
+                if data[i].find(" part=") > 0:
                     splits += 1
-                if data[i].find(' total=') > 0:
+                if data[i].find(" total=") > 0:
                     splits += 1
 
                 ybegin = ySplit(data[i], splits)
 
-                if data[i + 1].startswith('=ypart '):
+                if data[i + 1].startswith("=ypart "):
                     ypart = ySplit(data[i + 1])
-                    data = data[i + 2:]
+                    data = data[i + 2 :]
                     break
                 else:
-                    data = data[i + 1:]
+                    data = data[i + 1 :]
                     break
         except IndexError:
             break
 
     # Check tail
-    for i in xrange(-1, -11, -1):
+    for i in range(-1, -11, -1):
         try:
-            if data[i].startswith('=yend '):
+            if data[i].startswith("=yend "):
                 yend = ySplit(data[i])
                 data = data[:i]
                 break
@@ -57,8 +57,11 @@ def yCheck(data):
 
     return ((ybegin, ypart, yend), data)
 
+
 # Example: =ybegin part=1 line=128 size=123 name=-=DUMMY=- abc.par
-YSPLIT_RE = re.compile(r'([a-zA-Z0-9]+)=')
+YSPLIT_RE = re.compile(r"([a-zA-Z0-9]+)=")
+
+
 def ySplit(line, splits=None):
     fields = {}
 
@@ -76,15 +79,19 @@ def ySplit(line, splits=None):
 
     return fields
 
+
 for fname in all_crc_fails:
     # Open file
-    print '\n\n ======================================= \n\n'
-    print fname
-    data_p = open(fname, "r")
+    print("\n\n ======================================= \n\n")
+    print(fname)
+    data_p = open(fname, "rb")
     data_chunks, data_size, lines = pickle.load(data_p)
     data_p.close()
-    import pdb; pdb.set_trace()  # breakpoint 612b4eac //
+    import pdb
 
-    output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc.decode_usenet_chunks(data_chunks, data_size)
-    print crc_correct
+    pdb.set_trace()  # breakpoint 612b4eac //
 
+    output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(
+        data_chunks, data_size
+    )
+    print(crc_correct)

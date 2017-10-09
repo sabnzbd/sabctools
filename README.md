@@ -1,4 +1,4 @@
-SABYenc - yEnc Decoding for Python
+SABYenc 3 - yEnc Decoding for Python 3
 ===============================
 
 Modified the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
@@ -13,7 +13,7 @@ Installing
 ===============================
 As simple as running:
 ```
-pip install sabyenc --upgrade
+pip install sabyenc3 --upgrade
 ```
 When you want to compile from sources, you can run in the `sabyenc` directory:
 ```
