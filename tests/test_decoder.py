@@ -98,3 +98,17 @@ def test_crc_pickles():
         data_plain, data_chunks, data_bytes = read_pickle(fname)
         assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
 
+def test_empty_size_pickles():
+    # When article size is left empty, it should not result in segfaults!
+    data_plain, data_chunks, data_bytes = read_pickle('tests/yencfiles/emptysize_67caae212')
+    decoded_data, filename, crc_correct = sabyenc_wrapper(data_chunks, 0)
+    assert filename == 'Jake.and.the.Never.Land.Pirates.S02E38.480p.hdtv.x264.r05'
+    assert crc_correct == True
+    assert len(decoded_data) == 384000
+
+    # Or when it's an invalid number
+    decoded_data, filename, crc_correct = sabyenc_wrapper(data_chunks, -1)
+    assert filename == 'Jake.and.the.Never.Land.Pirates.S02E38.480p.hdtv.x264.r05'
+    assert crc_correct == True
+    assert len(decoded_data) == 384000
+

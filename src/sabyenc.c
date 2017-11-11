@@ -542,6 +542,8 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     char *filename_out = NULL;
     uInt output_len = 0;
     int num_bytes_reserved;
+    int lp_max;
+    int lp;
 
     // Parse input
     if (!PyArg_ParseTuple(args, "Oi:decode_usenet_chunks", &Py_input_list, &num_bytes_reserved)) {
@@ -552,6 +554,14 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     if(!PyList_Check(Py_input_list)) {
         PyErr_SetString(PyExc_TypeError, "Expected list");
         return NULL;
+    }
+
+    // If we did not get a size, we need to calculate it (slower, but safer)
+    if(num_bytes_reserved <= 0) {
+        lp_max = (int)PyList_Size(Py_input_list);
+        for(lp = 0; lp < lp_max; lp++) {
+            num_bytes_reserved += (int)PyString_Size(PyList_GetItem(Py_input_list, lp));
+        }
     }
 
     // Reserve the output buffer, 10% more just to be safe
