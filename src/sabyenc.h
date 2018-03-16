@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "3.3.2"
+#define SABYENC_VERSION "3.3.3"
 
 /* Do we CRC check? */
 #define CRC_CHECK   0
@@ -41,9 +41,14 @@
 #define DOT         0x2e
 
 /* Customized types */
-typedef unsigned long uLong;
+typedef unsigned long long uLong;
 typedef unsigned int uInt;
 typedef int Bool;
+
+/* Windows doesn't have strtoll */
+#if defined(_MSC_VER)
+#define strtoll _strtoi64
+#endif
 
 /* Functions */
 PyObject* decode_usenet_chunks(PyObject* ,PyObject* , PyObject*);

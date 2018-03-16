@@ -78,10 +78,10 @@ static uInt crc_tab[256] = {
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
 void initsabyenc(void);
-static int decode_buffer_usenet(PyObject *, char *, int, char **, Crc32 *, uInt *,  Bool *);
+static uInt decode_buffer_usenet(PyObject *, char *, uInt, char **, Crc32 *, uInt *,  Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
-int extract_int_from_pylist(PyObject *, int *, char **, char **, int);
+uLong extract_int_from_pylist(PyObject *, int *, char **, char **, int);
 
 /* Python API requirements */
 static char decode_usenet_chunks_doc[] = "decode_usenet_chunks(list_of_chunks, nr_bytes)";
@@ -102,7 +102,7 @@ static void crc_update(Crc32 *crc, uInt c) {
     crc->bytes++;
 }
 
-static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
+static uInt decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, uInt num_bytes_reserved,
                                 char **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct) {
     // For the list
     Py_ssize_t num_lines;
@@ -114,10 +114,10 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     char *crc_holder = NULL;
 
     // Other vars
-    int part_begin = 0;
-    int part_size = 0;
-    int decoded_bytes = 0;
-    int safe_nr_bytes = 0;
+    uLong part_begin = 0;
+    uInt part_size = 0;
+    uInt decoded_bytes = 0;
+    uInt safe_nr_bytes = 0;
     Bool escape_char = 0;
     int double_point_escape = 0;
 
@@ -147,7 +147,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
         start_loc = find_text_in_pylist(Py_input_list, "size=", &cur_char, &list_index);
         if(start_loc) {
             // Move over a bit
-            part_size = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
+            part_size = (uInt)extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
         }
 
         // Find name
@@ -175,14 +175,14 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
                 start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
                 if(start_loc) {
                     // Move over a bit
-                    part_size = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0) - part_begin + 1;
+                    part_size = (uInt)(extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0) - part_begin + 1);
                 }
             }
 
             // We want to make sure it's a valid value
             if(part_size <= 0  || part_size > num_bytes_reserved) {
                 // Set safe value
-                part_size = (int)(num_bytes_reserved*0.75);
+                part_size = (uInt)(num_bytes_reserved*0.75);
             }
 
             // Skip over everything untill end of line, where the content starts
@@ -420,18 +420,18 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
     be split over multiple lines. And thus we need to really
     check that we did not reach the end of a line every time.
 */
-int extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **start_loc, char **cur_char, int crc) {
+uLong extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **start_loc, char **cur_char, int crc) {
     char *enc_loc;
     char *item_holder;
     char *combi_holder;
-    int part_value = 0;
+    uLong part_value = 0;
     Py_ssize_t max_lines = PyList_Size(Py_input_list);
 
     // Crc calculation?
     if(crc) {
         part_value = strtoul(*start_loc, &enc_loc, 16);
     } else {
-        part_value = strtol(*start_loc, &enc_loc, 0);
+        part_value = strtoll(*start_loc, &enc_loc, 0);
     }
 
     // Did we reach the end of a line?
@@ -541,9 +541,9 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
     char *output_buffer = NULL;
     char *filename_out = NULL;
     uInt output_len = 0;
-    int num_bytes_reserved;
-    int lp_max;
-    int lp;
+    uInt num_bytes_reserved;
+    uInt lp_max;
+    uInt lp;
 
     // Parse input
     if (!PyArg_ParseTuple(args, "Oi:decode_usenet_chunks", &Py_input_list, &num_bytes_reserved)) {
@@ -558,14 +558,14 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
 
     // If we did not get a size, we need to calculate it (slower, but safer)
     if(num_bytes_reserved <= 0) {
-        lp_max = (int)PyList_Size(Py_input_list);
+        lp_max = (uInt)PyList_Size(Py_input_list);
         for(lp = 0; lp < lp_max; lp++) {
-            num_bytes_reserved += (int)PyString_Size(PyList_GetItem(Py_input_list, lp));
+            num_bytes_reserved += (uInt)PyString_Size(PyList_GetItem(Py_input_list, lp));
         }
     }
 
     // Reserve the output buffer, 10% more just to be safe
-    num_bytes_reserved = (int)(num_bytes_reserved*1.10);
+    num_bytes_reserved = (uInt)(num_bytes_reserved*1.10);
     output_buffer = (char *)malloc(num_bytes_reserved);
     if(!output_buffer) {
         retval = PyErr_NoMemory();

@@ -112,3 +112,8 @@ def test_empty_size_pickles():
     assert crc_correct == True
     assert len(decoded_data) == 384000
 
+def test_huge_file_pickles():
+    all_crc_fails = glob.glob('tests/yencfiles/huge_file*')
+    for fname in all_crc_fails:
+        data_plain, data_chunks, data_bytes = read_pickle(fname)
+        assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
