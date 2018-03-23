@@ -25,10 +25,13 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "3.3.3"
+#define SABYENC_VERSION "3.3.4"
 
 /* Do we CRC check? */
 #define CRC_CHECK   0
+
+/* Byte-check limit */
+#define END_CHECK_BYTES 50
 
 /* Constants */
 #define LINESIZE    128

@@ -117,3 +117,9 @@ def test_huge_file_pickles():
     for fname in all_crc_fails:
         data_plain, data_chunks, data_bytes = read_pickle(fname)
         assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)
+
+def test_small_file_pickles():
+    all_crc_fails = glob.glob('tests/yencfiles/small_file*')
+    for fname in all_crc_fails:
+        data_plain, data_chunks, data_bytes = read_pickle(fname)
+        assert old_yenc(data_plain) == sabyenc_wrapper(data_chunks, data_bytes)

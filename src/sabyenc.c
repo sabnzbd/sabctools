@@ -190,7 +190,11 @@ static uInt decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, u
         }
 
         // How many bytes can be checked safely?
-        safe_nr_bytes = part_size ? part_size - 50 : 0;
+        if(part_size && part_size > END_CHECK_BYTES) {
+            safe_nr_bytes = part_size - END_CHECK_BYTES;
+        } else {
+            safe_nr_bytes = 0;
+        }
 
         /*
             During the loop we need to take care of special cases.
