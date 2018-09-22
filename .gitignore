@@ -57,3 +57,6 @@ dist
 # Compiled python
 *.py[cod]
 __pycache__
+
+# PyCharm project files
+.idea/
