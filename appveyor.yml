@@ -7,21 +7,29 @@ environment:
     # http://www.appveyor.com/docs/installed-software#python
     # The list here is complete (excluding Python 2.6, which
     # isn't covered by this document) at the time of writing.
-
-    - PYTHON: "C:\\Python27"
-    - PYTHON: "C:\\Python27-x64"
+    - PYTHON: "C:\\Python35"
+    - PYTHON: "C:\\Python35-x64"
+    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python36-x64"
+    - PYTHON: "C:\\Python37"
+    - PYTHON: "C:\\Python37-x64"
 
 install:
   # We need wheel installed to build wheels
-  - "%PYTHON%\\python.exe -m pip install --upgrade setuptools wheel twine"
+  - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
+  - python --version
+  - pip install --upgrade -r tests/requirements.txt
+  - pip install --upgrade setuptools wheel twine
+
+build_script:
+  - python setup.py install
+
+test_script:
+  # First we test before we build the rest
+  - python -m pytest
 
 after_test:
-  # This step builds your wheels.
-  # You need to use %PYTHON% to get the correct interpreter
-  - "%PYTHON%\\python.exe setup.py bdist_wheel"
-  - "%PYTHON%\\python.exe setup.py sdist"
-
-build: off
-
-on_success:
-  - "%PYTHON%\\python.exe -m twine upload --skip-existing -u Safihre -p %pypassword% dist/*"
+  # Passed! Now let's deploy
+  - python setup.py bdist_wheel --dist-dir wheelhouse
+  - python setup.py sdist --dist-dir wheelhouse
+  - python.exe -m twine upload --skip-existing -u Safihre -p %pypassword% wheelhouse/*

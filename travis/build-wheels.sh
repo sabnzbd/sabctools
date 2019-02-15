@@ -4,8 +4,12 @@ set -e -x
 # Install a system package required by our libraries
 yum install -y python-devel
 
-# We only care about Python 2.7
-for PYBIN in /opt/python/cp27*/bin; do
+# Remove the build made by the tests
+rm -Rf /io/dist
+rm -Rf /io/build
+
+# We only care about Python 3.5+
+for PYBIN in /opt/python/cp3*/bin; do
     "${PYBIN}/pip" wheel /io/ -w wheelhouse/
 done
 

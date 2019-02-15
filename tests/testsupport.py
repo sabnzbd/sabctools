@@ -96,14 +96,18 @@ def old_yenc(data_plain):
     # Now we get the true flat data
     flat_yenc_data = b"".join(data)
 
-    decoded_data = b""
+    # Remove the escaped-chars
     for i in (0, 9, 10, 13, 27, 32, 46, 61):
         j = b"=%c" % (i + 64)
         flat_yenc_data = flat_yenc_data.replace(j, b"%c" % i)
 
-    for char in flat_yenc_data:
-        decoded_data += b"%c" % yenc_subtract(char, 42)
+    # Use the much faster translate function to do fast-subtract of 42
+    from_bytes = b"".join([b"%c" % i for i in range(256)])
+    to_bytes = b"".join([b"%c" % ((i + 256 - 42) % 256) for i in range(256)])
+    translate_table = bytes.maketrans(from_bytes, to_bytes)
+    decoded_data = flat_yenc_data.translate(translate_table)
 
+    # Let's get the CRC
     crc = binascii.crc32(decoded_data)
     partcrc = "%08X" % (crc & 2 ** 32 - 1)
 

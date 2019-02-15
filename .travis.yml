@@ -1,6 +1,4 @@
-notifications:
-  email: false
-
+# We split the 32/64bit manylinux1 over the 2 jobs we already run anyway!
 matrix:
   include:
   - os: linux
@@ -10,33 +8,34 @@ matrix:
   - os: linux
     language: python
     python: "3.6"
-    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
+    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686 PRE_CMD=linux32
   - os: linux
     language: python
     dist: "xenial"
     python: "3.7"
-    env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
   - os: osx
     env: HOMEBREW_NO_AUTO_UPDATE=1
 
 install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
-      brew install python gcc;
+      brew install gcc;
     fi;
   - python3 --version
   - python3 -m pip install --upgrade -r tests/requirements.txt
+  - python3 setup.py install;
 
 script:
-  - mkdir wheelhouse
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
-      python3 setup.py install;
-      python3 setup.py bdist_wheel --dist-dir wheelhouse;
-    else
-      python3 setup.py install;
-
-    fi;
-  - ls -al wheelhouse/
   - python3 -m pytest
+
+after_success:
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+      python3 setup.py bdist_wheel --dist-dir wheelhouse;
+    elif [[ ! -z "$DOCKER_IMAGE" ]]; then
+      docker pull $DOCKER_IMAGE;
+      docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/travis/build-wheels.sh;
+    fi;
   - python3 -m pip install twine
-  - #docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/travis/build-wheels.sh;
-  #- twine upload --skip-existing -u Safihre -p $pypassword wheelhouse/*
+  - twine upload --skip-existing -u Safihre -p $pypassword wheelhouse/*
+
+notifications:
+  email: false
