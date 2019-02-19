@@ -9,6 +9,10 @@ list of chunks, the way in which data is retrieved from usenet.
 This is particularly beneficial when SSL is enabled, which limits the size of each chunk to 16K. Parsing these chunks in python is much more costly.
 Additionally, this module releases Python's GIL during decoding, greatly increasing performance of the overall download process.
 
+---
+
+This module only works with Python 3, the source code of the Python 2 version (`sabyenc`) can be found [here](https://github.com/sabnzbd/sabyenc/tree/sabyenc-python2).
+
 Installing
 ===============================
 As simple as running:
@@ -22,7 +26,7 @@ python setup.py install
 
 Testing
 ===============================
-For testing we use `pytest` (install via `pip install pytest`) and test can simply be executed by browsing to the `sabyenc` directory and running:
+For testing we use `pytest` (install via `pip install -r tests/requirements.txt`) and test can simply be executed by browsing to the `sabyenc` directory and running:
 ```
 pytest
 ```
