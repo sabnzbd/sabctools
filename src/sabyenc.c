@@ -560,8 +560,9 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args, PyObject* kwds) {
         return NULL;
     }
 
-    // If we did not get a size, we need to calculate it (slower, but safer)
-    if(num_bytes_reserved <= 0) {
+    // If we got a strange article size, we need to calculate it (slower, but safer)
+    if ((num_bytes_reserved <= 0) || (num_bytes_reserved >= MAX_RESERVED_BYTES)) {
+        num_bytes_reserved=0;
         lp_max = (int)PyList_Size(Py_input_list);
         for(lp = 0; lp < lp_max; lp++) {
             num_bytes_reserved += (int)PyString_Size(PyList_GetItem(Py_input_list, lp));
