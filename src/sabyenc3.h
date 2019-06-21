@@ -42,6 +42,8 @@
 #define TAB         0x09
 #define SPACE       0x20
 #define DOT         0x2e
+// 10MB should be enough for any article, as 1MB is the common maximum
+#define MAX_RESERVED_BYTES     10111000
 
 /* Customized types */
 typedef unsigned long long uLong;
