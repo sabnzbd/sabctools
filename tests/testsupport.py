@@ -33,7 +33,7 @@ def correct_unknown_encoding(str_or_bytes_in):
     """
     # If already string, back to bytes
     if not isinstance(str_or_bytes_in, bytes):
-        str_or_bytes_in = str_or_bytes_in.encode('utf-8', 'surrogateescape')
+        str_or_bytes_in = str_or_bytes_in.encode("utf-8", "surrogateescape")
 
     # Try simple bytes-to-string
     try:
@@ -41,10 +41,10 @@ def correct_unknown_encoding(str_or_bytes_in):
     except UnicodeDecodeError:
         try:
             # Try using 8-bit ASCII, if came from Windows
-            return str_or_bytes_in.decode('ISO-8859-1')
+            return str_or_bytes_in.decode("ISO-8859-1")
         except ValueError:
             # Last resort we use the slow chardet package
-            return str_or_bytes_in.decode(chardet.detect(str_or_bytes_in)['encoding'])
+            return str_or_bytes_in.decode(chardet.detect(str_or_bytes_in)["encoding"])
 
 
 def read_and_split(filename, chunk_size=14):
@@ -70,9 +70,7 @@ def read_pickle(filename):
 
 def sabyenc3_wrapper(data_chunks, data_bytes):
     """ CRC's are """
-    decoded_data, filename, crc_calc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(
-        data_chunks, data_bytes
-    )
+    decoded_data, filename, crc_calc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_bytes)
     return decoded_data, correct_unknown_encoding(filename), crc_correct
 
 

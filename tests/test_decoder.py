@@ -113,9 +113,7 @@ def test_crc_pickles():
 
 def test_empty_size_pickles():
     # When article size is left empty, it should not result in segfaults!
-    data_plain, data_chunks, data_bytes = read_pickle(
-        "tests/yencfiles/emptysize_67caae212"
-    )
+    data_plain, data_chunks, data_bytes = read_pickle("tests/yencfiles/emptysize_67caae212")
     decoded_data, filename, crc_correct = sabyenc3_wrapper(data_chunks, 0)
     assert filename == "Jake.and.the.Never.Land.Pirates.S02E38.480p.hdtv.x264.r05"
     assert crc_correct == True

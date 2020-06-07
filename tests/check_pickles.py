@@ -35,9 +35,7 @@ for fname in all_crc_fails:
     """
     First we check SABYenc
     """
-    output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(
-        data_chunks, data_size
-    )
+    output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_size)
     print("\n---- SABYenc output ----\n")
     print("Filename:", output_filename)
     print("Size:", len(output_buffer))

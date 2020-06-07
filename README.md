@@ -30,4 +30,3 @@ For testing we use `pytest` (install via `pip install -r tests/requirements.txt`
 ```
 pytest
 ```
-Note that the `sabyenc3.encode` function is currently not covered by unit tests.
