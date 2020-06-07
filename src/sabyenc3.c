@@ -78,7 +78,8 @@ static uInt crc_tab[256] = {
 static void crc_init(Crc32 *, uInt);
 static void crc_update(Crc32 *, uInt);
 PyMODINIT_FUNC PyInit_sabyenc3(void);
-static int decode_buffer_usenet(PyObject *, char *, int, char **, Crc32 *, uInt *,  Bool *);
+static int decode_buffer_usenet(PyObject *, char *, int, char **, Crc32 *, uInt *, Bool *);
+static int encode_buffer(char *, char *, uInt, Crc32 *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **, int);
@@ -91,6 +92,12 @@ static PyMethodDef sabyenc3_methods[] = {
         decode_usenet_chunks,
         METH_VARARGS,
         "decode_usenet_chunks(list_of_chunks, nr_bytes)"
+    },
+    {
+        "encode",
+        encode,
+        METH_VARARGS,
+        "encode(input_string)"
     },
     {NULL, NULL, 0, NULL}
 };
@@ -636,3 +643,100 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     return retval;
 }
 
+
+static int encode_buffer(char *input_buffer, char *output_buffer, uInt bytes, Crc32 *crc)
+{
+	uInt encoded = 0;
+	uInt in_ind;
+	uInt out_ind;
+	uInt col = 0;
+	char byte;
+
+	out_ind = 0;
+	for(in_ind=0; in_ind < bytes; in_ind++) {
+		byte = (char)(input_buffer[in_ind] + 42);
+		crc_update(crc, input_buffer[in_ind]);
+		switch(byte){
+			case ZERO:
+			case LF:
+			case CR:
+			case ESC:
+				goto escape_string;
+			case TAB:
+			case SPACE:
+				if(col == 0 || col == LINESIZE-1) {
+					goto escape_string;
+				}
+                        case DOT:
+                                if(col == 0) {
+                                        goto escape_string;
+                                }
+			default:
+				goto plain_string;
+		}
+		escape_string:
+		byte = (char)(byte + 64);
+		output_buffer[out_ind++] = ESC;
+		col++;
+		plain_string:
+		output_buffer[out_ind++] = byte;
+		col++;
+		encoded++;
+		if(col >= LINESIZE) {
+			output_buffer[out_ind++] = CR;
+			output_buffer[out_ind++] = LF;
+			col = 0;
+		}
+	}
+	return out_ind;
+}
+
+
+
+PyObject* encode(PyObject* self, PyObject* args)
+{
+	PyObject *Py_input_string;
+	PyObject *Py_output_string;
+	PyObject *retval = NULL;
+
+	char *input_buffer = NULL;
+	char *output_buffer = NULL;
+	long long crc_value = 0xffffffffll;
+	uInt input_len = 0;
+	uInt output_len = 0;
+	Crc32 crc;
+
+	// Parse input
+    if (!PyArg_ParseTuple(args, "O:encode", &Py_input_string)) {
+        return NULL;
+    }
+
+    // Initialze buffers and CRC's
+	crc_init(&crc, (uInt)crc_value);
+	input_len = (uInt)PyBytes_Size(Py_input_string);
+	input_buffer = (char *)PyBytes_AsString(Py_input_string);
+	output_buffer = (char *)malloc((2 * input_len / LINESIZE + 1) * (LINESIZE + 2));
+	if(!output_buffer)
+		return PyErr_NoMemory();
+
+	// Free GIL, in case it helps
+    Py_BEGIN_ALLOW_THREADS;
+
+    // Encode result
+	output_len = encode_buffer(input_buffer, output_buffer, input_len, &crc);
+
+	// Restore GIL so we can build Python strings
+	Py_END_ALLOW_THREADS;
+
+	// Build output string
+	Py_output_string = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
+	if(!Py_output_string)
+		goto out;
+
+	retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc.crc);
+
+out:
+    Py_XDECREF(Py_output_string);
+	free(output_buffer);
+	return retval;
+}
