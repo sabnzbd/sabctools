@@ -1,0 +1,54 @@
+name: Python package build and publish
+
+on: push
+
+jobs:
+  manylinux:
+    name: Build manylinux package
+    runs-on: ubuntu-latest
+    env:
+      TWINE_USERNAME: '__token__'
+      TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build manylinux Python wheels
+      uses: RalfG/python-wheels-manylinux-build@v0.3.3-manylinux2010_x86_64
+      with:
+        python-versions: 'cp36-cp36m cp37-cp37m cp38-cp38 cp39-cp39'
+    - name: Publish wheels to PyPI
+      if: env.TWINE_PASSWORD
+      run: |
+        sudo pip install twine
+        twine upload --skip-existing dist/*-manylinux*.whl
+
+  windows_macos:
+    name: Build for Python ${{ matrix.python-version }} (${{ matrix.python-arch }}) on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    env:
+      TWINE_USERNAME: '__token__'
+      TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
+    strategy:
+      matrix:
+        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+        python-arch: [x64]
+        os: [ macos-latest, windows-latest ]
+        include:
+          - os: windows-latest
+            python-version: 3.9
+            python-arch: x86
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: ${{ matrix.python-arch }}
+      - name: Build a binary wheel and a source tarball
+        run: |
+          pip install wheel
+          python setup.py bdist_wheel sdist
+      - name: Publish wheels to PyPI
+        if: env.TWINE_PASSWORD
+        run: |
+          pip install twine
+          twine upload --skip-existing dist/*.whl
