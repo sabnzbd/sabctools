@@ -21,7 +21,7 @@ pip install sabyenc3 --upgrade
 ```
 When you want to compile from sources, you can run in the `sabyenc` directory:
 ```
-python setup.py install
+python3 setup.py install
 ```
 
 Testing
