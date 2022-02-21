@@ -263,7 +263,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
             len = end_line_len;
         }
         list_index++;
-        if(len <= input_offset) continue;
+        if((size_t)len <= input_offset) continue;
         // send to decoder
         size_t output_len = do_decode(1, (unsigned char*)str + input_offset, (unsigned char*)output_buffer, len - input_offset, &state);
         decoded_bytes += output_len;
