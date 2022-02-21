@@ -258,8 +258,8 @@ int cpu_supports_isa();
 # include <stdint.h>
 # include <stddef.h>
 #else
-/* Workaround for older MSVC not supporting stdint.h - just pull it from V8 */
-# include <v8.h>
+/* Workaround for older MSVC not including stdint.h */
+# include "stdint.h"
 #endif
 
 
