@@ -32,11 +32,13 @@ with open("README.md", "r") as file_long_description:
 BUILD_DIR = "build"
 compiler = ccompiler.new_compiler()
 if compiler.compiler_type == "msvc":
-    base_ldflags = []
-    cflags = ["/O2"]
+    # LTCG not enabled due to issues seen with code generation where different ISA extensions are selected for specific files
+    base_ldflags = ["/OPT:REF", "/OPT:ICF"]
+    cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi"]
 else:
+    # TODO: consider -flto - may require some extra testing
     base_ldflags = sysconfig.get_config_var('LDFLAGS').split()
-    cflags = ["-Wno-unused-function", "-fomit-frame-pointer", "-O3", "-fPIC"] + sysconfig.get_config_var('CFLAGS').split()
+    cflags = ["-Wall", "-Wextra", "-Wno-unused-function", "-fomit-frame-pointer", "-fno-rtti", "-fno-exceptions", "-O3", "-fPIC"] + sysconfig.get_config_var('CFLAGS').split()
 
 machine = platform.machine().lower()  # TODO: this is unreliable, need something better to detect target architecture
 is_armv7 = (machine.startswith("armv7"))  # TODO: can armv8_ still be AArch32?
@@ -45,7 +47,6 @@ is_x86 = (machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"])
 objects = []
 # TODO: move this to compile step so setup.py --help doesn't trigger compilation
 # TODO: add depends
-# TODO: consider other opts, like LTO
 for obj in [
     {"sources": ["yencode/encoder_sse2.cc", "yencode/decoder_sse2.cc"], "gcc_x86_flags": ["-msse2"]},
     {"sources": ["yencode/encoder_ssse3.cc", "yencode/decoder_ssse3.cc"], "gcc_x86_flags": ["-mssse3"]},
@@ -68,17 +69,17 @@ for obj in [
         "sources": obj["sources"],
         "output_dir": BUILD_DIR
     }
-    args["extra_preargs"] = cflags
+    args["extra_postargs"] = cflags[:]
     if compiler.compiler_type == "msvc":
         if is_x86 and "msvc_x86_flags" in obj:
-            args["extra_preargs"] += obj["msvc_x86_flags"]
+            args["extra_postargs"] += obj["msvc_x86_flags"]
     else:
         if "gcc_flags" in obj:
-            args["extra_preargs"] += obj["gcc_flags"]
+            args["extra_postargs"] += obj["gcc_flags"]
         if is_x86 and "gcc_x86_flags" in obj:
-            args["extra_preargs"] += obj["gcc_x86_flags"]
+            args["extra_postargs"] += obj["gcc_x86_flags"]
         if is_arm and "gcc_arm_flags" in obj:
-            args["extra_preargs"] += obj["gcc_arm_flags"]
+            args["extra_postargs"] += obj["gcc_arm_flags"]
     
     if "include_dirs" in obj:
         args["include_dirs"] = obj["include_dirs"]
@@ -98,7 +99,8 @@ setup(
     ext_modules=[Extension(
         "sabyenc3",
         ["src/sabyenc3.c", "yencode/platform.cc", "yencode/encoder.cc", "yencode/decoder.cc", "yencode/crc.cc"],
-        extra_link_args=objects,
+        extra_compile_args=cflags,
+        extra_link_args=base_ldflags + objects,
         depends=["src/sabyenc3.h"] + objects,
         include_dirs=["crcutil-1.0/code","crcutil-1.0/examples"]
     )],
