@@ -29,7 +29,7 @@
 
 /* Function declarations */
 PyMODINIT_FUNC PyInit_sabyenc3(void);
-static int decode_buffer_usenet(PyObject *, char *, int, char **, Bool *);
+static size_t decode_buffer_usenet(PyObject *, char *, int, char **, Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
@@ -104,7 +104,7 @@ static inline char* my_memstr(const void* haystack, size_t haystackLen, const ch
     return p;
 }
 
-static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
+static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
                                 char **filename_out, Bool *crc_correct) {
     // For the list
     Py_ssize_t num_lines;
@@ -117,7 +117,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     // Other vars
     uLong part_begin = 0;
     int part_size = 0;
-    int decoded_bytes = 0;
+    size_t decoded_bytes = 0;
 
     /*
      ANALYZE HEADER
@@ -195,13 +195,14 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     // first, join chunks to form a flat buffer
     char tail_buffer[MAX_TAIL_BYTES];
     int tail_buffer_space = MAX_TAIL_BYTES;
-    int end_line = num_lines - 1;
-    int end_line_len;
+    int end_line = (int)num_lines - 1;
+    Py_ssize_t end_line_len;
     const char* tail_buffer_pos = NULL;
     for(; end_line >= list_index; end_line--) {
         char* str;
-        Py_ssize_t len;
-        PyBytes_AsStringAndSize(PyList_GetItem(Py_input_list, end_line), &str, &len);
+        Py_ssize_t _len;
+        PyBytes_AsStringAndSize(PyList_GetItem(Py_input_list, end_line), &str, &_len);
+        int len = (int)_len;
         size_t strOffset = 0;
         if(len >= tail_buffer_space) {
             strOffset = len - tail_buffer_space;
@@ -278,7 +279,7 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     *crc_correct = (crc == crc_yenc);
 #else
     // Do a simple check based on size, faster than CRC
-    if(part_size != decoded_bytes) {
+    if(part_size != (int)decoded_bytes) {
         *crc_correct = 0;
     } else {
         *crc_correct = 1;
@@ -467,6 +468,7 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
 
 
 PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
+    (void)self;
     // The input/output PyObjects
     PyObject *Py_input_list;
     PyObject *Py_output_buffer;
@@ -479,7 +481,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // Buffers
     char *output_buffer = NULL;
     char *filename_out = NULL;
-    int output_len = 0;
+    size_t output_len = 0;
     int num_bytes_reserved;
     int lp_max;
     int lp;
@@ -561,14 +563,15 @@ static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
 
 PyObject* encode(PyObject* self, PyObject* args)
 {
+    (void)self;
 	PyObject *Py_input_string;
 	PyObject *Py_output_string;
 	PyObject *retval = NULL;
 
 	char *input_buffer = NULL;
 	char *output_buffer = NULL;
-	uInt input_len = 0;
-	uInt output_len = 0;
+	size_t input_len = 0;
+	size_t output_len = 0;
     uint32_t crc;
 
 	// Parse input
@@ -577,7 +580,7 @@ PyObject* encode(PyObject* self, PyObject* args)
     }
 
     // Initialze buffers and CRC's
-	input_len = (uInt)PyBytes_Size(Py_input_string);
+	input_len = PyBytes_Size(Py_input_string);
 	input_buffer = (char *)PyBytes_AsString(Py_input_string);
 	output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
 	if(!output_buffer)
