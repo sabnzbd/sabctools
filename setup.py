@@ -36,7 +36,6 @@ is_arm = (is_armv7 or machine.startswith("arm") or machine.startswith("aarch64")
 is_x86 = (machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"])
 
 
-
 class sabyenc_build(build_ext):
     def build_extension(self, ext):
         # determine compiler flags
@@ -149,7 +148,6 @@ class sabyenc_build(build_ext):
             objects += compiler.object_filenames(obj["sources"], output_dir=BUILD_DIR)
         
         # attach to Extension
-        ext.extra_compile_args = cflags
         ext.extra_link_args = base_ldflags + objects
         ext.depends = ["src/sabyenc3.h"] + objects
         
@@ -169,7 +167,7 @@ setup(
         ["src/sabyenc3.c", "yencode/platform.cc", "yencode/encoder.cc", "yencode/decoder.cc", "yencode/crc.cc"],
         include_dirs=["crcutil-1.0/code","crcutil-1.0/examples"]
     )],
-    cmdclass = {"build_ext": sabyenc_build},
+    cmdclass={"build_ext": sabyenc_build},
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3 :: Only",
