@@ -30,7 +30,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #if !defined(_MSC_VER) || defined(_STDINT) || _MSC_VER >= 1900
+
 #include <stdint.h>
+
 #else
 
 #ifndef _MSC_STDINT_H_ // [

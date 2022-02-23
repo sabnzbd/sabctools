@@ -9,7 +9,7 @@
     defined(_M_X64    ) || \
     defined(_M_AMD64  ) || \
     (defined(_WIN64) && !defined(_M_ARM64))
-	#define PLATFORM_AMD64 1
+#define PLATFORM_AMD64 1
 #endif
 #if defined(PLATFORM_AMD64) || \
     defined(__i386__  ) || \
@@ -19,7 +19,7 @@
     defined(_M_I86    ) || \
     defined(_M_IX86   ) || \
     (defined(_WIN32) && !defined(_M_ARM) && !defined(_M_ARM64))
-	#define PLATFORM_X86 1
+#define PLATFORM_X86 1
 #endif
 #if defined(__aarch64__) || \
     defined(__armv7__  ) || \
@@ -31,63 +31,65 @@
     defined(__ARM_ARCH_7A__) || \
     defined(__ARM_ARCH_8A__) || \
     (defined(__ARM_ARCH    ) && __ARM_ARCH >= 6)
-	#define PLATFORM_ARM 1
+#define PLATFORM_ARM 1
 #endif
 
 
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
-	#include <stdlib.h> // MSVC ARM64 seems to need this
-	#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = _aligned_malloc((len), align)
-	#define ALIGN_FREE _aligned_free
+#include <stdlib.h> // MSVC ARM64 seems to need this
+#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = _aligned_malloc((len), align)
+#define ALIGN_FREE _aligned_free
 #elif defined(__cplusplus) && __cplusplus >= 201100 && !(defined(_MSC_VER) && (defined(__clang__) || defined(_M_ARM64) || defined(_M_ARM))) && !defined(__APPLE__)
-	// C++11 method
-	// len needs to be a multiple of alignment, although it sometimes works if it isn't...
-	#include <cstdlib>
-	#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = aligned_alloc(align, ((len) + (align)-1) & ~((align)-1))
-	#define ALIGN_FREE free
+// C++11 method
+// len needs to be a multiple of alignment, although it sometimes works if it isn't...
+#include <cstdlib>
+#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = aligned_alloc(align, ((len) + (align)-1) & ~((align)-1))
+#define ALIGN_FREE free
 #else
-	#include <stdlib.h>
-	#define ALIGN_ALLOC(buf, len, align) if(posix_memalign((void**)&(buf), align, (len))) (buf) = NULL
-	#define ALIGN_FREE free
+
+#include <stdlib.h>
+
+#define ALIGN_ALLOC(buf, len, align) if(posix_memalign((void**)&(buf), align, (len))) (buf) = NULL
+#define ALIGN_FREE free
 #endif
 
 
 // MSVC compatibility
 #if ((defined(_M_IX86_FP) && _M_IX86_FP == 2) || defined(_M_X64)) && !defined(__clang__)
-	#define __SSE2__ 1
-	#define __SSSE3__ 1
-	#define __SSE4_1__ 1
-	#if defined(_MSC_VER) && _MSC_VER >= 1600
-		#define __POPCNT__ 1
-		#define __LZCNT__ 1
-	#endif
-	#if !defined(__AVX__) && (_MSC_VER >= 1700 && defined(__SSE2__))
-		#define __AVX__ 1
-	#endif
-	#if !defined(__AVX2__) && (_MSC_VER >= 1800 && defined(__SSE2__))
-		#define __AVX2__ 1
-		#define __BMI2__ 1
-	#endif
-	/* AVX512 requires VS 15.3 */
-	#if !defined(__AVX512F__) && (_MSC_VER >= 1911 && defined(__AVX__))
-		#define __AVX512BW__ 1
-		#define __AVX512F__ 1
-	#endif
-	/* AVX512VL not available until VS 15.5 */
-	#if defined(__AVX512F__) && _MSC_VER >= 1912
-		#define __AVX512VL__ 1
-	#endif
-	#if defined(__AVX512F__) && _MSC_VER >= 1920
-		#define __AVX512VBMI__ 1
-		#define __AVX512VBMI2__ 1
-	#endif
+#define __SSE2__ 1
+#define __SSSE3__ 1
+#define __SSE4_1__ 1
+#if defined(_MSC_VER) && _MSC_VER >= 1600
+#define __POPCNT__ 1
+#define __LZCNT__ 1
+#endif
+#if !defined(__AVX__) && (_MSC_VER >= 1700 && defined(__SSE2__))
+#define __AVX__ 1
+#endif
+#if !defined(__AVX2__) && (_MSC_VER >= 1800 && defined(__SSE2__))
+#define __AVX2__ 1
+#define __BMI2__ 1
+#endif
+/* AVX512 requires VS 15.3 */
+#if !defined(__AVX512F__) && (_MSC_VER >= 1911 && defined(__AVX__))
+#define __AVX512BW__ 1
+#define __AVX512F__ 1
+#endif
+/* AVX512VL not available until VS 15.5 */
+#if defined(__AVX512F__) && _MSC_VER >= 1912
+#define __AVX512VL__ 1
+#endif
+#if defined(__AVX512F__) && _MSC_VER >= 1920
+#define __AVX512VBMI__ 1
+#define __AVX512VBMI2__ 1
+#endif
 #endif
 #if defined(_M_ARM64)
-	#define __aarch64__ 1
-	#define __ARM_NEON 1
+#define __aarch64__ 1
+#define __ARM_NEON 1
 #endif
 #if defined(_M_ARM)
-	#define __ARM_NEON 1
+#define __ARM_NEON 1
 #endif
 #ifdef _MSC_VER
 # ifndef __BYTE_ORDER__
@@ -146,49 +148,49 @@
 
 // ARM provides no standard way to inline define a vector :(
 static HEDLEY_ALWAYS_INLINE uint8x8_t vmake_u8(
-	uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint8_t e, uint8_t f, uint8_t g, uint8_t h
+    uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint8_t e, uint8_t f, uint8_t g, uint8_t h
 ) {
 # if defined(_MSC_VER)
-	uint8_t t[] = {a,b,c,d,e,f,g,h};
-	return vld1_u8(t);
+    uint8_t t[] = {a,b,c,d,e,f,g,h};
+    return vld1_u8(t);
 # else
-	return (uint8x8_t){a,b,c,d,e,f,g,h};
+    return (uint8x8_t){a,b,c,d,e,f,g,h};
 # endif
 }
 static HEDLEY_ALWAYS_INLINE uint8x16_t vmakeq_u8(
-	uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint8_t e, uint8_t f, uint8_t g, uint8_t h,
-	uint8_t i, uint8_t j, uint8_t k, uint8_t l, uint8_t m, uint8_t n, uint8_t o, uint8_t p
+    uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint8_t e, uint8_t f, uint8_t g, uint8_t h,
+    uint8_t i, uint8_t j, uint8_t k, uint8_t l, uint8_t m, uint8_t n, uint8_t o, uint8_t p
 ) {
 # if defined(_MSC_VER)
-	uint8_t t[] = {a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
-	return vld1q_u8(t);
+    uint8_t t[] = {a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
+    return vld1q_u8(t);
 # else
-	return (uint8x16_t){a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
+    return (uint8x16_t){a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
 # endif
 }
 static HEDLEY_ALWAYS_INLINE int8x16_t vmakeq_s8(
-	int8_t a, int8_t b, int8_t c, int8_t d, int8_t e, int8_t f, int8_t g, int8_t h,
-	int8_t i, int8_t j, int8_t k, int8_t l, int8_t m, int8_t n, int8_t o, int8_t p
+    int8_t a, int8_t b, int8_t c, int8_t d, int8_t e, int8_t f, int8_t g, int8_t h,
+    int8_t i, int8_t j, int8_t k, int8_t l, int8_t m, int8_t n, int8_t o, int8_t p
 ) {
 # if defined(_MSC_VER)
-	int8_t t[] = {a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
-	return vld1q_s8(t);
+    int8_t t[] = {a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
+    return vld1q_s8(t);
 # else
-	return (int8x16_t){a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
+    return (int8x16_t){a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
 # endif
 }
 
 static HEDLEY_ALWAYS_INLINE uint8x16x2_t vcreate2_u8(uint8x16_t a, uint8x16_t b) {
-	return {a, b};
+    return {a, b};
 }
 static HEDLEY_ALWAYS_INLINE int8x16x2_t vcreate2_s8(int8x16_t a, int8x16_t b) {
-	return {a, b};
+    return {a, b};
 }
 static HEDLEY_ALWAYS_INLINE uint8x16x3_t vcreate3_u8(uint8x16_t a, uint8x16_t b, uint8x16_t c) {
-	return {a, b, c};
+    return {a, b, c};
 }
 static HEDLEY_ALWAYS_INLINE uint8x16x4_t vcreate4_u8(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t d) {
-	return {a, b, c, d};
+    return {a, b, c, d};
 }
 #endif
 #ifdef PLATFORM_ARM
@@ -204,16 +206,16 @@ bool cpu_supports_neon();
 
 #ifdef PLATFORM_X86
 enum YEncDecIsaLevel {
-	ISA_FEATURE_POPCNT = 0x1,
-	ISA_FEATURE_LZCNT = 0x2,
-	ISA_LEVEL_SSE2 = 0x100,
-	ISA_LEVEL_SSSE3 = 0x200,
-	ISA_LEVEL_SSE41 = 0x300,
-	ISA_LEVEL_SSE4_POPCNT = 0x301,
-	ISA_LEVEL_AVX = 0x381, // same as above, just used as a differentiator for `cpu_supports_isa`
-	ISA_LEVEL_AVX2 = 0x383, // also includes BMI1/2 and LZCNT
-	ISA_LEVEL_AVX3 = 0x403, // SKX variant; AVX512VL + AVX512BW
-	ISA_LEVEL_VBMI2 = 0x503 // ICL
+    ISA_FEATURE_POPCNT = 0x1,
+    ISA_FEATURE_LZCNT = 0x2,
+    ISA_LEVEL_SSE2 = 0x100,
+    ISA_LEVEL_SSSE3 = 0x200,
+    ISA_LEVEL_SSE41 = 0x300,
+    ISA_LEVEL_SSE4_POPCNT = 0x301,
+    ISA_LEVEL_AVX = 0x381, // same as above, just used as a differentiator for `cpu_supports_isa`
+    ISA_LEVEL_AVX2 = 0x383, // also includes BMI1/2 and LZCNT
+    ISA_LEVEL_AVX3 = 0x403, // SKX variant; AVX512VL + AVX512BW
+    ISA_LEVEL_VBMI2 = 0x503 // ICL
 };
 #ifdef _MSC_VER
 // native tuning not supported in MSVC
@@ -254,9 +256,12 @@ int cpu_supports_isa();
 #endif // PLATFORM_X86
 
 #include <string.h>
+
 #if !defined(_MSC_VER) || defined(_STDINT) || _MSC_VER >= 1900
+
 # include <stdint.h>
 # include <stddef.h>
+
 #else
 /* Workaround for older MSVC not including stdint.h */
 # include "stdint.h"
@@ -277,7 +282,6 @@ int cpu_supports_isa();
 #if defined(__clang__) && ((defined(__APPLE__) && __clang_major__ < 9) || __clang_major__ < 3 || (__clang_major__ == 3 && __clang_minor__ < 6))
 # define _lzcnt_u32 __lzcnt32
 #endif
-
 
 
 #ifdef __GNUC__

@@ -53,6 +53,7 @@ build
 examples
 test
 dist
+cmake*/
 
 # Compiled python
 *.py[cod]
