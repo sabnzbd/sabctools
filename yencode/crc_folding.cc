@@ -18,7 +18,7 @@
  */
 
 #include "crc_common.h"
- 
+
 #if (defined(__PCLMUL__) && defined(__SSSE3__) && defined(__SSE4_1__)) || (defined(_MSC_VER) && _MSC_VER >= 1600 && defined(PLATFORM_X86))
 #include <inttypes.h>
 #include <immintrin.h>
@@ -36,7 +36,7 @@
 # define fold_xor _mm_xor_si128
 #else
 static __m128i fold_xor(__m128i a, __m128i b) {
-	return _mm_castps_si128(_mm_xor_ps(_mm_castsi128_ps(a), _mm_castsi128_ps(b)));
+    return _mm_castps_si128(_mm_xor_ps(_mm_castsi128_ps(a), _mm_castsi128_ps(b)));
 }
 #endif
 
@@ -170,11 +170,11 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     // TODO: consider calculating this via a LUT instead (probably faster)
     // info from https://www.reddit.com/r/ReverseEngineering/comments/2zwhl3/mystery_constant_0x9db42487_in_intels_crc32ieee/
     // firstly, calculate: xmm_crc0 = (intial * 0x487b9c8a) mod 0x104c11db7, where 0x487b9c8a = inverse(1<<512) mod 0x104c11db7
-    
+
     // reverse input bits + load into XMM register
     uint32_t init_t = BSWAP32(initial);
     xmm_t0 = reverse_bits_epi8(_mm_cvtsi32_si128(~init_t));
-    
+
     xmm_t0 = _mm_clmulepi64_si128(xmm_t0, _mm_cvtsi32_si128(0x487b9c8a), 0);
     xmm_t1 = _mm_and_si128(xmm_t0, _mm_set_epi32(-1,-1,-1,0)); // shifted up by 32bits to avoid shifts by using clmul's capability to select top 64bits instead
     xmm_t2 = _mm_set_epi32( // polynomial reduction factors
@@ -183,11 +183,11 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     );
     xmm_t1 = _mm_clmulepi64_si128(xmm_t1, xmm_t2, 0);
     xmm_t1 = _mm_clmulepi64_si128(xmm_t1, xmm_t2, 0x11);
-    
+
     __m128i xmm_crc0 = _mm_xor_si128(xmm_t0, xmm_t1);
     // reverse bits
     xmm_crc0 = _mm_shuffle_epi8(reverse_bits_epi8(xmm_crc0), _mm_set_epi32(-1,-1,-1,0x00010203));
-    
+
     __m128i xmm_crc1 = _mm_setzero_si128();
     __m128i xmm_crc2 = _mm_setzero_si128();
     __m128i xmm_crc3 = _mm_setzero_si128();
@@ -397,15 +397,17 @@ done:
 }
 
 static uint32_t do_crc32_incremental_clmul(const void* data, size_t length, uint32_t init) {
-	return crc_fold((const unsigned char*)data, (long)length, init);
+    return crc_fold((const unsigned char*)data, (long)length, init);
 }
 
 void crc_clmul_set_funcs(crc_func* _do_crc32_incremental) {
-	*_do_crc32_incremental = &do_crc32_incremental_clmul;
+    *_do_crc32_incremental = &do_crc32_incremental_clmul;
 }
 #else
-void crc_clmul_set_funcs(crc_func* _do_crc32_incremental) {
-    (void)_do_crc32_incremental;
+
+void crc_clmul_set_funcs(crc_func *_do_crc32_incremental) {
+    (void) _do_crc32_incremental;
 }
+
 #endif
 

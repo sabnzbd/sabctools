@@ -4,13 +4,16 @@
 #include "encoder_avx_base.h"
 
 void encoder_avx2_init() {
-	_do_encode = &do_encode_simd< do_encode_avx2<ISA_LEVEL_AVX2> >;
-	encoder_avx2_lut<ISA_LEVEL_AVX2>();
+    _do_encode = &do_encode_simd< do_encode_avx2<ISA_LEVEL_AVX2> >;
+    encoder_avx2_lut<ISA_LEVEL_AVX2>();
 }
 #else
+
 void encoder_avx_init();
+
 void encoder_avx2_init() {
-	encoder_avx_init();
+    encoder_avx_init();
 }
+
 #endif
 
