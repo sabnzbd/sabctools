@@ -45,8 +45,19 @@ class SAByEncBuild(build_ext):
             base_ldflags = ["/OPT:REF", "/OPT:ICF"]
             cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi"]
         else:
+            # Flags can be empty
+            base_ldflags = []
+            base_cfflags = []
+            try:
+                base_ldflags = sysconfig.get_config_var("LDFLAGS").split()
+            except:
+                pass
+            try:
+                base_cfflags = sysconfig.get_config_var("CFLAGS").split()
+            except:
+                pass
+
             # TODO: consider -flto - may require some extra testing
-            base_ldflags = sysconfig.get_config_var("LDFLAGS").split()
             cflags = [
                 "-Wall",
                 "-Wextra",
@@ -56,7 +67,7 @@ class SAByEncBuild(build_ext):
                 "-fno-exceptions",
                 "-O3",
                 "-fPIC",
-            ] + sysconfig.get_config_var("CFLAGS").split()
+            ] + base_cfflags
 
         srcdeps_crc_common = ["yencode/common.h", "yencode/crc_common.h", "yencode/crc.h"]
         srcdeps_dec_common = ["yencode/common.h", "yencode/decoder_common.h", "yencode/decoder.h"]
