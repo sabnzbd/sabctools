@@ -11,12 +11,16 @@ jobs:
       TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
     steps:
     - uses: actions/checkout@v2
-    - name: Build manylinux Python wheels
-      uses: RalfG/python-wheels-manylinux-build@v0.4.2
+    - name: Build manylinux Python wheels (x86_64)
+      uses: RalfG/python-wheels-manylinux-build@v0.4.2-manylinux2014_x86_64
       with:
-        python-versions: 'cp36-cp36m cp37-cp37m cp38-cp38 cp39-cp39 cp310-cp310'
+        python-versions: 'cp37-cp37m cp38-cp38 cp39-cp39 cp310-cp310'
+    - name: Build manylinux Python wheels (aarch64)
+      uses: RalfG/python-wheels-manylinux-build@v0.4.2-manylinux2014_aarch64
+      with:
+        python-versions: 'cp37-cp37m cp38-cp38 cp39-cp39 cp310-cp310'
     - name: Publish wheels to PyPI
-      if: env.TWINE_PASSWORD
+      if: env.TWINE_PASSWORD && contains(github.ref, 'refs/tags/')
       run: |
         sudo pip install twine
         twine upload --skip-existing dist/*-manylinux*.whl
@@ -29,7 +33,7 @@ jobs:
       TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
     strategy:
       matrix:
-        python-version: ["3.6", "3.7", "3.8", "3.9", "3.10"]
+        python-version: ["3.7", "3.8", "3.9", "3.10"]
         python-arch: [x64]
         os: [ macos-latest, windows-latest ]
         include:
@@ -48,7 +52,7 @@ jobs:
           pip install wheel
           python setup.py bdist_wheel sdist
       - name: Publish wheels to PyPI
-        if: env.TWINE_PASSWORD
+        if: env.TWINE_PASSWORD && contains(github.ref, 'refs/tags/')
         run: |
           pip install twine
           twine upload --skip-existing dist/*.whl
