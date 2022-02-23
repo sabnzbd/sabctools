@@ -27,6 +27,8 @@ jobs:
         env:
           CIBW_SKIP: pp* cp36*
           CIBW_ARCHS_LINUX: auto aarch64
+          CIBW_ARCHS_MACOS: x86_64 universal2
+          CIBW_BUILD_VERBOSITY: 1
 
       - uses: actions/upload-artifact@v2
         with:
