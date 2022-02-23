@@ -21,68 +21,18 @@
 
 #include "sabyenc3.h"
 
-/* Typedefs */
-typedef struct {
-    uInt crc;
-    uLong bytes;
-} Crc32;
+#include "../yencode/encoder.h"
+#include "../yencode/decoder.h"
+#include "../yencode/crc.h"
 
 /* Declarations */
-static uInt crc_tab[256] = {
-    0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
-    0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
-    0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
-    0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-    0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9,
-    0xfa0f3d63, 0x8d080df5, 0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
-    0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b, 0x35b5a8fa, 0x42b2986c,
-    0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
-    0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
-    0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
-    0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d, 0x76dc4190, 0x01db7106,
-    0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
-    0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
-    0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
-    0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
-    0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
-    0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7,
-    0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
-    0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
-    0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-    0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81,
-    0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
-    0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84,
-    0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
-    0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
-    0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
-    0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e,
-    0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
-    0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55,
-    0x316e8eef, 0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
-    0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
-    0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
-    0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f,
-    0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
-    0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
-    0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
-    0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
-    0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
-    0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc,
-    0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-    0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693,
-    0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
-    0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
-};
 
 /* Function declarations */
-static void crc_init(Crc32 *, uInt);
-static void crc_update(Crc32 *, uInt);
 PyMODINIT_FUNC PyInit_sabyenc3(void);
-static int decode_buffer_usenet(PyObject *, char *, int, char **, Crc32 *, uInt *, Bool *);
-static int encode_buffer(char *, char *, uInt, Crc32 *);
+static size_t decode_buffer_usenet(PyObject *, char *, int, char **, Bool *);
 static char * find_text_in_pylist(PyObject *, char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
-uLong extract_int_from_pylist(PyObject *, int *, char **, char **, int);
+uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
 
 
 /* Python API requirements */
@@ -111,6 +61,11 @@ static struct PyModuleDef sabyenc3_definition = {
 };
 
 PyMODINIT_FUNC PyInit_sabyenc3(void) {
+    // init yencode
+    encoder_init();
+    decoder_init();
+    crc_init();	
+    
     // Initialize and add version information
     Py_Initialize();
     PyObject* module = PyModule_Create(&sabyenc3_definition);
@@ -120,18 +75,37 @@ PyMODINIT_FUNC PyInit_sabyenc3(void) {
 
 
 /* Function definitions */
-static void crc_init(Crc32 *crc, uInt value) {
-    crc->crc = value;
-    crc->bytes = 0UL;
+
+// memmem clone (as function isn't in C standard library)
+static void* my_memmem(const void* haystack, size_t haystackLen, const void* needle, size_t needleLen) {
+    if(needleLen > haystackLen || haystack == NULL || needle == NULL)
+        return NULL;
+    if(needleLen == 0 || haystack == needle)
+        return (void*)haystack;
+    
+    size_t checkBytes = haystackLen - needleLen +1;
+    char* p;
+    const char* haystackPos = (const char*)haystack;
+    const char* needleStr = (const char*)needle;
+    while((p = (char*)memchr(haystackPos, needleStr[0], checkBytes))) {
+        if(!memcmp(p+1, needleStr+1, needleLen-1))
+            break;
+        size_t skip = p - haystackPos +1;
+        checkBytes -= skip;
+        haystackPos += skip;
+    }
+    return p;
+}
+static inline char* my_memstr(const void* haystack, size_t haystackLen, const char* str, int pointToEnd) {
+    size_t len = strlen(str);
+    char* p = (char*)my_memmem(haystack, haystackLen, str, len);
+    if(p && pointToEnd)
+        return p + len;
+    return p;
 }
 
-static void crc_update(Crc32 *crc, uInt c) {
-    crc->crc = crc_tab[(crc->crc^c)&0xff]^((crc->crc>>8)&0xffffff);
-    crc->bytes++;
-}
-
-static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
-                                char **filename_out,  Crc32 *crc, uInt *crc_yenc, Bool *crc_correct) {
+static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
+                                char **filename_out, Bool *crc_correct) {
     // For the list
     Py_ssize_t num_lines;
     int list_index = 0;
@@ -139,15 +113,11 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
     // Search variables
     char *cur_char; // Pointer to search result
     char *start_loc; // Pointer to current char
-    char *crc_holder = NULL;
 
     // Other vars
     uLong part_begin = 0;
     int part_size = 0;
-    int decoded_bytes = 0;
-    int safe_nr_bytes = 0;
-    Bool escape_char = 0;
-    int double_point_escape = 0;
+    size_t decoded_bytes = 0;
 
     /*
      ANALYZE HEADER
@@ -169,203 +139,153 @@ static int decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, in
 
     // Start of header (which doesn't have to be part of first chunk)
     start_loc = find_text_in_pylist(Py_input_list, "=ybegin", &cur_char, &list_index);
+    if(!start_loc)
+        return 0;
 
+    // First we find the size (for single-part files)
+    start_loc = find_text_in_pylist(Py_input_list, "size=", &cur_char, &list_index);
     if(start_loc) {
-        // First we find the size (for single-part files)
-        start_loc = find_text_in_pylist(Py_input_list, "size=", &cur_char, &list_index);
-        if(start_loc) {
-            // Move over a bit
-            part_size = (int)extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
-        }
-
-        // Find name
-        start_loc = find_text_in_pylist(Py_input_list, "name=", &cur_char, &list_index);
-        if(start_loc) {
-            extract_filename_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, filename_out);
-        } else {
-            // Don't go on without a name
-            return 0;
-        }
-
-        // Is there a multi-part indicator?
-        start_loc = find_text_in_pylist(Py_input_list, "=ypart", &cur_char, &list_index);
-        if(start_loc) {
-            // Reset size, so we for sure don't use the previously found "size=" value
-            part_size = 0;
-
-            // Find part-begin
-            start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
-            if(start_loc) {
-                // Get begin
-                part_begin = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0);
-
-                // Find part-end
-                start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
-                if(start_loc) {
-                    // Move over a bit
-                    part_size = (int)(extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 0) - part_begin + 1);
-                }
-            }
-
-            // We want to make sure it's a valid value
-            if(part_size <= 0  || part_size > num_bytes_reserved) {
-                // Set safe value
-                part_size = (int)(num_bytes_reserved*0.75);
-            }
-
-            // Skip over everything untill end of line, where the content starts
-            for( ; *cur_char != LF && *cur_char != CR && *cur_char != ZERO; cur_char++);
-        }
-
-        // How many bytes can be checked safely?
-        if(part_size && part_size > END_CHECK_BYTES) {
-            safe_nr_bytes = part_size - END_CHECK_BYTES;
-        } else {
-            safe_nr_bytes = 0;
-        }
-
-        /*
-            During the loop we need to take care of special cases.
-            The escape "=" and whatever it escapes might be on the
-            next Python-list-item. Also the sequence "\n.." should
-            onlyconvert one dot, but this sequence might also be
-            split across list items.
-        */
-        while(1) {
-            // Get current char and increment pointer
-            cur_char++;
-
-            // End of the line of list-item
-            if(*cur_char == ZERO) {
-                // Are we outside the list?
-                list_index++;
-                if(list_index == num_lines) {
-                    break;
-                }
-
-                // Get reference to the new line
-                cur_char = PyBytes_AsString(PyList_GetItem(Py_input_list, list_index));
-            }
-
-            // Special charaters
-            if(escape_char) {
-                *output_buffer++ = (*cur_char - 106);
-                escape_char = 0;
-                double_point_escape = 0;
-            } else if(*cur_char == ESC) {
-                // strncmp is expensive, only perform near the end
-                if(decoded_bytes > safe_nr_bytes) {
-                    /*
-                        Looking for the end, format:
-                        =yend size=384000 part=41 pcrc32=084e170f
-                        If a = is followed by an end-of-line, it's very
-                        likely that the yend part is on the next line
-                        and thus we would miss it
-                    */
-                    if(*(cur_char+1) == ZERO && list_index+1 < num_lines) {
-                        // Quick and dirty check if it's in next line
-                        crc_holder = PyBytes_AsString(PyList_GetItem(Py_input_list, list_index+1));
-                        // If that's not the case, we don't want to mess with the regular flow!!
-                        if(!strncmp(crc_holder, "yend", 4)) {
-                            cur_char = crc_holder;
-                        }
-                    }
-
-                    // Find it!
-                    if (!strncmp(cur_char, "=y", 2) || !strncmp(cur_char, "yend", 4)) {
-#if CRC_CHECK
-                        // Find CRC
-                        start_loc = find_text_in_pylist(Py_input_list, "crc32=", &cur_char, &list_index);
-
-                        // Process CRC
-                        if(start_loc) {
-                            *crc_yenc = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, 1);
-
-                            // Change format to CRC-style (don't ask me why..)
-                            *crc_yenc = -1*(*crc_yenc)-1;
-
-                            // Check if CRC is correct
-                            if(crc->crc == *crc_yenc) {
-                                *crc_correct = 1;
-                            }
-                        }
-#else
-                        // Do a simple check based on size, faster than CRC
-                        if(part_size != decoded_bytes) {
-                            *crc_correct = 0;
-                        } else {
-                            *crc_correct = 1;
-                        }
-#endif
-                        break;
-                    }
-                }
-
-                // Becaus the escape might be at the end of the chunk
-                // we need to do it in the next loop
-                escape_char = 1;
-                continue;
-            } else if(*cur_char == CR) {
-                continue;
-            } else if(*cur_char == LF) {
-                double_point_escape = 1;
-                continue;
-
-            /*
-                "The NNTP-protocol requires to double a dot
-                in the first colum when a line is sent"
-
-                For some magical reason clang gets 2x slower
-                overall when using the second approach.
-                It does make things 15% faster for gcc and msvc
-                So we take this convoluted approach to be safe.
-            */
-#ifdef __clang__
-            } else if(double_point_escape == 2 && *cur_char == DOT) {
-                //
-                // We found "\n.."! Ignore that second dot.
-                double_point_escape = 0;
-                continue;
-            } else if(*cur_char == DOT) {
-                // Special case for "\n.." that can be split between list items
-                if(double_point_escape == 1) {
-                    double_point_escape = 2;
-                }
-#else
-            } else if(*cur_char == DOT) {
-                // "The NNTP-protocol requires to double a dot in the first colum when a line is sent"
-                // We found "\n.."! Ignore that second dot.
-                if(double_point_escape == 2) {
-                    double_point_escape = 0;
-                    continue;
-                }
-                // Special case for "\n.." that can be split between list items
-                if(double_point_escape == 1) {
-                    double_point_escape = 2;
-                }
-#endif
-                // We do include this dot
-                *output_buffer++ = (*cur_char - 42);
-            } else {
-                *output_buffer++ = (*cur_char - 42);
-                // Reset exception
-                double_point_escape = 0;
-            }
-
-            // Increase byte counter for saftey check
-            decoded_bytes++;
-
-#if CRC_CHECK
-            // Check CRC value
-            crc_update(crc, *(output_buffer-1));
-#endif
-
-            // Saftey check
-            if(decoded_bytes == num_bytes_reserved) {
-                break;
-            }
-        }
+        // Move over a bit
+        part_size = (int)extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char);
     }
+
+    // Find name
+    start_loc = find_text_in_pylist(Py_input_list, "name=", &cur_char, &list_index);
+    if(start_loc) {
+        extract_filename_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char, filename_out);
+    } else {
+        // Don't go on without a name
+        return 0;
+    }
+
+    // Is there a multi-part indicator?
+    start_loc = find_text_in_pylist(Py_input_list, "=ypart", &cur_char, &list_index);
+    if(start_loc) {
+        // Reset size, so we for sure don't use the previously found "size=" value
+        part_size = 0;
+
+        // Find part-begin
+        start_loc = find_text_in_pylist(Py_input_list, "begin=", &cur_char, &list_index);
+        if(start_loc) {
+            // Get begin
+            part_begin = extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char);
+
+            // Find part-end
+            start_loc = find_text_in_pylist(Py_input_list, "end=", &cur_char, &list_index);
+            if(start_loc) {
+                // Move over a bit
+                part_size = (int)(extract_int_from_pylist(Py_input_list, &list_index, &start_loc, &cur_char) - part_begin + 1);
+            }
+        }
+
+        // We want to make sure it's a valid value
+        if(part_size <= 0  || part_size > num_bytes_reserved) {
+            // Set safe value
+            part_size = (int)(num_bytes_reserved*0.75);
+        }
+
+        // Skip over everything untill end of line, where the content starts
+        for( ; *cur_char != LF && *cur_char != CR && *cur_char != ZERO; cur_char++);
+    }
+
+    /*
+        Looking for the end, format:
+        =yend size=384000 part=41 pcrc32=084e170f
+    */
+    // first, join chunks to form a flat buffer
+    char tail_buffer[MAX_TAIL_BYTES];
+    int tail_buffer_space = MAX_TAIL_BYTES;
+    int end_line = (int)num_lines - 1;
+    Py_ssize_t end_line_len;
+    const char* tail_buffer_pos = NULL;
+    for(; end_line >= list_index; end_line--) {
+        char* str;
+        Py_ssize_t _len;
+        PyBytes_AsStringAndSize(PyList_GetItem(Py_input_list, end_line), &str, &_len);
+        int len = (int)_len;
+        size_t strOffset = 0;
+        if(len >= tail_buffer_space) {
+            strOffset = len - tail_buffer_space;
+            memcpy(tail_buffer, str + strOffset, tail_buffer_space);
+            tail_buffer_space = 0;
+        } else {
+            tail_buffer_space -= len;
+            memcpy(tail_buffer + tail_buffer_space, str, len);
+        }
+        // TODO: if looking to optimize, can restrict the search range
+        // TODO: finding the first instance isn't ideal - it should search in reverse
+        // TODO: should we attempt to handle "=\r\n=yend" sequences? Although invalid for an encoder, a decoder still needs to unescape the first \r, which means it wouldn't be a valid end sequence
+        tail_buffer_pos = my_memstr(tail_buffer + tail_buffer_space, MAX_TAIL_BYTES - tail_buffer_space, "\r\n=yend ", 0);
+        if(tail_buffer_pos) { // end point found
+            if(tail_buffer_space) {
+                // this chunk was small
+                end_line_len = tail_buffer_pos - tail_buffer - tail_buffer_space;
+            } else {
+                end_line_len = tail_buffer_pos - tail_buffer + strOffset;
+            }
+            break;
+        }
+        if(tail_buffer_space == 0)
+            break;
+    }
+    if(!tail_buffer_pos) {
+        // =yend not found - invalid article
+        return 0;
+    }
+#if CRC_CHECK
+    uint32_t crc = 0;
+    uInt crc_yenc = 0;
+    tail_buffer_pos += 7; // skip "\r\n=yend"
+    int tail_buffer_len = tail_buffer + MAX_TAIL_BYTES - tail_buffer_pos;
+    
+    // Process CRC
+    const char* crc_pos = my_memstr(tail_buffer_pos, tail_buffer_len, " pcrc32=", 1);
+    if(crc_pos && (tail_buffer + MAX_TAIL_BYTES - crc_pos) >= 8) {
+        char* end;
+        crc_yenc = strtoul(crc_pos, &end, 16); // TODO: consider stricter parsing
+    } else {
+        // CRC32 not found - article is invalid
+        return 0;
+    }
+#endif
+    
+    
+    
+    size_t input_offset = cur_char - PyBytes_AsString(PyList_GetItem(Py_input_list, list_index));;
+    YencDecoderState state = YDEC_STATE_CRLF;
+    
+    // loop through chunks and decode
+    while(list_index <= end_line) {
+        char* str;
+        Py_ssize_t len;
+        PyBytes_AsStringAndSize(PyList_GetItem(Py_input_list, list_index), &str, &len);
+        
+        if(list_index == end_line) {
+            len = end_line_len;
+        }
+        list_index++;
+        if((size_t)len <= input_offset) continue;
+        // send to decoder
+        size_t output_len = do_decode(1, (unsigned char*)str + input_offset, (unsigned char*)output_buffer, len - input_offset, &state);
+        decoded_bytes += output_len;
+        input_offset = 0;
+#if CRC_CHECK
+        crc = do_crc32(output_buffer, output_len, crc);
+#endif
+        output_buffer += output_len;
+    }
+    
+#if CRC_CHECK
+    *crc_correct = (crc == crc_yenc);
+#else
+    // Do a simple check based on size, faster than CRC
+    if(part_size != (int)decoded_bytes) {
+        *crc_correct = 0;
+    } else {
+        *crc_correct = 1;
+    }
+#endif
+
     return decoded_bytes;
 }
 
@@ -452,19 +372,14 @@ static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, ch
     be split over multiple lines. And thus we need to really
     check that we did not reach the end of a line every time.
 */
-uLong extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **start_loc, char **cur_char, int crc) {
+uLong extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **start_loc, char **cur_char) {
     char *enc_loc;
     char *item_holder;
     char *combi_holder;
     uLong part_value = 0;
     Py_ssize_t max_lines = PyList_Size(Py_input_list);
 
-    // Crc calculation?
-    if(crc) {
-        part_value = strtoul(*start_loc, &enc_loc, 16);
-    } else {
-        part_value = strtoll(*start_loc, &enc_loc, 0);
-    }
+    part_value = strtoll(*start_loc, &enc_loc, 0);
 
     // Did we reach the end of a line?
     if(*enc_loc == ZERO) {
@@ -480,11 +395,7 @@ uLong extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **st
         strcat(combi_holder, item_holder);
 
         // Now we do it again
-        if(crc) {
-            part_value = strtoul(combi_holder, &enc_loc, 16);
-        } else {
-            part_value = strtol(combi_holder, &enc_loc, 0);
-        }
+        part_value = strtol(combi_holder, &enc_loc, 0);
 
         // Free the space
         free(combi_holder);
@@ -557,6 +468,7 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
 
 
 PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
+    (void)self;
     // The input/output PyObjects
     PyObject *Py_input_list;
     PyObject *Py_output_buffer;
@@ -564,15 +476,12 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     PyObject *retval = NULL;
 
     // CRC
-    Crc32 crc;
-    uInt crc_yenc = 0;
     Bool crc_correct = 0;
-    uInt crc_value = 0xffffffffll;
 
     // Buffers
     char *output_buffer = NULL;
     char *filename_out = NULL;
-    int output_len = 0;
+    size_t output_len = 0;
     int num_bytes_reserved;
     int lp_max;
     int lp;
@@ -588,17 +497,12 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    // If we got a strange article size, we need to calculate it (slower, but safer)
-    if ((num_bytes_reserved <= 0) || (num_bytes_reserved >= MAX_RESERVED_BYTES)) {
-        num_bytes_reserved = 0;
-        lp_max = (int)PyList_Size(Py_input_list);
-        for(lp = 0; lp < lp_max; lp++) {
-            num_bytes_reserved += (int)PyByteArray_GET_SIZE(PyList_GetItem(Py_input_list, lp));
-        }
+    num_bytes_reserved = 0;
+    lp_max = (int)PyList_Size(Py_input_list);
+    for(lp = 0; lp < lp_max; lp++) {
+        num_bytes_reserved += (int)PyBytes_Size(PyList_GetItem(Py_input_list, lp));
     }
 
-    // Reserve the output buffer, 10% more just to be safe
-    num_bytes_reserved = (int)(num_bytes_reserved*1.10);
     output_buffer = (char *)malloc(num_bytes_reserved);
     if(!output_buffer) {
         retval = PyErr_NoMemory();
@@ -608,11 +512,8 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // Byeeeeeeee GIL!
     Py_BEGIN_ALLOW_THREADS;
 
-    // Initial CRC
-    crc_init(&crc, crc_value);
-
     // Calculate
-    output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc, &crc_yenc, &crc_correct);
+    output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc_correct);
 
     // Aaah there you are again GIL..
     Py_END_ALLOW_THREADS;
@@ -633,7 +534,8 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
     // Build output
-    retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, (long long)crc.crc, (long long)crc_yenc, crc_correct ? Py_True: Py_False);
+    // CRCs aren't ever needed (and won't be available if disabled anyway), so we set these to 0 to preserve API
+    retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, 0LL, 0LL, crc_correct ? Py_True: Py_False);
 
     // Make sure we free all the buffers!
     Py_XDECREF(Py_output_buffer);
@@ -644,67 +546,33 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
 }
 
 
-static int encode_buffer(char *input_buffer, char *output_buffer, uInt bytes, Crc32 *crc)
-{
-	uInt encoded = 0;
-	uInt in_ind;
-	uInt out_ind;
-	uInt col = 0;
-	char byte;
-
-	out_ind = 0;
-	for(in_ind=0; in_ind < bytes; in_ind++) {
-		byte = (char)(input_buffer[in_ind] + 42);
-		crc_update(crc, input_buffer[in_ind]);
-		switch(byte){
-			case ZERO:
-			case LF:
-			case CR:
-			case ESC:
-				goto escape_string;
-			case TAB:
-			case SPACE:
-				if(col == 0 || col == LINESIZE-1) {
-					goto escape_string;
-				}
-                        case DOT:
-                                if(col == 0) {
-                                        goto escape_string;
-                                }
-			default:
-				goto plain_string;
-		}
-		escape_string:
-		byte = (char)(byte + 64);
-		output_buffer[out_ind++] = ESC;
-		col++;
-		plain_string:
-		output_buffer[out_ind++] = byte;
-		col++;
-		encoded++;
-		if(col >= LINESIZE) {
-			output_buffer[out_ind++] = CR;
-			output_buffer[out_ind++] = LF;
-			col = 0;
-		}
-	}
-	return out_ind;
+static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
+	size_t ret = len * 2    /* all characters escaped */
+		+ 2 /* allocation for offset and that a newline may occur early */
+#if !defined(YENC_DISABLE_AVX256)
+		+ 64 /* allocation for YMM overflowing */
+#else
+		+ 32 /* allocation for XMM overflowing */
+#endif
+	;
+	/* add newlines, considering the possibility of all chars escaped */
+	if(line_size == 128) // optimize common case
+		return ret + 2 * (len >> 6);
+	return ret + 2 * ((len*2) / line_size);
 }
-
-
 
 PyObject* encode(PyObject* self, PyObject* args)
 {
+    (void)self;
 	PyObject *Py_input_string;
 	PyObject *Py_output_string;
 	PyObject *retval = NULL;
 
 	char *input_buffer = NULL;
 	char *output_buffer = NULL;
-	long long crc_value = 0xffffffffll;
-	uInt input_len = 0;
-	uInt output_len = 0;
-	Crc32 crc;
+	size_t input_len = 0;
+	size_t output_len = 0;
+    uint32_t crc;
 
 	// Parse input
     if (!PyArg_ParseTuple(args, "O:encode", &Py_input_string)) {
@@ -712,10 +580,9 @@ PyObject* encode(PyObject* self, PyObject* args)
     }
 
     // Initialze buffers and CRC's
-	crc_init(&crc, (uInt)crc_value);
-	input_len = (uInt)PyBytes_Size(Py_input_string);
+	input_len = PyBytes_Size(Py_input_string);
 	input_buffer = (char *)PyBytes_AsString(Py_input_string);
-	output_buffer = (char *)malloc((2 * input_len / LINESIZE + 1) * (LINESIZE + 2));
+	output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
 	if(!output_buffer)
 		return PyErr_NoMemory();
 
@@ -723,19 +590,18 @@ PyObject* encode(PyObject* self, PyObject* args)
     Py_BEGIN_ALLOW_THREADS;
 
     // Encode result
-	output_len = encode_buffer(input_buffer, output_buffer, input_len, &crc);
+    int column = 0;
+	output_len = do_encode(LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
+    crc = do_crc32(input_buffer, input_len, 0);
 
 	// Restore GIL so we can build Python strings
 	Py_END_ALLOW_THREADS;
 
 	// Build output string
 	Py_output_string = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
-	if(!Py_output_string)
-		goto out;
-
-	retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc.crc);
-
-out:
+	if(Py_output_string)
+		retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc);
+	
     Py_XDECREF(Py_output_string);
 	free(output_buffer);
 	return retval;

@@ -30,22 +30,14 @@
 /* Do we CRC check? */
 #define CRC_CHECK   0
 
-/* Byte-check limit */
-#define END_CHECK_BYTES 50
-
 /* Constants */
 #define LINESIZE    128
 #define ZERO        0x00
 #define CR          0x0d
 #define LF          0x0a
-#define ESC         0x3d
-#define TAB         0x09
-#define SPACE       0x20
-#define DOT         0x2e
 
-/* 10MB should be enough for any article,
-   as 1MB is the common maximum */
-#define MAX_RESERVED_BYTES     10111000
+/* The =yend line shouldn't exceed 1KB */
+#define MAX_TAIL_BYTES 1024
 
 /* Customized types */
 typedef unsigned long long uLong;
