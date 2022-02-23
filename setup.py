@@ -168,6 +168,7 @@ class SAByEncBuild(build_ext):
                 args["include_dirs"] = obj["include_dirs"]
             if "macros" in obj:
                 args["macros"] = obj["macros"]
+
             compiler.compile(**args)
             objects += compiler.object_filenames(obj["sources"], output_dir=BUILD_DIR)
 
