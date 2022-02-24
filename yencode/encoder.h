@@ -13,7 +13,7 @@ extern size_t
 
 #define do_encode (*_do_encode)
 
-void encoder_init();
+const char* encoder_init();
 
 
 #ifdef __cplusplus
