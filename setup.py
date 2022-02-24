@@ -20,44 +20,36 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 # =============================================================================
 #
-
+import os
+import sys
+import platform
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
-import sysconfig
-import platform
+from distutils import log
+
 
 with open("README.md", "r") as file_long_description:
     long_description = file_long_description.read()
 
-BUILD_DIR = "build"
-machine = platform.machine().lower()  # TODO: this is unreliable, need something better to detect target architecture
-is_armv7 = machine.startswith("armv7")  # TODO: can armv8_ still be AArch32?
-is_arm = is_armv7 or machine.startswith("arm") or machine.startswith("aarch64")
-is_x86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
-
 
 class SAByEncBuild(build_ext):
     def build_extension(self, ext):
-        # determine compiler flags
-        compiler = self.compiler
-        if compiler.compiler_type == "msvc":
-            # LTCG not enabled due to issues seen with code generation where different ISA extensions are selected for specific files
-            base_ldflags = ["/OPT:REF", "/OPT:ICF"]
+        # Try to determine the architecture to build for
+        machine = platform.machine().lower()
+        IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
+        IS_ARM7 = machine.startswith("armv7")
+        IS_X86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
+        log.info("Detected: ARM=%s, ARM7=%s, X86=%s", IS_ARM, IS_ARM7, IS_X86)
+
+        # Determine compiler flags
+        if self.compiler.compiler_type == "msvc":
+            # LTCG not enabled due to issues seen with code generation where
+            # different ISA extensions are selected for specific files
+            ldflags = ["/OPT:REF", "/OPT:ICF"]
             cflags = ["/O2", "/GS-", "/GL-", "/Gy", "/sdl-", "/Oy", "/Oi"]
         else:
-            # Flags can be empty
-            base_ldflags = []
-            base_cfflags = []
-            try:
-                base_ldflags = sysconfig.get_config_var("LDFLAGS").split()
-            except:
-                pass
-            try:
-                base_cfflags = sysconfig.get_config_var("CFLAGS").split()
-            except:
-                pass
-
             # TODO: consider -flto - may require some extra testing
+            ldflags = []
             cflags = [
                 "-Wall",
                 "-Wextra",
@@ -67,15 +59,16 @@ class SAByEncBuild(build_ext):
                 "-fno-exceptions",
                 "-O3",
                 "-fPIC",
-            ] + base_cfflags
+            ]
 
         srcdeps_crc_common = ["yencode/common.h", "yencode/crc_common.h", "yencode/crc.h"]
         srcdeps_dec_common = ["yencode/common.h", "yencode/decoder_common.h", "yencode/decoder.h"]
         srcdeps_enc_common = ["yencode/common.h", "yencode/encoder_common.h", "yencode/encoder.h"]
+
         # build yencode/crcutil
-        # TODO: consider multi-threading + only compile modified sources
-        objects = []
-        for obj in [
+        output_dir = os.path.dirname(self.build_lib)
+        compiled_objects = []
+        for source_files in [
             {
                 "sources": ["yencode/encoder_sse2.cc"],
                 "depends": srcdeps_enc_common + ["encoder_sse_base.h"],
@@ -128,12 +121,12 @@ class SAByEncBuild(build_ext):
             {
                 "sources": ["yencode/encoder_neon.cc"],
                 "depends": srcdeps_enc_common,
-                "gcc_arm_flags": (["-mfpu=neon"] if is_armv7 else []),
+                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
             },
             {
-                "sources": ["yencode/decoder_neon.cc" if is_armv7 else "yencode/decoder_neon64.cc"],
+                "sources": ["yencode/decoder_neon.cc" if IS_ARM7 else "yencode/decoder_neon64.cc"],
                 "depends": srcdeps_dec_common,
-                "gcc_arm_flags": (["-mfpu=neon"] if is_armv7 else []),
+                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
             },
             {"sources": ["yencode/crc_arm.cc"], "depends": srcdeps_crc_common, "gcc_arm_flags": ["-march=armv8-a+crc"]},
             {
@@ -151,30 +144,29 @@ class SAByEncBuild(build_ext):
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
         ]:
-            args = {"sources": obj["sources"], "output_dir": BUILD_DIR}
-            args["extra_postargs"] = cflags[:]
-            if compiler.compiler_type == "msvc":
-                if is_x86 and "msvc_x86_flags" in obj:
-                    args["extra_postargs"] += obj["msvc_x86_flags"]
+            args = {"sources": source_files["sources"], "output_dir": output_dir, "extra_postargs": cflags}
+            if self.compiler.compiler_type == "msvc":
+                if IS_X86 and "msvc_x86_flags" in source_files:
+                    args["extra_postargs"] += source_files["msvc_x86_flags"]
             else:
-                if "gcc_flags" in obj:
-                    args["extra_postargs"] += obj["gcc_flags"]
-                if is_x86 and "gcc_x86_flags" in obj:
-                    args["extra_postargs"] += obj["gcc_x86_flags"]
-                if is_arm and "gcc_arm_flags" in obj:
-                    args["extra_postargs"] += obj["gcc_arm_flags"]
+                if "gcc_flags" in source_files:
+                    args["extra_postargs"] += source_files["gcc_flags"]
+                if IS_X86 and "gcc_x86_flags" in source_files:
+                    args["extra_postargs"] += source_files["gcc_x86_flags"]
+                if IS_ARM and "gcc_arm_flags" in source_files:
+                    args["extra_postargs"] += source_files["gcc_arm_flags"]
 
-            if "include_dirs" in obj:
-                args["include_dirs"] = obj["include_dirs"]
-            if "macros" in obj:
-                args["macros"] = obj["macros"]
+            if "include_dirs" in source_files:
+                args["include_dirs"] = source_files["include_dirs"]
+            if "macros" in source_files:
+                args["macros"] = source_files["macros"]
 
-            compiler.compile(**args)
-            objects += compiler.object_filenames(obj["sources"], output_dir=BUILD_DIR)
+            self.compiler.compile(**args)
+            compiled_objects += self.compiler.object_filenames(source_files["sources"], output_dir=output_dir)
 
         # attach to Extension
-        ext.extra_link_args = base_ldflags + objects
-        ext.depends = ["src/sabyenc3.h"] + objects
+        ext.extra_link_args = ldflags + compiled_objects
+        ext.depends = ["src/sabyenc3.h"] + compiled_objects
 
         # proceed with regular Extension build
         super(SAByEncBuild, self).build_extension(ext)
