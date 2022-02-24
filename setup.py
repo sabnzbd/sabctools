@@ -43,7 +43,7 @@ class SAByEncBuild(build_ext):
         if compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where different ISA extensions are selected for specific files
             base_ldflags = ["/OPT:REF", "/OPT:ICF"]
-            cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi"]
+            cflags = ["/O2", "/GS-", "/GL-", "/Gy", "/sdl-", "/Oy", "/Oi"]
         else:
             # Flags can be empty
             base_ldflags = []
