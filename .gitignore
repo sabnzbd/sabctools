@@ -54,6 +54,7 @@ examples
 test
 dist
 cmake*/
+*.whl
 
 # Compiled python
 *.py[cod]
