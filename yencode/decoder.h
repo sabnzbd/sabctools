@@ -52,7 +52,7 @@ do_decode_end(const unsigned char *HEDLEY_RESTRICT *src, unsigned char *HEDLEY_R
     return _do_decode_end_raw(src, dest, len, state);
 }
 
-void decoder_init();
+const char* decoder_init();
 
 
 #ifdef __cplusplus

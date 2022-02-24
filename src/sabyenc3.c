@@ -61,15 +61,13 @@ static struct PyModuleDef sabyenc3_definition = {
 };
 
 PyMODINIT_FUNC PyInit_sabyenc3(void) {
-    // init yencode
-    encoder_init();
-    decoder_init();
-    crc_init();	
-    
-    // Initialize and add version information
+    // Initialize and add version / SIMD information
     Py_Initialize();
     PyObject* module = PyModule_Create(&sabyenc3_definition);
     PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
+    PyModule_AddStringConstant(module, "encoder_simd", encoder_init());
+    PyModule_AddStringConstant(module, "decoder_simd", decoder_init());
+    crc_init();
     return module;
 }
 
@@ -82,7 +80,7 @@ static void* my_memmem(const void* haystack, size_t haystackLen, const void* nee
         return NULL;
     if(needleLen == 0 || haystack == needle)
         return (void*)haystack;
-    
+
     size_t checkBytes = haystackLen - needleLen +1;
     char* p;
     const char* haystackPos = (const char*)haystack;
@@ -248,18 +246,18 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         return 0;
     }
 #endif
-    
-    
-    
+
+
+
     size_t input_offset = cur_char - PyBytes_AsString(PyList_GetItem(Py_input_list, list_index));;
     YencDecoderState state = YDEC_STATE_CRLF;
-    
+
     // loop through chunks and decode
     while(list_index <= end_line) {
         char* str;
         Py_ssize_t len;
         PyBytes_AsStringAndSize(PyList_GetItem(Py_input_list, list_index), &str, &len);
-        
+
         if(list_index == end_line) {
             len = end_line_len;
         }
@@ -274,7 +272,7 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
 #endif
         output_buffer += output_len;
     }
-    
+
 #if CRC_CHECK
     *crc_correct = (crc == crc_yenc);
 #else
@@ -601,7 +599,7 @@ PyObject* encode(PyObject* self, PyObject* args)
 	Py_output_string = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
 	if(Py_output_string)
 		retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc);
-	
+
     Py_XDECREF(Py_output_string);
 	free(output_buffer);
 	return retval;
