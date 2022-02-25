@@ -477,7 +477,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     Bool crc_correct = 0;
 
     // Buffers
-    char *output_buffer = NULL;
     char *filename_out = NULL;
     size_t output_len = 0;
     int num_bytes_reserved;
@@ -503,18 +502,17 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     }
 
     // Create empty bytes object for direct access to char-pointer and then resize it
-    Py_output_buffer = PyBytes_FromString("");
-    if(Py_output_buffer == NULL || _PyBytes_Resize(&Py_output_buffer, num_bytes_reserved) == -1) {
+    Py_output_buffer = PyBytes_FromStringAndSize(NULL, num_bytes_reserved);
+    if(Py_output_buffer == NULL) {
         retval = PyErr_NoMemory();
         return NULL;
     }
-    output_buffer = ((PyBytesObject *)Py_output_buffer)->ob_sval;
 
     // Lift the GIL
     Py_BEGIN_ALLOW_THREADS;
 
     // Calculate
-    output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc_correct);
+    output_len = decode_buffer_usenet(Py_input_list, ((PyBytesObject *)Py_output_buffer)->ob_sval, num_bytes_reserved, &filename_out, &crc_correct);
 
     // Aaah there you are again GIL..
     Py_END_ALLOW_THREADS;
