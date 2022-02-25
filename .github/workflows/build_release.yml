@@ -1,4 +1,4 @@
-name: Python package build and publish
+name: Python wheels
 
 on: push
 

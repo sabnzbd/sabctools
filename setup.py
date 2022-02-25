@@ -59,6 +59,7 @@ class SAByEncBuild(build_ext):
                 "-fno-exceptions",
                 "-O3",
                 "-fPIC",
+                "-fwrapv",
             ]
 
         srcdeps_crc_common = ["yencode/common.h", "yencode/crc_common.h", "yencode/crc.h"]
@@ -144,7 +145,7 @@ class SAByEncBuild(build_ext):
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
         ]:
-            args = {"sources": source_files["sources"], "output_dir": output_dir, "extra_postargs": cflags}
+            args = {"sources": source_files["sources"], "output_dir": output_dir, "extra_postargs": cflags[:]}
             if self.compiler.compiler_type == "msvc":
                 if IS_X86 and "msvc_x86_flags" in source_files:
                     args["extra_postargs"] += source_files["msvc_x86_flags"]
