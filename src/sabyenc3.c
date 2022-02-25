@@ -235,7 +235,7 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
     uInt crc_yenc = 0;
     tail_buffer_pos += 7; // skip "\r\n=yend"
     int tail_buffer_len = tail_buffer + MAX_TAIL_BYTES - tail_buffer_pos;
-    
+
     // Process CRC
     const char* crc_pos = my_memstr(tail_buffer_pos, tail_buffer_len, " pcrc32=", 1);
     if(crc_pos && (tail_buffer + MAX_TAIL_BYTES - crc_pos) >= 8) {
@@ -495,19 +495,22 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
         return NULL;
     }
 
+    // yEnc data can never be larger than the source data, so use that as a start
     num_bytes_reserved = 0;
     lp_max = (int)PyList_Size(Py_input_list);
     for(lp = 0; lp < lp_max; lp++) {
         num_bytes_reserved += (int)PyBytes_Size(PyList_GetItem(Py_input_list, lp));
     }
 
-    output_buffer = (char *)malloc(num_bytes_reserved);
-    if(!output_buffer) {
+    // Create empty bytes object for direct access to char-pointer and then resize it
+    Py_output_buffer = PyBytes_FromString("");
+    if(Py_output_buffer == NULL || _PyBytes_Resize(&Py_output_buffer, num_bytes_reserved) == -1) {
         retval = PyErr_NoMemory();
         return NULL;
     }
+    output_buffer = ((PyBytesObject *)Py_output_buffer)->ob_sval;
 
-    // Byeeeeeeee GIL!
+    // Lift the GIL
     Py_BEGIN_ALLOW_THREADS;
 
     // Calculate
@@ -519,17 +522,17 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // Catch if there's nothing
     if(!output_len || !filename_out) {
         PyErr_SetString(PyExc_ValueError, "Could not get filename");
-        // Saftey free's
-        if(output_buffer) free(output_buffer);
+        // Safety free's
         if(filename_out) free(filename_out);
+        Py_XDECREF(Py_output_buffer);
         return NULL;
     }
 
-    // Prepare output
-    Py_output_buffer = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
-
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
+
+    // Resize data to actual value
+    _PyBytes_Resize(&Py_output_buffer, output_len);
 
     // Build output
     // CRCs aren't ever needed (and won't be available if disabled anyway), so we set these to 0 to preserve API
@@ -538,7 +541,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // Make sure we free all the buffers!
     Py_XDECREF(Py_output_buffer);
     Py_XDECREF(Py_output_filename);
-    free(output_buffer);
     free(filename_out);
     return retval;
 }
