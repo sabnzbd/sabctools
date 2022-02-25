@@ -1,10 +1,16 @@
+#!/usr/bin/python3
+
 import os
 import pickle
-import sabyenc3
+import sys
+import platform
+print("Python", sys.version.split("\n")[0], platform.processor())
 import re
 import time
 import binascii
-import sys
+
+import sabyenc3
+print("sabyenc3", sabyenc3.__version__, sabyenc3.__file__)
 
 
 ###################
