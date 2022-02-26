@@ -466,8 +466,8 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
 
 
 PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
-    (void)self;
     // The input/output PyObjects
+    (void)self;
     PyObject *Py_input_list;
     PyObject *Py_output_buffer;
     PyObject *Py_output_filename;
@@ -477,6 +477,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     Bool crc_correct = 0;
 
     // Buffers
+    char *output_buffer = NULL;
     char *filename_out = NULL;
     size_t output_len = 0;
     int num_bytes_reserved;
@@ -501,18 +502,29 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
         num_bytes_reserved += (int)PyBytes_Size(PyList_GetItem(Py_input_list, lp));
     }
 
-    // Create empty bytes object for direct access to char-pointer and then resize it
+#if defined(_MSC_VER)
+    // Create empty bytes object for direct access to char-pointer
+    // Only on Windows this is faster
     Py_output_buffer = PyBytes_FromStringAndSize(NULL, num_bytes_reserved);
     if(Py_output_buffer == NULL) {
-        retval = PyErr_NoMemory();
+        PyErr_NoMemory();
         return NULL;
     }
+    output_buffer = ((PyBytesObject *)Py_output_buffer)->ob_sval;
+#else
+    // On Linux this is much faster, macOS both methods seem equally fast
+    output_buffer = (char *)malloc(num_bytes_reserved);
+    if(!output_buffer) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+#endif
 
     // Lift the GIL
     Py_BEGIN_ALLOW_THREADS;
 
     // Calculate
-    output_len = decode_buffer_usenet(Py_input_list, ((PyBytesObject *)Py_output_buffer)->ob_sval, num_bytes_reserved, &filename_out, &crc_correct);
+    output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc_correct);
 
     // Aaah there you are again GIL..
     Py_END_ALLOW_THREADS;
@@ -521,6 +533,9 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     if(!output_len || !filename_out) {
         PyErr_SetString(PyExc_ValueError, "Could not get filename");
         // Safety free's
+#if !defined(_MSC_VER)
+        if(output_buffer) free(output_buffer);
+#endif
         if(filename_out) free(filename_out);
         Py_XDECREF(Py_output_buffer);
         return NULL;
@@ -529,12 +544,17 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
+#if defined(_MSC_VER)
     // Resize data to actual value
     _PyBytes_Resize(&Py_output_buffer, output_len);
+#else
+    // Prepare output
+    Py_output_buffer = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
+    free(output_buffer);
+#endif
 
     // Build output
-    // CRCs aren't ever needed (and won't be available if disabled anyway), so we set these to 0 to preserve API
-    retval = Py_BuildValue("(S,S,L,L,O)", Py_output_buffer, Py_output_filename, 0LL, 0LL, crc_correct ? Py_True: Py_False);
+    retval = Py_BuildValue("(S,S,O)", Py_output_buffer, Py_output_filename, crc_correct ? Py_True: Py_False);
 
     // Make sure we free all the buffers!
     Py_XDECREF(Py_output_buffer);

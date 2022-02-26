@@ -91,5 +91,5 @@ for fname in all_crc_fails:
 
     pdb.set_trace()  # breakpoint 612b4eac //
 
-    output_buffer, output_filename, crc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_size)
+    output_buffer, output_filename, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_size)
     print(crc_correct)
