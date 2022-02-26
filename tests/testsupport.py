@@ -70,7 +70,7 @@ def read_pickle(filename):
 
 def sabyenc3_wrapper(data_chunks, data_bytes):
     """ CRC's are """
-    decoded_data, filename, crc_calc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_bytes)
+    decoded_data, filename, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_bytes)
     return decoded_data, correct_unknown_encoding(filename), crc_correct
 
 

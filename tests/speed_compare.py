@@ -33,7 +33,7 @@ except AttributeError:
 time1_new = get_time()
 
 for i in range(nr_runs):
-    decoded_data_new, output_filename, crc, crc_yenc, crc_correct = sabyenc3.decode_usenet_chunks(
+    decoded_data_new, output_filename, crc_correct = sabyenc3.decode_usenet_chunks(
         data_chunks, data_bytes
     )
 
