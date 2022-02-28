@@ -39,7 +39,8 @@ class SAByEncBuild(build_ext):
         IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
         IS_ARM7 = machine.startswith("armv7")
         IS_X86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
-        log.info("Detected: ARM=%s, ARM7=%s, X86=%s", IS_ARM, IS_ARM7, IS_X86)
+        IS_MACOS = sys.platform == "darwin"
+        log.info("Detected: ARM=%s, ARM7=%s, x86=%s, macOS=%s", IS_ARM, IS_ARM7, IS_X86, IS_MACOS)
 
         # Determine compiler flags
         if self.compiler.compiler_type == "msvc":
@@ -129,7 +130,11 @@ class SAByEncBuild(build_ext):
                 "depends": srcdeps_dec_common,
                 "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
             },
-            {"sources": ["yencode/crc_arm.cc"], "depends": srcdeps_crc_common, "gcc_arm_flags": ["-march=armv8-a+crc"]},
+            {
+                "sources": ["yencode/crc_arm.cc"],
+                "depends": srcdeps_crc_common,
+                "gcc_arm_flags": (["-march=armv8-a+crc"] if not IS_MACOS else []),
+            },
             {
                 "sources": [
                     "crcutil-1.0/code/crc32c_sse4.cc",
