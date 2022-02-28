@@ -30,7 +30,7 @@
 /* Function declarations */
 PyMODINIT_FUNC PyInit_sabyenc3(void);
 static size_t decode_buffer_usenet(PyObject *, char *, int, char **, Bool *);
-static char * find_text_in_pylist(PyObject *, char *, char **, int *);
+static char * find_text_in_pylist(PyObject *, const char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
 
@@ -292,7 +292,7 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
     We need a special function to find the keywords
     because they can be split over multiple chunks.
 */
-static char * find_text_in_pylist(PyObject *Py_input_list, char *search_term, char **cur_char, int *cur_index) {
+static char * find_text_in_pylist(PyObject *Py_input_list, const char *search_term, char **cur_char, int *cur_index) {
     // String holders
     char *next_string = NULL;
     char *start_loc = NULL;
@@ -534,7 +534,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     // Resize data to actual value
     // We use this instead of "_PyBytes_Resize", as it seems to cause a drop in performance
     Py_SIZE(sv) = output_len;
-    sv->ob_sval[output_len] = "\0";
+    sv->ob_sval[output_len] = '\0';
     sv->ob_shash = -1;
 
     // Build output
