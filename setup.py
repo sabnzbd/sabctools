@@ -23,13 +23,10 @@
 import os
 import sys
 import platform
+import re
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from distutils import log
-
-
-with open("README.md", "r") as file_long_description:
-    long_description = file_long_description.read()
 
 
 class SAByEncBuild(build_ext):
@@ -64,94 +61,94 @@ class SAByEncBuild(build_ext):
                 "-std=c++14",
             ]
 
-        srcdeps_crc_common = ["yencode/common.h", "yencode/crc_common.h", "yencode/crc.h"]
-        srcdeps_dec_common = ["yencode/common.h", "yencode/decoder_common.h", "yencode/decoder.h"]
-        srcdeps_enc_common = ["yencode/common.h", "yencode/encoder_common.h", "yencode/encoder.h"]
+        srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
+        srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
+        srcdeps_enc_common = ["src/yencode/common.h", "src/yencode/encoder_common.h", "src/yencode/encoder.h"]
 
         # build yencode/crcutil
         output_dir = os.path.dirname(self.build_lib)
         compiled_objects = []
         for source_files in [
             {
-                "sources": ["yencode/platform.cc", "yencode/encoder.cc", "yencode/decoder.cc", "yencode/crc.cc"],
-                "include_dirs": ["crcutil-1.0/code", "crcutil-1.0/examples"],
+                "sources": ["src/yencode/platform.cc", "src/yencode/encoder.cc", "src/yencode/decoder.cc", "src/yencode/crc.cc"],
+                "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/examples"],
             },
             {
-                "sources": ["yencode/encoder_sse2.cc"],
+                "sources": ["src/yencode/encoder_sse2.cc"],
                 "depends": srcdeps_enc_common + ["encoder_sse_base.h"],
                 "gcc_x86_flags": ["-msse2"],
             },
             {
-                "sources": ["yencode/decoder_sse2.cc"],
+                "sources": ["src/yencode/decoder_sse2.cc"],
                 "depends": srcdeps_dec_common + ["decoder_sse_base.h"],
                 "gcc_x86_flags": ["-msse2"],
             },
             {
-                "sources": ["yencode/encoder_ssse3.cc"],
+                "sources": ["src/yencode/encoder_ssse3.cc"],
                 "depends": srcdeps_enc_common + ["encoder_sse_base.h"],
                 "gcc_x86_flags": ["-mssse3"],
             },
             {
-                "sources": ["yencode/decoder_ssse3.cc"],
+                "sources": ["src/yencode/decoder_ssse3.cc"],
                 "depends": srcdeps_dec_common + ["decoder_sse_base.h"],
                 "gcc_x86_flags": ["-mssse3"],
             },
             {
-                "sources": ["yencode/crc_folding.cc"],
+                "sources": ["src/yencode/crc_folding.cc"],
                 "depends": srcdeps_crc_common,
                 "gcc_x86_flags": ["-mssse3", "-msse4.1", "-mpclmul"],
             },
             {
-                "sources": ["yencode/encoder_avx.cc"],
+                "sources": ["src/yencode/encoder_avx.cc"],
                 "depends": srcdeps_enc_common + ["encoder_sse_base.h"],
                 "gcc_x86_flags": ["-mavx", "-mpopcnt"],
                 "msvc_x86_flags": ["/arch:AVX"],
             },
             {
-                "sources": ["yencode/decoder_avx.cc"],
+                "sources": ["src/yencode/decoder_avx.cc"],
                 "depends": srcdeps_dec_common + ["decoder_sse_base.h"],
                 "gcc_x86_flags": ["-mavx", "-mpopcnt"],
                 "msvc_x86_flags": ["/arch:AVX"],
             },
             {
-                "sources": ["yencode/encoder_avx2.cc"],
+                "sources": ["src/yencode/encoder_avx2.cc"],
                 "depends": srcdeps_enc_common + ["encoder_avx_base.h"],
                 "gcc_x86_flags": ["-mavx2", "-mpopcnt", "-mbmi", "-mbmi2", "-mlzcnt"],
                 "msvc_x86_flags": ["/arch:AVX2"],
             },
             {
-                "sources": ["yencode/decoder_avx2.cc"],
+                "sources": ["src/yencode/decoder_avx2.cc"],
                 "depends": srcdeps_dec_common + ["decoder_avx2_base.h"],
                 "gcc_x86_flags": ["-mavx2", "-mpopcnt", "-mbmi", "-mbmi2", "-mlzcnt"],
                 "msvc_x86_flags": ["/arch:AVX2"],
             },
             {
-                "sources": ["yencode/encoder_neon.cc"],
+                "sources": ["src/yencode/encoder_neon.cc"],
                 "depends": srcdeps_enc_common,
                 "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
             },
             {
-                "sources": ["yencode/decoder_neon.cc" if IS_ARM7 else "yencode/decoder_neon64.cc"],
+                "sources": ["src/yencode/decoder_neon.cc" if IS_ARM7 else "src/yencode/decoder_neon64.cc"],
                 "depends": srcdeps_dec_common,
                 "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
             },
             {
-                "sources": ["yencode/crc_arm.cc"],
+                "sources": ["src/yencode/crc_arm.cc"],
                 "depends": srcdeps_crc_common,
                 "gcc_arm_flags": (["-march=armv8-a+crc"] if not IS_MACOS else []),
             },
             {
                 "sources": [
-                    "crcutil-1.0/code/crc32c_sse4.cc",
-                    "crcutil-1.0/code/multiword_64_64_cl_i386_mmx.cc",
-                    "crcutil-1.0/code/multiword_64_64_gcc_amd64_asm.cc",
-                    "crcutil-1.0/code/multiword_64_64_gcc_i386_mmx.cc",
-                    "crcutil-1.0/code/multiword_64_64_intrinsic_i386_mmx.cc",
-                    "crcutil-1.0/code/multiword_128_64_gcc_amd64_sse2.cc",
-                    "crcutil-1.0/examples/interface.cc",
+                    "src/crcutil-1.0/code/crc32c_sse4.cc",
+                    "src/crcutil-1.0/code/multiword_64_64_cl_i386_mmx.cc",
+                    "src/crcutil-1.0/code/multiword_64_64_gcc_amd64_asm.cc",
+                    "src/crcutil-1.0/code/multiword_64_64_gcc_i386_mmx.cc",
+                    "src/crcutil-1.0/code/multiword_64_64_intrinsic_i386_mmx.cc",
+                    "src/crcutil-1.0/code/multiword_128_64_gcc_amd64_sse2.cc",
+                    "src/crcutil-1.0/examples/interface.cc",
                 ],
                 "gcc_flags": ["-Wno-expansion-to-defined", "-Wunused-parameter"],
-                "include_dirs": ["crcutil-1.0/code", "crcutil-1.0/tests"],
+                "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/tests"],
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
         ]:
@@ -183,9 +180,17 @@ class SAByEncBuild(build_ext):
         super(SAByEncBuild, self).build_extension(ext)
 
 
+# Load description
+with open("README.md", "r") as file_long_description:
+    long_description = file_long_description.read()
+
+# Parse the version from the C sources
+with open("src/sabyenc3.h", "r") as sabyenc_h:
+    version = re.findall('#define SABYENC_VERSION +"([0-9xA-Z_.]+)"?', sabyenc_h.read())[0]
+
 setup(
     name="sabyenc3",
-    version="5.0.0",
+    version=version,
     author="Safihre",
     author_email="safihre@sabnzbd.org",
     url="https://github.com/sabnzbd/sabyenc/",
@@ -209,7 +214,7 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Communications :: Usenet News",
     ],
-    description="yEnc Module for Python modified for SABnzbd",
+    description="yEnc decoding of usenet data using SIMD routines",
     long_description=long_description,
     long_description_content_type="text/markdown",
 )

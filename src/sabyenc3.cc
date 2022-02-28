@@ -21,9 +21,9 @@
 
 #include "sabyenc3.h"
 
-#include "../yencode/encoder.h"
-#include "../yencode/decoder.h"
-#include "../yencode/crc.h"
+#include "yencode/encoder.h"
+#include "yencode/decoder.h"
+#include "yencode/crc.h"
 
 /* Declarations */
 
