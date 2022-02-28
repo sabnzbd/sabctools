@@ -50,7 +50,6 @@ Temporary Items
 Build
 *.egg-info
 build
-examples
 test
 dist
 cmake*/

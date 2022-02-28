@@ -1,4 +1,4 @@
-SABYenc 3 - yEnc decoding for Python 3 using SIMD routines
+SABYenc 3 - yEnc decoding of usenet data using SIMD routines
 ===============================
 
 Modification of the original [yenc](https://pypi.org/project/yenc/) module for use within SABnzbd.
@@ -26,3 +26,4 @@ For testing we use `pytest` (install via `pip install -r tests/requirements.txt`
 ```
 pytest
 ```
+Note that tests can fail if `git` modified the line endings of data files when checking out the repository!
