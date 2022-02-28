@@ -1,17 +1,13 @@
-SABYenc 3 - yEnc Decoding for Python 3
+SABYenc 3 - yEnc decoding for Python 3 using SIMD routines
 ===============================
 
-Modified the original yenc module by Alessandro Duca <alessandro.duca@gmail.com>
-for use within SABnzbd.
-
+Modification of the original [yenc](https://pypi.org/project/yenc/) module for use within SABnzbd.
 The module was extended to do header parsing and full yEnc decoding from a Python
 list of chunks, the way in which data is retrieved from usenet.
 This is particularly beneficial when SSL is enabled, which limits the size of each chunk to 16K. Parsing these chunks in python is much more costly.
 Additionally, this module releases Python's GIL during decoding, greatly increasing performance of the overall download process.
 
----
-
-This module only works with Python 3, the source code of the Python 2 version (`sabyenc`) can be found [here](https://github.com/sabnzbd/sabyenc/tree/sabyenc-python2).
+Further improved by using [yencode](https://github.com/animetosho/node-yencode) from animetosho, which utilizes x86/ARM SIMD optimised routines if such CPU features are available.
 
 Installing
 ===============================
@@ -21,7 +17,7 @@ pip install sabyenc3 --upgrade
 ```
 When you want to compile from sources, you can run in the `sabyenc` directory:
 ```
-python3 setup.py install
+pip install .
 ```
 
 Testing
