@@ -26,10 +26,10 @@ import sabyenc3
 
 
 def correct_unknown_encoding(str_or_bytes_in):
-    """ Files created on Windows but unpacked/repaired on
-        linux can result in invalid filenames. Try to fix this
-        encoding by going to bytes and then back to unicode again.
-        Last resort we use chardet package
+    """Files created on Windows but unpacked/repaired on
+    linux can result in invalid filenames. Try to fix this
+    encoding by going to bytes and then back to unicode again.
+    Last resort we use chardet package
     """
     # If already string, back to bytes
     if not isinstance(str_or_bytes_in, bytes):
@@ -51,10 +51,9 @@ def read_and_split(filename, chunk_size=14):
     # Default to chunks of 16K, as used in SSL
     with open("tests/yencfiles/%s" % filename, "rb") as yencfile:
         data_raw = yencfile.read()
-        data_bytes = len(data_raw)
-        n = 2 ** chunk_size
+        n = 2**chunk_size
         data_chunks = [data_raw[i : i + n] for i in range(0, len(data_raw), n)]
-    return data_raw, data_chunks, data_bytes
+    return data_raw, data_chunks
 
 
 def read_pickle(filename):
@@ -65,17 +64,17 @@ def read_pickle(filename):
             # Reset the pointer and try again
             yencfile.seek(0)
             data_chunks, data_bytes, lines = pickle.load(yencfile, encoding="bytes")
-    return b"".join(data_chunks), data_chunks, data_bytes
+    return b"".join(data_chunks), data_chunks
 
 
-def sabyenc3_wrapper(data_chunks, data_bytes):
-    """ CRC's are """
-    decoded_data, filename, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks, data_bytes)
+def sabyenc3_wrapper(data_chunks):
+    """CRC's are"""
+    decoded_data, filename, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks)
     return decoded_data, correct_unknown_encoding(filename), crc_correct
 
 
-def old_yenc(data_plain):
-    """ Use the older decoder to verify the new one """
+def python_yenc(data_plain):
+    """Use the older decoder to verify the new one"""
     data = []
 
     # Remove the NNTP-double-dot style
@@ -107,7 +106,7 @@ def old_yenc(data_plain):
 
     # Let's get the CRC
     crc = binascii.crc32(decoded_data)
-    partcrc = "%08X" % (crc & 2 ** 32 - 1)
+    partcrc = "%08X" % (crc & 2**32 - 1)
 
     if ypart:
         crcname = "pcrc32"
@@ -184,7 +183,7 @@ def get_yenc_data(line, splits=None):
 
 
 def yenc_subtract(char, subtract):
-    """ Wrap-around for below 0 """
+    """Wrap-around for below 0"""
     char_diff = char - subtract
     if char_diff < 0:
         return 256 + char_diff

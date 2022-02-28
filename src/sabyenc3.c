@@ -41,7 +41,7 @@ static PyMethodDef sabyenc3_methods[] = {
         "decode_usenet_chunks",
         decode_usenet_chunks,
         METH_VARARGS,
-        "decode_usenet_chunks(list_of_chunks, nr_bytes)"
+        "decode_usenet_chunks(list_of_chunks)"
     },
     {
         "encode",
@@ -477,7 +477,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     Bool crc_correct = 0;
 
     // Buffers
-    char *output_buffer = NULL;
     char *filename_out = NULL;
     size_t output_len = 0;
     int num_bytes_reserved;
@@ -485,7 +484,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     int lp;
 
     // Parse input
-    if (!PyArg_ParseTuple(args, "Oi:decode_usenet_chunks", &Py_input_list, &num_bytes_reserved)) {
+    if (!PyArg_ParseTuple(args, "O:decode_usenet_chunks", &Py_input_list)) {
         return NULL;
     }
 
@@ -502,7 +501,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
         num_bytes_reserved += (int)PyBytes_Size(PyList_GetItem(Py_input_list, lp));
     }
 
-#if defined(_MSC_VER)
     // Create empty bytes object for direct access to char-pointer
     // Only on Windows this is faster
     Py_output_buffer = PyBytes_FromStringAndSize(NULL, num_bytes_reserved);
@@ -510,21 +508,13 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
         PyErr_NoMemory();
         return NULL;
     }
-    output_buffer = ((PyBytesObject *)Py_output_buffer)->ob_sval;
-#else
-    // On Linux this is much faster, macOS both methods seem equally fast
-    output_buffer = (char *)malloc(num_bytes_reserved);
-    if(!output_buffer) {
-        PyErr_NoMemory();
-        return NULL;
-    }
-#endif
+    PyBytesObject *sv = (PyBytesObject *)Py_output_buffer;
 
     // Lift the GIL
     Py_BEGIN_ALLOW_THREADS;
 
     // Calculate
-    output_len = decode_buffer_usenet(Py_input_list, output_buffer, num_bytes_reserved, &filename_out, &crc_correct);
+    output_len = decode_buffer_usenet(Py_input_list, sv->ob_sval, num_bytes_reserved, &filename_out, &crc_correct);
 
     // Aaah there you are again GIL..
     Py_END_ALLOW_THREADS;
@@ -533,30 +523,24 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     if(!output_len || !filename_out) {
         PyErr_SetString(PyExc_ValueError, "Could not get filename");
         // Safety free's
-#if !defined(_MSC_VER)
-        if(output_buffer) free(output_buffer);
-#endif
         if(filename_out) free(filename_out);
-        Py_XDECREF(Py_output_buffer);
+        if(Py_output_buffer) Py_XDECREF(Py_output_buffer);
         return NULL;
     }
 
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
-#if defined(_MSC_VER)
     // Resize data to actual value
-    _PyBytes_Resize(&Py_output_buffer, output_len);
-#else
-    // Prepare output
-    Py_output_buffer = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
-    free(output_buffer);
-#endif
+    // We use this instead of "_PyBytes_Resize", as it seems to cause a drop in performance
+    Py_SIZE(sv) = output_len;
+    sv->ob_sval[output_len] = "\0";
+    sv->ob_shash = -1;
 
     // Build output
     retval = Py_BuildValue("(S,S,O)", Py_output_buffer, Py_output_filename, crc_correct ? Py_True: Py_False);
 
-    // Make sure we free all the buffers!
+    // Make sure we free all the buffers
     Py_XDECREF(Py_output_buffer);
     Py_XDECREF(Py_output_filename);
     free(filename_out);

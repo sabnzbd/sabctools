@@ -62,7 +62,7 @@ for fname in all_crc_fails:
     # Different from homemade
     flat_data = "".join(data)
     decoded_data, crc = _yenc.decode_string(flat_data)[:2]
-    partcrc = "%08X" % ((crc ^ -1) & 2 ** 32 - 1)
+    partcrc = "%08X" % ((crc ^ -1) & 2**32 - 1)
 
     if ypart:
         crcname = "pcrc32"

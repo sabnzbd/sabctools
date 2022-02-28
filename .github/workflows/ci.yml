@@ -2,7 +2,7 @@ name: CI Tests
 on: push
 
 jobs:
-  build_wheels:
+  ci:
     name: ${{ matrix.os }} - Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -12,6 +12,8 @@ jobs:
         python-version: ["3.7", "3.8", "3.9", "3.10"]
 
     steps:
+      - name: Set git to not change line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         name: Install Python
@@ -23,4 +25,4 @@ jobs:
           pip install -r tests/requirements.txt
           pip install . -v
           python -c "import sabyenc3; print(sabyenc3.__version__); print(sabyenc3.decoder_simd);"
-          pytest -k test_regular
+          pytest -v --capture=tee-sys
