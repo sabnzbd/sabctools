@@ -61,6 +61,7 @@ class SAByEncBuild(build_ext):
                 "-O3",
                 "-fPIC",
                 "-fwrapv",
+                "-std=c++14",
             ]
 
         srcdeps_crc_common = ["yencode/common.h", "yencode/crc_common.h", "yencode/crc.h"]
@@ -71,6 +72,10 @@ class SAByEncBuild(build_ext):
         output_dir = os.path.dirname(self.build_lib)
         compiled_objects = []
         for source_files in [
+            {
+                "sources": ["yencode/platform.cc", "yencode/encoder.cc", "yencode/decoder.cc", "yencode/crc.cc"],
+                "include_dirs": ["crcutil-1.0/code", "crcutil-1.0/examples"],
+            },
             {
                 "sources": ["yencode/encoder_sse2.cc"],
                 "depends": srcdeps_enc_common + ["encoder_sse_base.h"],
@@ -145,7 +150,7 @@ class SAByEncBuild(build_ext):
                     "crcutil-1.0/code/multiword_128_64_gcc_amd64_sse2.cc",
                     "crcutil-1.0/examples/interface.cc",
                 ],
-                "gcc_flags": ["-Wno-expansion-to-defined"],
+                "gcc_flags": ["-Wno-expansion-to-defined", "-Wunused-parameter"],
                 "include_dirs": ["crcutil-1.0/code", "crcutil-1.0/tests"],
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
@@ -189,8 +194,7 @@ setup(
     ext_modules=[
         Extension(
             "sabyenc3",
-            ["src/sabyenc3.c", "yencode/platform.cc", "yencode/encoder.cc", "yencode/decoder.cc", "yencode/crc.cc"],
-            include_dirs=["crcutil-1.0/code", "crcutil-1.0/examples"],
+            ["src/sabyenc3.cc"],
         )
     ],
     cmdclass={"build_ext": SAByEncBuild},
