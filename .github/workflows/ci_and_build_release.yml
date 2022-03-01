@@ -37,9 +37,6 @@ jobs:
     name: Build wheels on ${{ matrix.os }} ${{ matrix.linux_arch }}
     needs: ci
     runs-on: ${{ matrix.os }}
-    env:
-      TWINE_USERNAME: '__token__'
-      TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -80,6 +77,9 @@ jobs:
             ./wheelhouse/*.whl
             ./dist/*.tar.gz
       - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: '__token__'
+          TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
         if: env.TWINE_PASSWORD && github.ref == 'refs/heads/master'
         run: |
           pip install twine
