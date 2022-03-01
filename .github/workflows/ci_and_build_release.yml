@@ -32,6 +32,9 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     needs: ci
     runs-on: ${{ matrix.os }}
+    env:
+      TWINE_USERNAME: '__token__'
+      TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
