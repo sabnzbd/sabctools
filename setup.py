@@ -58,7 +58,7 @@ class SAByEncBuild(build_ext):
                 "-O3",
                 "-fPIC",
                 "-fwrapv",
-                "-std=c++14",
+                "-std=c++11",
             ]
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
@@ -147,7 +147,7 @@ class SAByEncBuild(build_ext):
                     "src/crcutil-1.0/code/multiword_128_64_gcc_amd64_sse2.cc",
                     "src/crcutil-1.0/examples/interface.cc",
                 ],
-                "gcc_flags": ["-Wno-expansion-to-defined", "-Wunused-parameter"],
+                "gcc_flags": ["-Wno-expansion-to-defined", "-Wno-unused-parameter"],
                 "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/tests"],
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
