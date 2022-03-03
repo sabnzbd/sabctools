@@ -44,7 +44,7 @@ class SAByEncBuild(build_ext):
             # LTCG not enabled due to issues seen with code generation where
             # different ISA extensions are selected for specific files
             ldflags = ["/OPT:REF", "/OPT:ICF"]
-            cflags = ["/O2", "/GS-", "/GL-", "/Gy", "/sdl-", "/Oy", "/Oi"]
+            cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi"]
         else:
             # TODO: consider -flto - may require some extra testing
             ldflags = []
