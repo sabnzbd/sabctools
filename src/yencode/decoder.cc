@@ -45,7 +45,7 @@ static inline void decoder_set_native_funcs() {
 # endif
 #endif
 
-const char* decoder_init() {
+void decoder_init() {
 #ifdef PLATFORM_X86
 # if defined(YENC_BUILD_NATIVE) && YENC_BUILD_NATIVE!=0
     decoder_set_native_funcs();
@@ -53,24 +53,18 @@ const char* decoder_init() {
     int use_isa = cpu_supports_isa();
     if(use_isa >= ISA_LEVEL_AVX2) {
         decoder_set_avx2_funcs();
-        return "AVX2";
     } else if(use_isa >= ISA_LEVEL_AVX) {
         decoder_set_avx_funcs();
-        return "AVX";
     } else if(use_isa >= ISA_LEVEL_SSSE3) {
         decoder_set_ssse3_funcs();
-        return "SSSE3";
     } else {
         decoder_set_sse2_funcs();
-        return "SSE2";
     }
 # endif
 #endif
 #ifdef PLATFORM_ARM
     if(cpu_supports_neon()) {
         decoder_set_neon_funcs();
-        return "NEON";
     }
 #endif
-    return "";
 }

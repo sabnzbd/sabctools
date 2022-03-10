@@ -123,7 +123,7 @@
 #ifdef __POPCNT__
 #include <nmmintrin.h>
 // POPCNT can never return a negative result, but GCC doesn't seem to realise this, so typecast it to hint it better
-#define popcnt32 (unsigned int)_mm_popcnt_u32 
+#define popcnt32 (unsigned int)_mm_popcnt_u32
 #endif
 
 #if defined(__AVX2__) || defined(__AVX512F__)
@@ -237,7 +237,7 @@ enum YEncDecIsaLevel {
 # if defined(__POPCNT__)
 #  if defined(__LZCNT__)
 #   define ISA_NATIVE (enum YEncDecIsaLevel)(_ISA_NATIVE | ISA_FEATURE_POPCNT | ISA_FEATURE_LZCNT)
-#  else 
+#  else
 #   define ISA_NATIVE (enum YEncDecIsaLevel)(_ISA_NATIVE | ISA_FEATURE_POPCNT)
 #  endif
 # else
@@ -254,6 +254,8 @@ enum YEncDecIsaLevel {
 
 int cpu_supports_isa();
 #endif // PLATFORM_X86
+
+const char* simd_detected();
 
 #include <string.h>
 

@@ -146,3 +146,24 @@ int cpu_supports_isa() {
 }
 
 #endif // PLATFORM_X86
+
+const char* simd_detected() {
+#ifdef PLATFORM_X86
+    int use_isa = cpu_supports_isa();
+    if(use_isa >= ISA_LEVEL_AVX2) {
+        return "AVX2";
+    } else if(use_isa >= ISA_LEVEL_AVX) {
+        return "AVX";
+    } else if(use_isa >= ISA_LEVEL_SSSE3) {
+        return "SSSE3";
+    } else {
+        return "SSE2";
+    }
+#endif
+#ifdef PLATFORM_ARM
+    if(cpu_supports_neon()) {
+        return "NEON";
+    }
+#endif
+    return "";
+}

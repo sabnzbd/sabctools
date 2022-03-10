@@ -20,6 +20,13 @@ When you want to compile from sources, you can run in the `sabyenc` directory:
 pip install .
 ```
 
+SIMD detection
+===============================
+To see which SIMD set was detected on your system, run:
+```
+python -c "import sabyenc3; print(sabyenc3.simd);"
+```
+
 Testing
 ===============================
 For testing we use `pytest` (install via `pip install -r tests/requirements.txt`) and test can simply be executed by browsing to the `sabyenc` directory and running:
