@@ -1,6 +1,13 @@
 import pytest
+import sys
 import sabyenc3
 from tests.testsupport import *
+
+
+def test_simd_version():
+    # Windows and macOS systems always have some form of SIMD
+    if sys.platform == "darwin" or sys.platform == "win32":
+        assert sabyenc3.simd
 
 
 def test_list_none():

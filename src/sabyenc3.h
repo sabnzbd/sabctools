@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "5.0.1"
+#define SABYENC_VERSION "5.1.0"
 
 /* Do we CRC check? */
 #define CRC_CHECK   0

@@ -30,7 +30,7 @@ jobs:
           pip install -r tests/requirements.txt
           pip install . -v
           python -c "import sabyenc3; print('Version:', sabyenc3.__version__);"
-          python -c "import sabyenc3; print('SIMD:', sabyenc3.decoder_simd);"
+          python -c "import sabyenc3; print('SIMD:', sabyenc3.simd);"
           pytest
 
   build_wheels:

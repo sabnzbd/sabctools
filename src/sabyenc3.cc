@@ -21,6 +21,7 @@
 
 #include "sabyenc3.h"
 
+#include "yencode/common.h"
 #include "yencode/encoder.h"
 #include "yencode/decoder.h"
 #include "yencode/crc.h"
@@ -63,11 +64,12 @@ static struct PyModuleDef sabyenc3_definition = {
 PyMODINIT_FUNC PyInit_sabyenc3(void) {
     // Initialize and add version / SIMD information
     Py_Initialize();
+    encoder_init();
+    decoder_init();
+    crc_init();
     PyObject* module = PyModule_Create(&sabyenc3_definition);
     PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
-    PyModule_AddStringConstant(module, "encoder_simd", encoder_init());
-    PyModule_AddStringConstant(module, "decoder_simd", decoder_init());
-    crc_init();
+    PyModule_AddStringConstant(module, "simd", simd_detected());
     return module;
 }
 
