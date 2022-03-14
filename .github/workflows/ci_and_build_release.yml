@@ -1,6 +1,6 @@
 name: Tests and build wheels
 
-# Run regularly, so updates are pushed automatically
+# Run regularly, so updates to cibuildwheel and environment are checked
 on:
   push:
   schedule:
@@ -79,7 +79,7 @@ jobs:
         env:
           TWINE_USERNAME: '__token__'
           TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
-        if: env.TWINE_PASSWORD && github.ref == 'refs/heads/master'
+        if: env.TWINE_PASSWORD && startsWith(github.ref, 'refs/tags/')
         run: |
           pip install twine
           twine upload --skip-existing ./dist/*.tar.gz ./wheelhouse/*.whl
