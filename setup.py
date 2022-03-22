@@ -34,10 +34,10 @@ class SAByEncBuild(build_ext):
         # Try to determine the architecture to build for
         machine = platform.machine().lower()
         IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
-        IS_ARM7 = machine.startswith("armv7")
+        IS_ARMV7 = machine.startswith("armv7")
         IS_X86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
         IS_MACOS = sys.platform == "darwin"
-        log.info("Detected: ARM=%s, ARM7=%s, x86=%s, macOS=%s", IS_ARM, IS_ARM7, IS_X86, IS_MACOS)
+        log.info("Detected: ARM=%s, ARM7=%s, x86=%s, macOS=%s", IS_ARM, IS_ARMV7, IS_X86, IS_MACOS)
 
         # Determine compiler flags
         if self.compiler.compiler_type == "msvc":
@@ -125,12 +125,12 @@ class SAByEncBuild(build_ext):
             {
                 "sources": ["src/yencode/encoder_neon.cc"],
                 "depends": srcdeps_enc_common,
-                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
+                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARMV7 else []),
             },
             {
-                "sources": ["src/yencode/decoder_neon.cc" if IS_ARM7 else "src/yencode/decoder_neon64.cc"],
+                "sources": ["src/yencode/decoder_neon.cc" if IS_ARMV7 else "src/yencode/decoder_neon64.cc"],
                 "depends": srcdeps_dec_common,
-                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARM7 else []),
+                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARMV7 else []),
             },
             {
                 "sources": ["src/yencode/crc_arm.cc"],
