@@ -21,6 +21,7 @@
 # =============================================================================
 #
 import os
+import subprocess
 import sys
 import platform
 import re
@@ -58,8 +59,16 @@ class SAByEncBuild(build_ext):
                 "-O3",
                 "-fPIC",
                 "-fwrapv",
-                "-std=c++11",
             ]
+            # gcc before 4.3 did not support the "-std=c++11" flag
+            # gcc before 4.7 called it "-std=c++0x"
+            gcc_help = subprocess.check_output([self.compiler.compiler_so[0], '--help', '-v'], stderr=subprocess.STDOUT)
+            if IS_MACOS or b"std=c++11" in gcc_help:
+                cflags.append("-std=c++11")
+            elif b"std=c++0x" in gcc_help:
+                cflags.append("-std=c++0x")
+            else:
+                log.info("C++11 flag not available")
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
