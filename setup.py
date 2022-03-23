@@ -70,7 +70,12 @@ class SAByEncBuild(build_ext):
         compiled_objects = []
         for source_files in [
             {
-                "sources": ["src/yencode/platform.cc", "src/yencode/encoder.cc", "src/yencode/decoder.cc", "src/yencode/crc.cc"],
+                "sources": [
+                    "src/yencode/platform.cc",
+                    "src/yencode/encoder.cc",
+                    "src/yencode/decoder.cc",
+                    "src/yencode/crc.cc",
+                ],
                 "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/examples"],
             },
             {
@@ -135,7 +140,8 @@ class SAByEncBuild(build_ext):
             {
                 "sources": ["src/yencode/crc_arm.cc"],
                 "depends": srcdeps_crc_common,
-                "gcc_arm_flags": (["-march=armv8-a+crc"] if not IS_MACOS else []),
+                "gcc_arm_flags": (["-march=armv8-a+crc"] if not IS_MACOS else [])
+                + (["-mfpu=fp-armv8"] if IS_ARMV7 else []),
             },
             {
                 "sources": [
