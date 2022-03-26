@@ -38,9 +38,13 @@ class SAByEncBuild(build_ext):
         IS_ARMV7 = machine.startswith("armv7")
         IS_X86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
         IS_MACOS = sys.platform == "darwin"
+
+        # Enable debug logging
+        log.set_verbosity(3)
         log.info("Detected: ARM=%s, ARM7=%s, x86=%s, macOS=%s", IS_ARM, IS_ARMV7, IS_X86, IS_MACOS)
 
         # Determine compiler flags
+        gcc_arm_crc_flags = []
         if self.compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where
             # different ISA extensions are selected for specific files
@@ -69,6 +73,12 @@ class SAByEncBuild(build_ext):
                 cflags.append("-std=c++0x")
             else:
                 log.info("C++11 flag not available")
+
+            # Cross-compile might specify its own flags
+            if not IS_MACOS and "-march=" not in os.environ.get("CFLAGS", ""):
+                gcc_arm_crc_flags.append("-march=armv8-a+crc")
+            if IS_ARMV7 and "-mfpu=" not in os.environ.get("CFLAGS", ""):
+                gcc_arm_crc_flags.append("-mfpu=fp-armv8")
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
@@ -149,8 +159,7 @@ class SAByEncBuild(build_ext):
             {
                 "sources": ["src/yencode/crc_arm.cc"],
                 "depends": srcdeps_crc_common,
-                "gcc_arm_flags": (["-march=armv8-a+crc"] if not IS_MACOS else [])
-                + (["-mfpu=fp-armv8"] if IS_ARMV7 else []),
+                "gcc_arm_flags": gcc_arm_crc_flags,
             },
             {
                 "sources": [
