@@ -88,6 +88,7 @@ class SAByEncBuild(build_ext):
         # Determine compiler flags
         gcc_arm_neon_flags = []
         gcc_arm_crc_flags = []
+        gcc_macros = []
         if self.compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where
             # different ISA extensions are selected for specific files
@@ -122,7 +123,9 @@ class SAByEncBuild(build_ext):
             # macOS M1 do not need any flags, they support everything
             if IS_ARM and not IS_MACOS:
                 if not autoconf_check(self.compiler, include_check="sys/auxv.h"):
-                    log.info("sys/auxv.h not available, disabling all flags")
+                    log.info("sys/auxv.h not available, setting UNSUPPORTED_PLATFORM_ARM")
+                    ext.define_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
+                    gcc_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
                     IS_ARM = False
                 if not autoconf_check(self.compiler, define_check="__aarch64__"):
                     log.info("__aarch64__ not available, disabling 64bit extensions")
@@ -228,7 +231,12 @@ class SAByEncBuild(build_ext):
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
         ]:
-            args = {"sources": source_files["sources"], "output_dir": output_dir, "extra_postargs": cflags[:]}
+            args = {
+                "sources": source_files["sources"],
+                "output_dir": output_dir,
+                "extra_postargs": cflags[:],
+                "macros": gcc_macros[:],
+            }
             if self.compiler.compiler_type == "msvc":
                 if IS_X86 and "msvc_x86_flags" in source_files:
                     args["extra_postargs"] += source_files["msvc_x86_flags"]
@@ -243,7 +251,7 @@ class SAByEncBuild(build_ext):
             if "include_dirs" in source_files:
                 args["include_dirs"] = source_files["include_dirs"]
             if "macros" in source_files:
-                args["macros"] = source_files["macros"]
+                args["macros"].extend(source_files["macros"])
 
             self.compiler.compile(**args)
             compiled_objects += self.compiler.object_filenames(source_files["sources"], output_dir=output_dir)
