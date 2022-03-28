@@ -20,30 +20,73 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 # =============================================================================
 #
+
 import os
-import subprocess
 import sys
 import platform
 import re
+import tempfile
+from distutils.ccompiler import CCompiler
+from distutils.errors import CompileError
+from typing import Type
+
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from distutils import log
+
+
+def autoconf_check(
+    compiler: Type[CCompiler], include_check: str = None, define_check: str = None, flag_check: str = None
+):
+    """A makeshift Python version of the autoconf checks"""
+    with tempfile.NamedTemporaryFile("w", suffix=".cc") as f:
+        if include_check:
+            log.info("Checking support for include: %s", include_check)
+            f.write(f"#include <{include_check}>\n")
+
+        if define_check:
+            log.info("Checking support for define: %s", define_check)
+            # Just let it crash
+            f.write(f"#ifndef {define_check}\n")
+            f.write(f"#error {define_check} not available!\n")
+            f.write(f"#endif\n")
+
+        extra_postargs = []
+        if flag_check:
+            log.info("Checking support for flag: %s", flag_check)
+            extra_postargs.append(flag_check)
+
+        f.write("int main (int argc, char **argv) { return 0; }")
+
+        # Make sure contents are on disk
+        f.flush()
+
+        try:
+            result_files = compiler.compile([f.name], extra_postargs=extra_postargs)
+            log.info("==> Success!")
+        except CompileError:
+            log.info("==> Not available!")
+            return False
+
+        # Remove output file(s)
+        for result_file in result_files:
+            os.unlink(result_file)
+    return True
 
 
 class SAByEncBuild(build_ext):
     def build_extension(self, ext):
         # Try to determine the architecture to build for
         machine = platform.machine().lower()
-        IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
-        IS_ARMV7 = machine.startswith("armv7")
         IS_X86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
         IS_MACOS = sys.platform == "darwin"
+        IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
+        IS_AARCH64 = True
 
-        # Enable debug logging
-        log.set_verbosity(3)
-        log.info("Detected: ARM=%s, ARM7=%s, x86=%s, macOS=%s", IS_ARM, IS_ARMV7, IS_X86, IS_MACOS)
+        log.info("Baseline detection: ARM=%s, x86=%s, macOS=%s", IS_ARM, IS_X86, IS_MACOS)
 
         # Determine compiler flags
+        gcc_arm_neon_flags = []
         gcc_arm_crc_flags = []
         if self.compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where
@@ -66,19 +109,26 @@ class SAByEncBuild(build_ext):
             ]
             # gcc before 4.3 did not support the "-std=c++11" flag
             # gcc before 4.7 called it "-std=c++0x"
-            gcc_help = subprocess.check_output([self.compiler.compiler_so[0], '--help', '-v'], stderr=subprocess.STDOUT)
-            if IS_MACOS or b"std=c++11" in gcc_help:
+            if autoconf_check(self.compiler, flag_check="-std=c++11"):
                 cflags.append("-std=c++11")
-            elif b"std=c++0x" in gcc_help:
+            elif autoconf_check(self.compiler, flag_check="-std=c++0x"):
                 cflags.append("-std=c++0x")
             else:
                 log.info("C++11 flag not available")
 
-            # Cross-compile might specify its own flags
-            if not IS_MACOS and "-march=" not in os.environ.get("CFLAGS", ""):
-                gcc_arm_crc_flags.append("-march=armv8-a+crc")
-            if IS_ARMV7 and "-mfpu=" not in os.environ.get("CFLAGS", ""):
-                gcc_arm_crc_flags.append("-mfpu=fp-armv8")
+            # Verify specific flags for ARM chips
+            # macOS M1 do not need any flags, they support everything
+            if IS_ARM and not IS_MACOS:
+                if not autoconf_check(self.compiler, include_check="sys/auxv.h"):
+                    log.info("sys/auxv.h not available, disabling all flags")
+                    IS_ARM = False
+                if not autoconf_check(self.compiler, define_check="__aarch64__"):
+                    log.info("__aarch64__ not available, disabling 64bit extensions")
+                    IS_AARCH64 = False
+                if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc"):
+                    gcc_arm_crc_flags.append("-march=armv8-a+crc")
+                if autoconf_check(self.compiler, flag_check="-mfpu=neon"):
+                    gcc_arm_neon_flags.append("-mfpu=neon")
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
@@ -149,12 +199,12 @@ class SAByEncBuild(build_ext):
             {
                 "sources": ["src/yencode/encoder_neon.cc"],
                 "depends": srcdeps_enc_common,
-                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARMV7 else []),
+                "gcc_arm_flags": gcc_arm_neon_flags,
             },
             {
-                "sources": ["src/yencode/decoder_neon.cc" if IS_ARMV7 else "src/yencode/decoder_neon64.cc"],
+                "sources": ["src/yencode/decoder_neon64.cc" if IS_AARCH64 else "src/yencode/decoder_neon.cc"],
                 "depends": srcdeps_dec_common,
-                "gcc_arm_flags": (["-mfpu=neon"] if IS_ARMV7 else []),
+                "gcc_arm_flags": gcc_arm_neon_flags,
             },
             {
                 "sources": ["src/yencode/crc_arm.cc"],
