@@ -123,10 +123,12 @@ class SAByEncBuild(build_ext):
             # macOS M1 do not need any flags, they support everything
             if IS_ARM and not IS_MACOS:
                 if not autoconf_check(self.compiler, include_check="sys/auxv.h"):
-                    log.info("sys/auxv.h not available, setting UNSUPPORTED_PLATFORM_ARM")
-                    ext.define_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
-                    gcc_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
-                    IS_ARM = False
+                    # We only tested this for GCC, might still be valid on MS-ARM compiler (see #38)
+                    if autoconf_check(self.compiler, define_check="__GNUC__"):
+                        log.info("On GGC and sys/auxv.h not available, setting UNSUPPORTED_PLATFORM_ARM")
+                        ext.define_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
+                        gcc_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
+                        IS_ARM = False
                 if not autoconf_check(self.compiler, define_check="__aarch64__"):
                     log.info("__aarch64__ not available, disabling 64bit extensions")
                     IS_AARCH64 = False
