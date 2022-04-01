@@ -41,13 +41,13 @@ static PyMethodDef sabyenc3_methods[] = {
     {
         "decode_usenet_chunks",
         decode_usenet_chunks,
-        METH_VARARGS,
+        METH_O,
         "decode_usenet_chunks(list_of_chunks)"
     },
     {
         "encode",
         encode,
-        METH_VARARGS,
+        METH_O,
         "encode(input_string)"
     },
     {NULL, NULL, 0, NULL}
@@ -467,10 +467,9 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
 }
 
 
-PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
+PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     // The input/output PyObjects
     (void)self;
-    PyObject *Py_input_list;
     PyObject *Py_output_buffer;
     PyObject *Py_output_filename;
     PyObject *retval = NULL;
@@ -484,11 +483,6 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* args) {
     int num_bytes_reserved;
     int lp_max;
     int lp;
-
-    // Parse input
-    if (!PyArg_ParseTuple(args, "O:decode_usenet_chunks", &Py_input_list)) {
-        return NULL;
-    }
 
     // Verify it's a list
     if(!PyList_Check(Py_input_list)) {
@@ -565,10 +559,9 @@ static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
 	return ret + 2 * ((len*2) / line_size);
 }
 
-PyObject* encode(PyObject* self, PyObject* args)
+PyObject* encode(PyObject* self, PyObject* Py_input_string)
 {
     (void)self;
-	PyObject *Py_input_string;
 	PyObject *Py_output_string;
 	PyObject *retval = NULL;
 
@@ -578,12 +571,13 @@ PyObject* encode(PyObject* self, PyObject* args)
 	size_t output_len = 0;
     uint32_t crc;
 
-	// Parse input
-    if (!PyArg_ParseTuple(args, "O:encode", &Py_input_string)) {
+    // Verify the input is a bytes string
+    if(!PyBytes_Check(Py_input_string)) {
+        PyErr_SetString(PyExc_TypeError, "Expected bytes");
         return NULL;
     }
 
-    // Initialze buffers and CRC's
+    // Initialize buffers and CRC's
 	input_len = PyBytes_Size(Py_input_string);
 	input_buffer = (char *)PyBytes_AsString(Py_input_string);
 	output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
