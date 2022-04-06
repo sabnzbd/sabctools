@@ -35,17 +35,22 @@ from setuptools.command.build_ext import build_ext
 from distutils import log
 
 
+def log_info(inp: str):
+    """Convenience function"""
+    log.info("==> %s", inp)
+
+
 def autoconf_check(
     compiler: Type[CCompiler], include_check: str = None, define_check: str = None, flag_check: str = None
 ):
     """A makeshift Python version of the autoconf checks"""
     with tempfile.NamedTemporaryFile("w", suffix=".cc") as f:
         if include_check:
-            log.info("Checking support for include: %s", include_check)
+            log_info("Checking support for include: %s", include_check)
             f.write(f"#include <{include_check}>\n")
 
         if define_check:
-            log.info("Checking support for define: %s", define_check)
+            log_info("Checking support for define: %s", define_check)
             # Just let it crash
             f.write(f"#ifndef {define_check}\n")
             f.write(f"#error {define_check} not available!\n")
@@ -53,7 +58,7 @@ def autoconf_check(
 
         extra_postargs = []
         if flag_check:
-            log.info("Checking support for flag: %s", flag_check)
+            log_info("Checking support for flag: %s", flag_check)
             extra_postargs.append(flag_check)
 
         f.write("int main (int argc, char **argv) { return 0; }")
@@ -63,9 +68,9 @@ def autoconf_check(
 
         try:
             result_files = compiler.compile([f.name], extra_postargs=extra_postargs)
-            log.info("==> Success!")
+            log_info("Success!")
         except CompileError:
-            log.info("==> Not available!")
+            log_info("Not available!")
             return False
 
         # Remove output file(s)
@@ -83,7 +88,7 @@ class SAByEncBuild(build_ext):
         IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
         IS_AARCH64 = True
 
-        log.info("Baseline detection: ARM=%s, x86=%s, macOS=%s", IS_ARM, IS_X86, IS_MACOS)
+        log_info("Baseline detection: ARM=%s, x86=%s, macOS=%s", IS_ARM, IS_X86, IS_MACOS)
 
         # Determine compiler flags
         gcc_arm_neon_flags = []
@@ -117,7 +122,7 @@ class SAByEncBuild(build_ext):
                 cflags.append("-std=c++0x")
                 ext.extra_compile_args.append("-std=c++0x")
             else:
-                log.info("C++11 flag not available")
+                log_info("C++11 flag not available")
 
             # Verify specific flags for ARM chips
             # macOS M1 do not need any flags, they support everything
@@ -125,17 +130,28 @@ class SAByEncBuild(build_ext):
                 if not autoconf_check(self.compiler, include_check="sys/auxv.h"):
                     # We only tested this for GCC, might still be valid on MS-ARM compiler (see #38)
                     if autoconf_check(self.compiler, define_check="__GNUC__"):
-                        log.info("On GGC and sys/auxv.h not available, setting UNSUPPORTED_PLATFORM_ARM")
+                        log_info("On GGC and sys/auxv.h not available, setting UNSUPPORTED_PLATFORM_ARM=1")
                         ext.define_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
                         gcc_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
                         IS_ARM = False
                 if not autoconf_check(self.compiler, define_check="__aarch64__"):
-                    log.info("__aarch64__ not available, disabling 64bit extensions")
+                    log_info("__aarch64__ not available, disabling 64bit extensions")
                     IS_AARCH64 = False
                 if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc"):
                     gcc_arm_crc_flags.append("-march=armv8-a+crc")
                 if autoconf_check(self.compiler, flag_check="-mfpu=neon"):
                     gcc_arm_neon_flags.append("-mfpu=neon")
+
+            # Check for special x32 case
+            if (
+                IS_X86 
+                and not IS_MACOS 
+                and autoconf_check(self.compiler, define_check="__ILP32__")
+                and autoconf_check(self.compiler, define_check="__x86_64__")
+            ):
+                log_info("Detected x32 platform, setting CRCUTIL_USE_ASM=0")
+                ext.define_macros.append(("CRCUTIL_USE_ASM", "0"))
+                gcc_macros.append(("CRCUTIL_USE_ASM", "0"))
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
