@@ -52,8 +52,13 @@ Build
 build
 test
 dist
-cmake*/
 *.whl
+
+# Visual studio
+cmake*/
+*.sln
+*.vcxproj*
+.vs/
 
 # Compiled python
 *.py[cod]
