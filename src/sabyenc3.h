@@ -25,10 +25,10 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "5.1.7"
+#define SABYENC_VERSION "5.2.0"
 
 /* Do we CRC check? */
-#define CRC_CHECK   0
+#define CRC_CHECK   1
 
 /* Constants */
 #define LINESIZE    128

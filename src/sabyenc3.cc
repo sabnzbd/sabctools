@@ -238,8 +238,14 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
     tail_buffer_pos += 7; // skip "\r\n=yend"
     int tail_buffer_len = tail_buffer + MAX_TAIL_BYTES - tail_buffer_pos;
 
-    // Process CRC
+    // Try to find the crc32 of the part
     const char* crc_pos = my_memstr(tail_buffer_pos, tail_buffer_len, " pcrc32=", 1);
+
+    // Sometimes only crc32 is used
+    if(!crc_pos) {
+        crc_pos = my_memstr(tail_buffer_pos, tail_buffer_len, " crc32=", 1);
+    }
+
     if(crc_pos && (tail_buffer + MAX_TAIL_BYTES - crc_pos) >= 8) {
         char* end;
         crc_yenc = strtoul(crc_pos, &end, 16); // TODO: consider stricter parsing
@@ -248,8 +254,6 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         return 0;
     }
 #endif
-
-
 
     size_t input_offset = cur_char - PyBytes_AsString(PyList_GetItem(Py_input_list, list_index));;
     YencDecoderState state = YDEC_STATE_CRLF;
@@ -517,7 +521,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
 
     // Catch if there's nothing
     if(!output_len || !filename_out) {
-        PyErr_SetString(PyExc_ValueError, "Could not get filename");
+        PyErr_SetString(PyExc_ValueError, "Could not get filename or CRC value");
         // Safety free's
         if(filename_out) free(filename_out);
         if(Py_output_buffer) Py_XDECREF(Py_output_buffer);
