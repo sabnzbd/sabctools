@@ -75,7 +75,7 @@ def test_no_filename():
     data_plain, data_chunks = read_and_split("test_no_name.txt")
     with pytest.raises(ValueError) as excinfo:
         sabyenc3_wrapper(data_chunks)
-    assert "Could not get filename" in str(excinfo.value)
+    assert "Could not get filename or CRC value" in str(excinfo.value)
 
 
 def test_bad_filename_pickle():
@@ -83,7 +83,7 @@ def test_bad_filename_pickle():
     data_plain, data_chunks = read_pickle("tests/yencfiles/split_filename")
     decoded_data, filename, crc_correct = sabyenc3_wrapper(data_chunks)
     assert filename == "Low.Winter.Sun.US.S01E01.720p.BluRay.x264-DEMAND.part04.rar"
-    assert crc_correct == False
+    assert crc_correct == True
     assert len(decoded_data) == 384000
 
 
