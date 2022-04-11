@@ -70,7 +70,7 @@ jobs:
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: universal2
           CIBW_BUILD_VERBOSITY: 1
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           path: |
             ./wheelhouse/*.whl
