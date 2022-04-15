@@ -44,6 +44,12 @@ static PyMethodDef sabyenc3_methods[] = {
         METH_O,
         "decode_usenet_chunks(list_of_chunks)"
     },
+	{
+		"decode",
+		decode,
+		METH_VARARGS,
+		"decode(raw_data, raw_data_size)"
+	},
     {
         "encode",
         encode,
@@ -547,6 +553,108 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     return retval;
 }
 
+PyObject* decode(PyObject* self, PyObject* args) {
+	// The input/output PyObjects
+	(void)self;
+	PyObject *retval = NULL;
+	Py_buffer Py_input_buffer;
+	PyObject *Py_output_filename = NULL;
+	int data_length;
+
+	// Used buffers
+	char *cur_char = NULL;
+	char *start_loc = NULL;
+	char *dest_loc = NULL;
+	char *filename_out = NULL;
+	int n;
+	size_t yenc_data_length;
+	size_t output_len;
+
+	// Parse input
+	if (!PyArg_ParseTuple(args, "w*i:decode", &Py_input_buffer, &data_length)) {
+		return NULL;
+	}
+	dest_loc = cur_char = (char *)Py_input_buffer.buf;
+
+	/*
+	 ANALYZE HEADER
+	 Always in the same format, e.g.:
+
+	 =ybegin part=41 line=128 size=49152000 name=90E2Sdvsmds0801dvsmds90E.part06.rar
+	 =ypart begin=15360001 end=15744000
+
+	 But we only care about the filename
+	*/
+	// Start of header
+	start_loc = strstr(cur_char, "=ybegin");
+	if (!start_loc) {
+		PyErr_SetString(PyExc_ValueError, "Invalid yEnc header");
+		retval = NULL;
+		goto finish;
+	}
+
+	// Find start of the filename
+	start_loc = strstr(start_loc, "name=");
+	if (!start_loc) {
+		PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
+		retval = NULL;
+		goto finish;
+	}
+
+	// Extract filename
+	start_loc += 5;
+	cur_char = start_loc;
+	for (; *cur_char != LF && *cur_char != CR && *cur_char != ZERO; cur_char++);
+	filename_out = (char *)calloc(cur_char - start_loc + 1, sizeof(char));
+	strncpy(filename_out, start_loc, cur_char - start_loc);
+	filename_out[strlen(filename_out)] = ZERO;
+	Py_output_filename = PyUnicode_DecodeLatin1(filename_out, strlen(filename_out), NULL);
+
+	// Check for =ypart, so we know where to start with decoding
+	start_loc = my_memstr(cur_char, MAX_TAIL_BYTES, "=ypart ", 1);
+	if (start_loc) {
+		// Move to end of this line
+		cur_char = start_loc;
+		for (; *cur_char != LF && *cur_char != CR && *cur_char != ZERO; cur_char++);
+	}
+	start_loc = cur_char;
+
+	/*
+		Looking for the end, format:
+		=yend size=384000 part=41 pcrc32=084e170f
+	*/
+	cur_char += data_length - MAX_TAIL_BYTES;
+	cur_char = strstr(cur_char, "\r\n=yend");
+	if (!cur_char) {
+		PyErr_SetString(PyExc_ValueError, "Invalid yEnc footer");
+		retval = NULL;
+		goto finish;
+	}
+	yenc_data_length = cur_char - start_loc;
+
+	// Lift the GIL
+	Py_BEGIN_ALLOW_THREADS;
+
+	// send to decoder
+	YencDecoderState state = YDEC_STATE_CRLF;
+	output_len = do_decode(1, (unsigned char*) start_loc, (unsigned char*) dest_loc, yenc_data_length, &state);
+
+	// Aaah there you are again GIL..
+	Py_END_ALLOW_THREADS;
+
+	// Terminate buffer and adjust the Python-size of the bytearray
+	dest_loc[output_len] = ZERO;
+	Py_input_buffer.len = output_len;
+	Py_SIZE(Py_input_buffer.obj) = output_len;
+
+	retval = Py_BuildValue("S", Py_output_filename);
+
+finish:
+	PyBuffer_Release(&Py_input_buffer);
+	if(filename_out) free(filename_out);
+	if(Py_output_filename) Py_XDECREF(Py_output_filename);
+	return retval;
+}
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
 	size_t ret = len * 2    /* all characters escaped */
