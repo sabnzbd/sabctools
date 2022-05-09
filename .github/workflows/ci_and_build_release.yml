@@ -58,7 +58,7 @@ jobs:
           python-version: '3.10'
       - name: Set up QEMU
         if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
         with:
           platforms: all
       - name: Build source distribution
