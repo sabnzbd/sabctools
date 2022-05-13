@@ -531,11 +531,18 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
-    // Resize data to actual value
+    // Resize data to actual value, how this is done depends on the Python version
     // We use this instead of "_PyBytes_Resize", as it seems to cause a drop in performance
+#if PY_MINOR_VERSION < 9
     Py_SIZE(sv) = output_len;
+#else
+	Py_SET_SIZE(sv, output_len);
+#endif
     sv->ob_sval[output_len] = '\0';
+	// Reset hash, this was removed in Python 3.11
+#if PY_MINOR_VERSION < 11
     sv->ob_shash = -1;
+#endif
 
     // Build output
     retval = Py_BuildValue("(S,S,O)", Py_output_buffer, Py_output_filename, crc_correct ? Py_True: Py_False);
