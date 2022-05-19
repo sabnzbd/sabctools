@@ -135,33 +135,6 @@ ALIGN_TO(16, static const unsigned crc_mask[4]) = {
     0x00000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
 };
 
-static __m128i reverse_bits_epi8(__m128i src) {
-#if defined(__GFNI__) && defined(YENC_BUILD_NATIVE) && YENC_BUILD_NATIVE!=0
-    return _mm_gf2p8affine_epi64_epi8(src, _mm_set_epi32(
-      0x80402010, 0x08040201,
-      0x80402010, 0x08040201
-    ), 0);
-#else
-    __m128i xmm_t0 = _mm_and_si128(src, _mm_set1_epi8(0x0f));
-    __m128i xmm_t1 = _mm_and_si128(_mm_srli_epi16(src, 4), _mm_set1_epi8(0x0f));
-    xmm_t0 = _mm_shuffle_epi8(_mm_set_epi8(
-      -16, 112, -80, 48, -48, 80, -112, 16, -32, 96, -96, 32, -64, 64, -128, 0
-      //0xf0, 0x70, 0xb0, 0x30, 0xd0, 0x50, 0x90, 0x10, 0xe0, 0x60, 0xa0, 0x20, 0xc0, 0x40, 0x80, 0
-    ), xmm_t0);
-    xmm_t1 = _mm_shuffle_epi8(_mm_set_epi8(
-      15, 7, 11, 3, 13, 5, 9, 1, 14, 6, 10, 2, 12, 4, 8, 0
-    ), xmm_t1);
-    return _mm_or_si128(xmm_t0, xmm_t1);
-#endif
-}
-
-#ifdef _MSC_VER
-// because MSVC doesn't use BSWAP unless you specifically tell it to...
-# include <stdlib.h>
-# define BSWAP32 _byteswap_ulong
-#else
-# define BSWAP32(n) ((((n)&0xff)<<24) | (((n)&0xff00)<<8) | (((n)&0xff0000)>>8) | (((n)&0xff000000)>>24))
-#endif
 
 static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     unsigned long algn_diff;
@@ -170,23 +143,17 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     // TODO: consider calculating this via a LUT instead (probably faster)
     // info from https://www.reddit.com/r/ReverseEngineering/comments/2zwhl3/mystery_constant_0x9db42487_in_intels_crc32ieee/
     // firstly, calculate: xmm_crc0 = (intial * 0x487b9c8a) mod 0x104c11db7, where 0x487b9c8a = inverse(1<<512) mod 0x104c11db7
+    xmm_t0 = _mm_cvtsi32_si128(~initial);
 
-    // reverse input bits + load into XMM register
-    uint32_t init_t = BSWAP32(initial);
-    xmm_t0 = reverse_bits_epi8(_mm_cvtsi32_si128(~init_t));
-
-    xmm_t0 = _mm_clmulepi64_si128(xmm_t0, _mm_cvtsi32_si128(0x487b9c8a), 0);
-    xmm_t1 = _mm_and_si128(xmm_t0, _mm_set_epi32(-1,-1,-1,0)); // shifted up by 32bits to avoid shifts by using clmul's capability to select top 64bits instead
+    xmm_t0 = _mm_clmulepi64_si128(xmm_t0, _mm_set_epi32(0, 0, 0xa273bc24, 0), 0);  // reverse(0x487b9c8a)<<1 == 0xa273bc24
     xmm_t2 = _mm_set_epi32( // polynomial reduction factors
-      0, 0x04c11db7, // G*
-      1, 0x04d101df  // Q+
+      1, 0xdb710640, // G* = 0x04c11db7
+      0, 0xf7011641  // Q+ = 0x04d101df  (+1 to save an additional xor operation)
     );
-    xmm_t1 = _mm_clmulepi64_si128(xmm_t1, xmm_t2, 0);
-    xmm_t1 = _mm_clmulepi64_si128(xmm_t1, xmm_t2, 0x11);
+    xmm_t1 = _mm_clmulepi64_si128(xmm_t0, xmm_t2, 0);
+    xmm_t1 = _mm_clmulepi64_si128(xmm_t1, xmm_t2, 0x10);
 
-    __m128i xmm_crc0 = _mm_xor_si128(xmm_t0, xmm_t1);
-    // reverse bits
-    xmm_crc0 = _mm_shuffle_epi8(reverse_bits_epi8(xmm_crc0), _mm_set_epi32(-1,-1,-1,0x00010203));
+    __m128i xmm_crc0 = _mm_srli_si128(_mm_xor_si128(xmm_t0, xmm_t1), 8);
 
     __m128i xmm_crc1 = _mm_setzero_si128();
     __m128i xmm_crc2 = _mm_setzero_si128();
@@ -196,7 +163,8 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     if (len < 16) {
         if (len == 0)
             return initial;
-        xmm_crc_part = _mm_loadu_si128((__m128i *)src);
+        xmm_crc_part = _mm_setzero_si128();
+        memcpy(&xmm_crc_part, src, len);
         goto partial;
     }
 
@@ -211,7 +179,7 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
             &xmm_crc_part);
     }
 
-    while ((len -= 64) >= 0) {
+    while (len >= 64) {
         xmm_t0 = _mm_load_si128((__m128i *)src);
         xmm_t1 = _mm_load_si128((__m128i *)src + 1);
         xmm_t2 = _mm_load_si128((__m128i *)src + 2);
@@ -235,13 +203,11 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
 #endif
 
         src += 64;
+        len -= 64;
     }
 
-    /*
-     * len = num bytes left - 64
-     */
-    if (len + 16 >= 0) {
-        len += 16;
+    if (len >= 48) {
+        len -= 48;
 
         xmm_t0 = _mm_load_si128((__m128i *)src);
         xmm_t1 = _mm_load_si128((__m128i *)src + 1);
@@ -266,8 +232,8 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
             goto done;
 
         xmm_crc_part = _mm_load_si128((__m128i *)src + 3);
-    } else if (len + 32 >= 0) {
-        len += 32;
+    } else if (len >= 32) {
+        len -= 32;
 
         xmm_t0 = _mm_load_si128((__m128i *)src);
         xmm_t1 = _mm_load_si128((__m128i *)src + 1);
@@ -290,8 +256,8 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
             goto done;
 
         xmm_crc_part = _mm_load_si128((__m128i *)src + 2);
-    } else if (len + 48 >= 0) {
-        len += 48;
+    } else if (len >= 16) {
+        len -= 16;
 
         xmm_t0 = _mm_load_si128((__m128i *)src);
 
@@ -310,7 +276,6 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
 
         xmm_crc_part = _mm_load_si128((__m128i *)src + 1);
     } else {
-        len += 64;
         if (len == 0)
             goto done;
         xmm_crc_part = _mm_load_si128((__m128i *)src);

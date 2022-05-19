@@ -191,6 +191,12 @@ class SAByEncBuild(build_ext):
                 "gcc_x86_flags": ["-mssse3", "-msse4.1", "-mpclmul"],
             },
             {
+                "sources": ["src/yencode/crc_folding_256.cc"],
+                "depends": srcdeps_crc_common,
+                "gcc_x86_flags": ["-mavx2", "-mvpclmulqdq", "-mpclmul"] if IS_X86 and autoconf_check(self.compiler, flag_check="-mvpclmulqdq") else [],
+                "msvc_x86_flags": ["/arch:AVX2"],
+            },
+            {
                 "sources": ["src/yencode/encoder_avx.cc"],
                 "depends": srcdeps_enc_common + ["encoder_sse_base.h"],
                 "gcc_x86_flags": ["-mavx", "-mpopcnt"],
