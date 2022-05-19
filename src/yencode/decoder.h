@@ -38,6 +38,8 @@ extern YencDecoderEnd
 (*_do_decode_end_raw)(const unsigned char *HEDLEY_RESTRICT *, unsigned char *HEDLEY_RESTRICT *, size_t,
                       YencDecoderState *);
 
+extern int _decode_simd_level;
+
 static inline size_t
 do_decode(int isRaw, const unsigned char *HEDLEY_RESTRICT src, unsigned char *HEDLEY_RESTRICT dest, size_t len,
           YencDecoderState *state) {
@@ -53,6 +55,8 @@ do_decode_end(const unsigned char *HEDLEY_RESTRICT *src, unsigned char *HEDLEY_R
 }
 
 void decoder_init();
+
+const char* simd_detected();
 
 
 #ifdef __cplusplus
