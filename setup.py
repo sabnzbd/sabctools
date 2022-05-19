@@ -89,6 +89,7 @@ class SAByEncBuild(build_ext):
         gcc_arm_neon_flags = []
         gcc_arm_crc_flags = []
         gcc_vpclmulqdq_flags = []
+        gcc_vbmi2_flags = []
         gcc_macros = []
         if self.compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where
@@ -151,6 +152,9 @@ class SAByEncBuild(build_ext):
             
             if IS_X86 and autoconf_check(self.compiler, flag_check="-mvpclmulqdq"):
                 gcc_vpclmulqdq_flags = ["-mavx2", "-mvpclmulqdq", "-mpclmul"]
+            
+            if IS_X86 and autoconf_check(self.compiler, flag_check="-mavx512vbmi2"):
+                gcc_vbmi2_flags = ["-mavx512vbmi2", "-mavx512vl", "-mavx512bw", "-mpopcnt", "-mbmi", "-mbmi2", "-mlzcnt"]
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
@@ -223,6 +227,18 @@ class SAByEncBuild(build_ext):
                 "depends": srcdeps_dec_common + ["decoder_avx2_base.h"],
                 "gcc_x86_flags": ["-mavx2", "-mpopcnt", "-mbmi", "-mbmi2", "-mlzcnt"],
                 "msvc_x86_flags": ["/arch:AVX2"],
+            },
+            {
+                "sources": ["src/yencode/encoder_vbmi2.cc"],
+                "depends": srcdeps_enc_common + ["encoder_avx_base.h"],
+                "gcc_x86_flags": gcc_vbmi2_flags,
+                "msvc_x86_flags": ["/arch:AVX512"],
+            },
+            {
+                "sources": ["src/yencode/decoder_vbmi2.cc"],
+                "depends": srcdeps_dec_common + ["decoder_avx2_base.h"],
+                "gcc_x86_flags": gcc_vbmi2_flags,
+                "msvc_x86_flags": ["/arch:AVX512"],
             },
             {
                 "sources": ["src/yencode/encoder_neon.cc"],

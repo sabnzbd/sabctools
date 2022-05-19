@@ -134,6 +134,8 @@ void encoder_avx_init();
 
 void encoder_avx2_init();
 
+void encoder_vbmi2_init();
+
 void encoder_neon_init();
 
 #if defined(PLATFORM_X86) && defined(YENC_BUILD_NATIVE) && YENC_BUILD_NATIVE != 0
@@ -159,7 +161,9 @@ void encoder_init() {
     encoder_native_init();
 # else
     int use_isa = cpu_supports_isa();
-    if(use_isa >= ISA_LEVEL_AVX2) {
+    if(use_isa >= ISA_LEVEL_VBMI2) {
+        encoder_vbmi2_init();
+    } else if(use_isa >= ISA_LEVEL_AVX2) {
         encoder_avx2_init();
     } else if(use_isa >= ISA_LEVEL_AVX) {
         encoder_avx_init();
