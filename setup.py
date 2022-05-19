@@ -88,6 +88,7 @@ class SAByEncBuild(build_ext):
         # Determine compiler flags
         gcc_arm_neon_flags = []
         gcc_arm_crc_flags = []
+        gcc_vpclmulqdq_flags = []
         gcc_macros = []
         if self.compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where
@@ -147,6 +148,9 @@ class SAByEncBuild(build_ext):
                 log.info("==> Detected x32 platform, setting CRCUTIL_USE_ASM=0")
                 ext.define_macros.append(("CRCUTIL_USE_ASM", "0"))
                 gcc_macros.append(("CRCUTIL_USE_ASM", "0"))
+            
+            if IS_X86 and autoconf_check(self.compiler, flag_check="-mvpclmulqdq"):
+                gcc_vpclmulqdq_flags = ["-mavx2", "-mvpclmulqdq", "-mpclmul"]
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
@@ -193,7 +197,7 @@ class SAByEncBuild(build_ext):
             {
                 "sources": ["src/yencode/crc_folding_256.cc"],
                 "depends": srcdeps_crc_common,
-                "gcc_x86_flags": ["-mavx2", "-mvpclmulqdq", "-mpclmul"] if IS_X86 and autoconf_check(self.compiler, flag_check="-mvpclmulqdq") else [],
+                "gcc_x86_flags": gcc_vpclmulqdq_flags,
                 "msvc_x86_flags": ["/arch:AVX2"],
             },
             {
