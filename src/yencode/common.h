@@ -253,8 +253,6 @@ enum YEncDecIsaLevel {
 int cpu_supports_isa();
 #endif // PLATFORM_X86
 
-const char* simd_detected();
-
 #include <string.h>
 
 #if !defined(_MSC_VER) || defined(_STDINT) || _MSC_VER >= 1900

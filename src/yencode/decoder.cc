@@ -10,6 +10,7 @@ YencDecoderEnd (*_do_decode_raw)(const unsigned char *HEDLEY_RESTRICT *, unsigne
                                  YencDecoderState *) = &do_decode_scalar<true, false>;
 YencDecoderEnd (*_do_decode_end_raw)(const unsigned char *HEDLEY_RESTRICT *, unsigned char *HEDLEY_RESTRICT *, size_t,
                                      YencDecoderState *) = &do_decode_end_scalar<true>;
+int _decode_simd_level = 0;
 }
 
 void decoder_set_sse2_funcs();
@@ -32,6 +33,7 @@ static inline void decoder_set_native_funcs() {
     _do_decode = &do_decode_simd<false, false, sizeof(__m256i)*2, do_decode_avx2<false, false, ISA_NATIVE> >;
     _do_decode_raw = &do_decode_simd<true, false, sizeof(__m256i)*2, do_decode_avx2<true, false, ISA_NATIVE> >;
     _do_decode_end_raw = &do_decode_simd<true, true, sizeof(__m256i)*2, do_decode_avx2<true, true, ISA_NATIVE> >;
+    _decode_simd_level = ISA_NATIVE;
 }
 # else
 #  include "decoder_sse_base.h"
@@ -41,6 +43,7 @@ static inline void decoder_set_native_funcs() {
     _do_decode = &do_decode_simd<false, false, sizeof(__m128i)*2, do_decode_sse<false, false, ISA_NATIVE> >;
     _do_decode_raw = &do_decode_simd<true, false, sizeof(__m128i)*2, do_decode_sse<true, false, ISA_NATIVE> >;
     _do_decode_end_raw = &do_decode_simd<true, true, sizeof(__m128i)*2, do_decode_sse<true, true, ISA_NATIVE> >;
+    _decode_simd_level = ISA_NATIVE;
 }
 # endif
 #endif
@@ -67,4 +70,32 @@ void decoder_init() {
         decoder_set_neon_funcs();
     }
 #endif
+}
+
+const char* simd_detected() {
+#ifdef PLATFORM_X86
+    if(_decode_simd_level >= ISA_LEVEL_VBMI2)
+        return "AVX512VL+VBMI2";
+    if(_decode_simd_level >= ISA_LEVEL_AVX3)
+        return "AVX512VL";
+    if(_decode_simd_level >= ISA_LEVEL_AVX2)
+        return "AVX2";
+    if(_decode_simd_level >= ISA_LEVEL_AVX)
+        return "AVX";
+    if(_decode_simd_level >= ISA_LEVEL_SSE4_POPCNT)
+        return "SSE4.1+POPCNT";
+    if(_decode_simd_level >= ISA_LEVEL_SSE41)
+        return "SSE4.1";
+    if(_decode_simd_level >= ISA_LEVEL_SSSE3)
+        return "SSSE3";
+    if(_decode_simd_level >= ISA_LEVEL_SSE2 | ISA_FEATURE_POPCNT | ISA_FEATURE_LZCNT)
+        return "SSE2+ABM";
+    return "SSE2";
+#endif
+#ifdef PLATFORM_ARM
+    if(_decode_simd_level >= 1) {
+        return "NEON";
+    }
+#endif
+    return "";
 }
