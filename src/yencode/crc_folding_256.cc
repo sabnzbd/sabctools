@@ -1,7 +1,7 @@
 // 256-bit version of crc_folding
 
 #include "crc_common.h"
- 
+
 #if !defined(YENC_DISABLE_AVX256) && ((defined(__VPCLMULQDQ__) && defined(__AVX2__) && defined(__PCLMUL__)) || (defined(_MSC_VER) && _MSC_VER >= 1920 && defined(PLATFORM_X86) && !defined(__clang__)))
 #include <inttypes.h>
 #include <immintrin.h>
@@ -62,11 +62,11 @@ ALIGN_TO(32, static const uint8_t  pshufb_rot_table[]) = {
 static void partial_fold(const size_t len, __m256i *crc0, __m256i *crc1, __m256i crc_part) {
     __m256i shuf = _mm256_broadcastsi128_si256(_mm_loadu_si128((__m128i*)(pshufb_rot_table + (len&15))));
     __m256i mask = _mm256_cmpgt_epi8(shuf, _mm256_set1_epi8(15));
-    
+
     *crc0 = _mm256_shuffle_epi8(*crc0, shuf);
     *crc1 = _mm256_shuffle_epi8(*crc1, shuf);
     crc_part = _mm256_shuffle_epi8(crc_part, shuf);
-    
+
     __m256i crc_out = _mm256_permute2x128_si256(*crc0, *crc0, 0x08);  // move bottom->top
     __m256i crc01, crc1p;
     if(len >= 16) {
@@ -81,10 +81,10 @@ static void partial_fold(const size_t len, __m256i *crc0, __m256i *crc1, __m256i
         crc01 = _mm256_permute2x128_si256(*crc0, *crc1, 0x21);
         crc1p = _mm256_permute2x128_si256(*crc1, crc_part, 0x21);
     }
-    
+
     *crc0 = MM256_BLENDV(*crc0, crc01, mask);
     *crc1 = MM256_BLENDV(*crc1, crc1p, mask);
-    
+
     *crc1 = do_one_fold(crc_out, *crc1);
 }
 
@@ -103,7 +103,7 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     // info from https://www.reddit.com/r/ReverseEngineering/comments/2zwhl3/mystery_constant_0x9db42487_in_intels_crc32ieee/
     // firstly, calculate: xmm_crc0 = (intial * 0x487b9c8a) mod 0x104c11db7, where 0x487b9c8a = inverse(1<<512) mod 0x104c11db7
     __m128i xmm_t0 = _mm_cvtsi32_si128(~initial);
-    
+
     xmm_t0 = _mm_clmulepi64_si128(xmm_t0, _mm_set_epi32(0, 0, 0xa273bc24, 0), 0);  // reverse(0x487b9c8a)<<1 == 0xa273bc24
     __m128i reduction = _mm_set_epi32( // polynomial reduction factors
       1, 0xdb710640, // G* = 0x04c11db7
@@ -111,11 +111,11 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     );
     __m128i xmm_t1 = _mm_clmulepi64_si128(xmm_t0, reduction, 0);
     xmm_t1 = _mm_clmulepi64_si128(xmm_t1, reduction, 0x10);
-    
+
     xmm_t0 = _mm_srli_si128(_mm_xor_si128(xmm_t0, xmm_t1), 8);
     __m256i crc0 = zext128_256(xmm_t0);
     __m256i crc1 = _mm256_setzero_si256();
-    
+
     if (len < 32) {
         if (len == 0)
             return initial;
@@ -129,31 +129,31 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
             src += algn_diff;
             len -= algn_diff;
         }
-        
+
         while (len >= 64) {
             crc0 = do_one_fold(crc0, _mm256_load_si256((__m256i*)src));
             crc1 = do_one_fold(crc1, _mm256_load_si256((__m256i*)src + 1));
             src += 64;
             len -= 64;
         }
-        
+
         if (len >= 32) {
             __m256i old = crc1;
             crc1 = do_one_fold(crc0, _mm256_load_si256((__m256i*)src));
             crc0 = old;
-            
+
             len -= 32;
             src += 32;
         }
-        
+
         if(len != 0) {
             partial_fold(len, &crc0, &crc1, _mm256_load_si256((__m256i *)src));
         }
     }
-    
+
     const __m128i xmm_mask = _mm_set_epi32(-1,-1,-1,0);
     __m128i x_tmp0, x_tmp1, x_tmp2, crc_fold;
-    
+
     __m128i xmm_crc0 = _mm256_castsi256_si128(crc0);
     __m128i xmm_crc1 = _mm256_extracti128_si256(crc0, 1);
     __m128i xmm_crc2 = _mm256_castsi256_si128(crc1);

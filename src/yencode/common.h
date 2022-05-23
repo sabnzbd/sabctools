@@ -40,22 +40,22 @@
 
 #include <stdlib.h>
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
-	// MSVC doesn't support C11 aligned_alloc: https://stackoverflow.com/a/62963007
-	#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = _aligned_malloc((len), align)
-	#define ALIGN_FREE _aligned_free
+    // MSVC doesn't support C11 aligned_alloc: https://stackoverflow.com/a/62963007
+    #define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = _aligned_malloc((len), align)
+    #define ALIGN_FREE _aligned_free
 #elif defined(_ISOC11_SOURCE)
-	// C11 method
-	// len needs to be a multiple of alignment, although it sometimes works if it isn't...
-	#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = aligned_alloc(align, ((len) + (align)-1) & ~((align)-1))
-	#define ALIGN_FREE free
+    // C11 method
+    // len needs to be a multiple of alignment, although it sometimes works if it isn't...
+    #define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = aligned_alloc(align, ((len) + (align)-1) & ~((align)-1))
+    #define ALIGN_FREE free
 #elif defined(__cplusplus) && __cplusplus >= 201700
-	// C++17 method
-	#include <cstdlib>
-	#define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = std::aligned_alloc(align, ((len) + (align)-1) & ~((align)-1))
-	#define ALIGN_FREE free
+    // C++17 method
+    #include <cstdlib>
+    #define ALIGN_ALLOC(buf, len, align) *(void**)&(buf) = std::aligned_alloc(align, ((len) + (align)-1) & ~((align)-1))
+    #define ALIGN_FREE free
 #else
-	#define ALIGN_ALLOC(buf, len, align) if(posix_memalign((void**)&(buf), align, (len))) (buf) = NULL
-	#define ALIGN_FREE free
+    #define ALIGN_ALLOC(buf, len, align) if(posix_memalign((void**)&(buf), align, (len))) (buf) = NULL
+    #define ALIGN_FREE free
 #endif
 
 
@@ -191,16 +191,16 @@ static HEDLEY_ALWAYS_INLINE int8x16_t vmakeq_s8(
 #  define _CREATE_TUPLE(type, ...) (type){{ __VA_ARGS__ }}
 # endif
 static HEDLEY_ALWAYS_INLINE uint8x16x2_t vcreate2_u8(uint8x16_t a, uint8x16_t b) {
-	return _CREATE_TUPLE(uint8x16x2_t, a, b);
+    return _CREATE_TUPLE(uint8x16x2_t, a, b);
 }
 static HEDLEY_ALWAYS_INLINE int8x16x2_t vcreate2_s8(int8x16_t a, int8x16_t b) {
-	return _CREATE_TUPLE(int8x16x2_t, a, b);
+    return _CREATE_TUPLE(int8x16x2_t, a, b);
 }
 static HEDLEY_ALWAYS_INLINE uint8x16x3_t vcreate3_u8(uint8x16_t a, uint8x16_t b, uint8x16_t c) {
-	return _CREATE_TUPLE(uint8x16x3_t, a, b, c);
+    return _CREATE_TUPLE(uint8x16x3_t, a, b, c);
 }
 static HEDLEY_ALWAYS_INLINE uint8x16x4_t vcreate4_u8(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t d) {
-	return _CREATE_TUPLE(uint8x16x4_t, a, b, c, d);
+    return _CREATE_TUPLE(uint8x16x4_t, a, b, c, d);
 }
 # undef _CREATE_TUPLE
 #endif

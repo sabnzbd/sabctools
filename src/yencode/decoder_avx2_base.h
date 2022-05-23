@@ -60,14 +60,14 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
             '.','.','.','.','.','.','.','.','.','.','.','.','.','.',_nextMask==2?0:'.',_nextMask==1?0:'.'
         );
     }
-	
-	// for some reason, MSVC Win32 seems to crash when trying to compile _mm256_mask_cmpeq_epi8_mask
-	// the crash can be fixed by switching the order of the last two arguments, but it seems to generate wrong code
-	// so just disable the optimisation as it seems to be problematic there
+
+    // for some reason, MSVC Win32 seems to crash when trying to compile _mm256_mask_cmpeq_epi8_mask
+    // the crash can be fixed by switching the order of the last two arguments, but it seems to generate wrong code
+    // so just disable the optimisation as it seems to be problematic there
 #if defined(_MSC_VER) && !defined(PLATFORM_AMD64) && !defined(__clang__)
-	const bool useAVX3MaskCmp = false;
+    const bool useAVX3MaskCmp = false;
 #else
-	const bool useAVX3MaskCmp = (use_isa >= ISA_LEVEL_AVX3);
+    const bool useAVX3MaskCmp = (use_isa >= ISA_LEVEL_AVX3);
 #endif
     intptr_t i;
     for(i = -len; i; i += sizeof(__m256i)*2) {
@@ -135,7 +135,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
                 __mmask32 match2EqMaskA, match2EqMaskB;
                 __mmask32 match0CrMaskA, match0CrMaskB;
                 __mmask32 match2CrXDtMaskA, match2CrXDtMaskB;
-				if(useAVX3MaskCmp && searchEnd) {
+                if(useAVX3MaskCmp && searchEnd) {
                     match2EqMaskA = _mm256_cmpeq_epi8_mask(_mm256_set1_epi8('='), tmpData2A);
                     match2EqMaskB = _mm256_cmpeq_epi8_mask(_mm256_set1_epi8('='), tmpData2B);
                 } else
@@ -151,7 +151,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
                     // find patterns of \r_.
 
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         match0CrMaskA = _mm256_cmpeq_epi8_mask(oDataA, _mm256_set1_epi8('\r'));
                         match0CrMaskB = _mm256_cmpeq_epi8_mask(oDataB, _mm256_set1_epi8('\r'));
                         match2CrXDtMaskA = _mm256_mask_cmpeq_epi8_mask(match0CrMaskA, tmpData2A, _mm256_set1_epi8('.'));
@@ -181,7 +181,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
                     __mmask32 match1NlMaskA, match1NlMaskB;
                     __mmask32 match2NlDotMaskA, match2NlDotMaskB;
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         match1NlMaskA = _mm256_mask_cmpeq_epi8_mask(
                             match0CrMaskA,
                             _mm256_set1_epi8('\n'),
@@ -237,7 +237,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
 
                         int matchEnd;
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-						if(useAVX3MaskCmp) {
+                        if(useAVX3MaskCmp) {
                             __mmask32 match3EqYMaskA = _mm256_mask_cmpeq_epi8_mask(
                                 match2EqMaskA,
                                 _mm256_set1_epi8('y'),
@@ -316,7 +316,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
                         }
                     }
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         mask |= (uint64_t)match2NlDotMaskA << 2;
                         mask |= (uint64_t)match2NlDotMaskB << 34;
                         minMask = _mm256_maskz_mov_epi8(~(match2NlDotMaskB>>30), _mm256_set1_epi8('.'));
@@ -334,7 +334,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
                     __m256i match3EqYA, match3EqYB;
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
                     __mmask32 match3EqYMaskA, match3EqYMaskB;
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         match3EqYMaskA = _mm256_mask_cmpeq_epi8_mask(
                             match2EqMaskA,
                             _mm256_set1_epi8('y'),
@@ -364,7 +364,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_avx2(const uint8_t* HEDLEY_RESTRICT src, lon
                     if(LIKELIHOOD(0.002, partialEndFound)) {
                         bool endFound;
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-						if(useAVX3MaskCmp) {
+                        if(useAVX3MaskCmp) {
                             __mmask32 match3LfEqYMaskA = _mm256_mask_cmpeq_epi8_mask(
                                 match3EqYMaskA,
                                 _mm256_set1_epi8('\n'),

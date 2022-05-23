@@ -149,7 +149,7 @@ int cpu_supports_isa() {
 int cpu_supports_crc_isa() {
     int flags[4];
     _cpuid1(flags);
-    
+
     if((flags[2] & 0x80202) == 0x80202) { // SSE4.1 + SSSE3 + CLMUL
         if((flags[2] & 0x18000000) == 0x18000000) { // OSXSAVE + AVX
             int xcr = _GET_XCR() & 0xff; // ignore unused bits
