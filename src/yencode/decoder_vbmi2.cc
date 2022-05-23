@@ -25,7 +25,7 @@ void decoder_set_vbmi2_funcs() {
 }
 # endif
 #else
-    
+
 void decoder_set_avx2_funcs();
 
 void decoder_set_vbmi2_funcs() {

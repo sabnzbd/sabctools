@@ -536,10 +536,10 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
 #if PY_MINOR_VERSION < 9
     Py_SIZE(sv) = output_len;
 #else
-	Py_SET_SIZE(sv, output_len);
+    Py_SET_SIZE(sv, output_len);
 #endif
     sv->ob_sval[output_len] = '\0';
-	// Reset hash, this was removed in Python 3.11
+    // Reset hash, this was removed in Python 3.11
 #if PY_MINOR_VERSION < 11
     sv->ob_shash = -1;
 #endif
@@ -556,30 +556,30 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
 
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
-	size_t ret = len * 2    /* all characters escaped */
-		+ 2 /* allocation for offset and that a newline may occur early */
+    size_t ret = len * 2    /* all characters escaped */
+        + 2 /* allocation for offset and that a newline may occur early */
 #if !defined(YENC_DISABLE_AVX256)
-		+ 64 /* allocation for YMM overflowing */
+        + 64 /* allocation for YMM overflowing */
 #else
-		+ 32 /* allocation for XMM overflowing */
+        + 32 /* allocation for XMM overflowing */
 #endif
-	;
-	/* add newlines, considering the possibility of all chars escaped */
-	if(line_size == 128) // optimize common case
-		return ret + 2 * (len >> 6);
-	return ret + 2 * ((len*2) / line_size);
+    ;
+    /* add newlines, considering the possibility of all chars escaped */
+    if(line_size == 128) // optimize common case
+        return ret + 2 * (len >> 6);
+    return ret + 2 * ((len*2) / line_size);
 }
 
 PyObject* encode(PyObject* self, PyObject* Py_input_string)
 {
     (void)self;
-	PyObject *Py_output_string;
-	PyObject *retval = NULL;
+    PyObject *Py_output_string;
+    PyObject *retval = NULL;
 
-	char *input_buffer = NULL;
-	char *output_buffer = NULL;
-	size_t input_len = 0;
-	size_t output_len = 0;
+    char *input_buffer = NULL;
+    char *output_buffer = NULL;
+    size_t input_len = 0;
+    size_t output_len = 0;
     uint32_t crc;
 
     // Verify the input is a bytes string
@@ -589,29 +589,29 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     }
 
     // Initialize buffers and CRC's
-	input_len = PyBytes_Size(Py_input_string);
-	input_buffer = (char *)PyBytes_AsString(Py_input_string);
-	output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
-	if(!output_buffer)
-		return PyErr_NoMemory();
+    input_len = PyBytes_Size(Py_input_string);
+    input_buffer = (char *)PyBytes_AsString(Py_input_string);
+    output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
+    if(!output_buffer)
+        return PyErr_NoMemory();
 
-	// Free GIL, in case it helps
+    // Free GIL, in case it helps
     Py_BEGIN_ALLOW_THREADS;
 
     // Encode result
     int column = 0;
-	output_len = do_encode(LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
+    output_len = do_encode(LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
     crc = do_crc32(input_buffer, input_len, 0);
 
-	// Restore GIL so we can build Python strings
-	Py_END_ALLOW_THREADS;
+    // Restore GIL so we can build Python strings
+    Py_END_ALLOW_THREADS;
 
-	// Build output string
-	Py_output_string = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
-	if(Py_output_string)
-		retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc);
+    // Build output string
+    Py_output_string = PyBytes_FromStringAndSize((char *)output_buffer, output_len);
+    if(Py_output_string)
+        retval = Py_BuildValue("(S,L)", Py_output_string, (long long)crc);
 
     Py_XDECREF(Py_output_string);
-	free(output_buffer);
-	return retval;
+    free(output_buffer);
+    return retval;
 }

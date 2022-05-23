@@ -103,13 +103,13 @@ static uint32_t arm_crc_calc(uint32_t crc, const unsigned char *src, long len) {
             len--;
         }
         if ((uintptr_t)src & sizeof(uint16_t)) {
-			crc = __crc32h(crc, _LE16(*((uint16_t *)src)));
+            crc = __crc32h(crc, _LE16(*((uint16_t *)src)));
             src += sizeof(uint16_t);
             len -= sizeof(uint16_t);
         }
 #ifdef __aarch64__
         if ((uintptr_t)src & sizeof(uint32_t)) {
-			crc = __crc32w(crc, _LE32(*((uint32_t *)src)));
+            crc = __crc32w(crc, _LE32(*((uint32_t *)src)));
             src += sizeof(uint32_t);
             len -= sizeof(uint32_t);
         }
@@ -175,12 +175,12 @@ static uint32_t arm_crc_calc(uint32_t crc, const unsigned char *src, long len) {
 
 #ifdef __aarch64__
     if (len & sizeof(uint32_t)) {
-		crc = __crc32w(crc, _LE32(*((uint32_t *)src)));
+        crc = __crc32w(crc, _LE32(*((uint32_t *)src)));
         src += sizeof(uint32_t);
     }
 #endif
     if (len & sizeof(uint16_t)) {
-		crc = __crc32h(crc, _LE16(*((uint16_t *)src)));
+        crc = __crc32h(crc, _LE16(*((uint16_t *)src)));
         src += sizeof(uint16_t);
     }
     if (len & sizeof(uint8_t))

@@ -123,9 +123,9 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
     const bool _USING_BLEND_ADD = false;
 #endif
 #if defined(_MSC_VER) && !defined(PLATFORM_AMD64) && !defined(__clang__)
-	const bool useAVX3MaskCmp = false;
+    const bool useAVX3MaskCmp = false;
 #else
-	const bool useAVX3MaskCmp = (use_isa >= ISA_LEVEL_AVX3);
+    const bool useAVX3MaskCmp = (use_isa >= ISA_LEVEL_AVX3);
 #endif
 
     __m128i lfCompare = _mm_set1_epi8('\n');
@@ -219,7 +219,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
                 __mmask16 match2EqMaskA, match2EqMaskB;
                 __mmask16 match0CrMaskA, match0CrMaskB;
                 __mmask16 match2CrXDtMaskA, match2CrXDtMaskB;
-				if(useAVX3MaskCmp && searchEnd) {
+                if(useAVX3MaskCmp && searchEnd) {
                     match2EqMaskA = _mm_cmpeq_epi8_mask(_mm_set1_epi8('='), tmpData2A);
                     match2EqMaskB = _mm_cmpeq_epi8_mask(_mm_set1_epi8('='), tmpData2B);
                 } else
@@ -235,7 +235,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
                 __m128i match2CrXDtA, match2CrXDtB;
                 if(isRaw) {
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         match0CrMaskA = _mm_cmpeq_epi8_mask(oDataA, _mm_set1_epi8('\r'));
                         match0CrMaskB = _mm_cmpeq_epi8_mask(oDataB, _mm_set1_epi8('\r'));
                         match2CrXDtMaskA = _mm_mask_cmpeq_epi8_mask(match0CrMaskA, tmpData2A, _mm_set1_epi8('.'));
@@ -261,7 +261,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
                     __mmask16 match1NlMaskA, match1NlMaskB;
                     __mmask16 match2NlDotMaskA, match2NlDotMaskB;
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         match1NlMaskA = _mm_mask_cmpeq_epi8_mask(
                             match0CrMaskA,
                             _mm_set1_epi8('\n'),
@@ -304,7 +304,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
 
                         int matchEnd;
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-						if(useAVX3MaskCmp) {
+                        if(useAVX3MaskCmp) {
                             __mmask16 match3EqYMaskA = _mm_mask_cmpeq_epi8_mask(
                                 match2EqMaskA, _mm_set1_epi8('y'), tmpData3A
                             );
@@ -378,7 +378,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
                         }
                     }
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         mask |= match2NlDotMaskA << 2;
                         mask |= (match2NlDotMaskB << 18) & 0xffffffff;
                         minMask = _mm_maskz_mov_epi8(~(match2NlDotMaskB>>14), _mm_set1_epi8('.'));
@@ -403,7 +403,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
                     __m128i match3EqYA, match3EqYB;
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
                     __mmask16 match3EqYMaskA, match3EqYMaskB;
-					if(useAVX3MaskCmp) {
+                    if(useAVX3MaskCmp) {
                         match3EqYMaskA = _mm_mask_cmpeq_epi8_mask(
                             match2EqMaskA,
                             _mm_set1_epi8('y'),
@@ -439,7 +439,7 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* HEDLEY_RESTRICT src, long
                         bool endFound;
 
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
-						if(useAVX3MaskCmp) {
+                        if(useAVX3MaskCmp) {
                             __mmask16 match3LfEqYMaskA = _mm_mask_cmpeq_epi8_mask(
                                 match3EqYMaskA,
                                 _mm_set1_epi8('\n'),
