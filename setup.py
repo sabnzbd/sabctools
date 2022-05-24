@@ -136,7 +136,7 @@ class SAByEncBuild(build_ext):
                     IS_AARCH64 = False
                 if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc"):
                     gcc_arm_crc_flags.append("-march=armv8-a+crc")
-                if autoconf_check(self.compiler, flag_check="-mfpu=neon"):
+                if not IS_AARCH64 and autoconf_check(self.compiler, flag_check="-mfpu=neon"):
                     gcc_arm_neon_flags.append("-mfpu=neon")
 
             # Check for special x32 case
