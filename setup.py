@@ -62,6 +62,7 @@ def autoconf_check(
         f.flush()
 
         try:
+            log.info("==> Please ignore any errors shown below!")
             result_files = compiler.compile([f.name], extra_postargs=extra_postargs)
             log.info("==> Success!")
         except CompileError:
@@ -141,20 +142,28 @@ class SAByEncBuild(build_ext):
 
             # Check for special x32 case
             if (
-                IS_X86 
-                and not IS_MACOS 
+                IS_X86
+                and not IS_MACOS
                 and autoconf_check(self.compiler, define_check="__ILP32__")
                 and autoconf_check(self.compiler, define_check="__x86_64__")
             ):
                 log.info("==> Detected x32 platform, setting CRCUTIL_USE_ASM=0")
                 ext.define_macros.append(("CRCUTIL_USE_ASM", "0"))
                 gcc_macros.append(("CRCUTIL_USE_ASM", "0"))
-            
+
             if IS_X86 and autoconf_check(self.compiler, flag_check="-mvpclmulqdq"):
                 gcc_vpclmulqdq_flags = ["-mavx2", "-mvpclmulqdq", "-mpclmul"]
-            
+
             if IS_X86 and autoconf_check(self.compiler, flag_check="-mavx512vbmi2"):
-                gcc_vbmi2_flags = ["-mavx512vbmi2", "-mavx512vl", "-mavx512bw", "-mpopcnt", "-mbmi", "-mbmi2", "-mlzcnt"]
+                gcc_vbmi2_flags = [
+                    "-mavx512vbmi2",
+                    "-mavx512vl",
+                    "-mavx512bw",
+                    "-mpopcnt",
+                    "-mbmi",
+                    "-mbmi2",
+                    "-mlzcnt",
+                ]
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
