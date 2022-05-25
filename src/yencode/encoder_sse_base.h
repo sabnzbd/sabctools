@@ -424,8 +424,8 @@ do_encode_sse(int line_size, int *colOffset, const uint8_t *HEDLEY_RESTRICT srcE
                         asm(
                             "shrl $1, %[eqMask] \n"
                             "shrl %%cl, %[eqMask] \n" // TODO: can use shrq to avoid above shift?
-# if defined(PLATFORM_AMD64)
-                            "adcq %[col], %[p] \n"
+# if defined(PLATFORM_AMD64) && !defined(__ILP32__)
+                            "adcq %q[col], %q[p] \n"
 # else
                             "adcl %[col], %[p] \n"
 # endif
