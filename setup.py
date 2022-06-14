@@ -137,8 +137,13 @@ class SAByEncBuild(build_ext):
                     IS_AARCH64 = False
                 if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc"):
                     gcc_arm_crc_flags.append("-march=armv8-a+crc")
+                    # Resolve problems on armv7, see issue #56
+                    if not IS_AARCH64:
+                        gcc_arm_crc_flags.append("-fno-lto")
                 if not IS_AARCH64 and autoconf_check(self.compiler, flag_check="-mfpu=neon"):
                     gcc_arm_neon_flags.append("-mfpu=neon")
+                    # Resolve problems on armv7, see issue #56
+                    gcc_arm_neon_flags.append("-fno-lto")
 
             # Check for special x32 case
             if (
