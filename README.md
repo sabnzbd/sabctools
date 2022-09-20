@@ -3,7 +3,7 @@ SABYenc 3 - yEnc decoding of usenet data using SIMD routines
 
 Modification of the original [yenc](https://pypi.org/project/yenc/) module for use within SABnzbd.
 The module was extended to do header parsing and full yEnc decoding from a Python
-list of chunks, the way in which data is retrieved from usenet.
+list of chunks, the way in which data is retrieved from Usenet.
 This is particularly beneficial when SSL is enabled, which limits the size of each chunk to 16K. Parsing these chunks in python is much more costly.
 Additionally, this module releases Python's GIL during decoding, greatly increasing performance of the overall download process.
 
