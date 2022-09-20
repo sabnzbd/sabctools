@@ -26,6 +26,7 @@ import sys
 import platform
 import re
 import tempfile
+from setuptools import distutils
 from distutils.ccompiler import CCompiler
 from distutils.errors import CompileError
 from typing import Type
