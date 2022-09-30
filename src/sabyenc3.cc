@@ -583,10 +583,17 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     uint32_t crc;
 
     // Verify the input is a bytes string
-    if(!PyBytes_Check(Py_input_string)) {
-        PyErr_SetString(PyExc_TypeError, "Expected bytes");
-        return NULL;
+    if(PyBytes_Check(Py_input_string)) {
+        input_len = PyBytes_Size(Py_input_string);
+        input_buffer = (char *)PyBytes_AsString(Py_input_string);
     }
+    if(PyMemoryView_Check(Py_input_string)) {
+       Py_buffer *buffer = PyMemoryView_GET_BUFFER(Py_input_string);
+        input_len = buffer->len;
+        input_buffer = (char *)buffer->buf;
+    }
+    if (input_buffer == NULL) {
+        PyErr_SetString(PyExc_TypeError, "Expected bytes or memoryview");
 
     // Initialize buffers and CRC's
     input_len = PyBytes_Size(Py_input_string);
