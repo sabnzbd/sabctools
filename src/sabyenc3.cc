@@ -596,8 +596,6 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
         PyErr_SetString(PyExc_TypeError, "Expected bytes or memoryview");
 
     // Initialize buffers and CRC's
-    input_len = PyBytes_Size(Py_input_string);
-    input_buffer = (char *)PyBytes_AsString(Py_input_string);
     output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
     if(!output_buffer)
         return PyErr_NoMemory();
