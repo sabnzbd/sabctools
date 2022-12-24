@@ -50,6 +50,12 @@ static PyMethodDef sabyenc3_methods[] = {
         METH_O,
         "encode(input_string)"
     },
+    {
+        "test",
+        test,
+        METH_O,
+        "test(socket)"
+    },
     {NULL, NULL, 0, NULL}
 };
 
@@ -61,15 +67,64 @@ static struct PyModuleDef sabyenc3_definition = {
     sabyenc3_methods
 };
 
+
+/* OpenSSL link */
+#if defined(_WIN32) || defined(__CYGWIN__)
+# define SABYENC_DLL_CALL __stdcall
+# define WIN32_LEAN_AND_MEAN
+# include <Windows.h>
+#else
+# define SABYENC_DLL_CALL
+# include <dlfcn.h>
+#endif
+
+int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
+
+static bool openssl_init() {
+    // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
+    
+#if defined(_WIN32) || defined(__CYGWIN__)
+    HMODULE handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+    // TODO: more DLL names?
+    if(!handle) return false;
+    
+    *(void**)&SSL_read_ex = GetProcAddress(handle, "SSL_read_ex");
+#else
+    void* handle = dlopen("libssl.so", RTLD_LAZY | RTLD_NOLOAD);
+    if(!handle)
+        handle = dlopen("libssl.so.1.1", RTLD_LAZY | RTLD_NOLOAD);
+    if(!handle)
+        handle = dlopen("libssl.so.3", RTLD_LAZY | RTLD_NOLOAD);
+    if(!handle)
+        handle = dlopen("libssl.so.1.0.2", RTLD_LAZY | RTLD_NOLOAD);
+    if(!handle)
+        handle = dlopen("libssl.so.1.0.1", RTLD_LAZY | RTLD_NOLOAD);
+    if(!handle)
+        handle = dlopen("libssl.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
+    
+    if(!handle) return false;
+    
+    *(void**)&SSL_read_ex = dlsym(handle, "SSL_read_ex");
+    if(!SSL_read_ex) dlclose(handle);
+    // TODO: handle is never closed beyond this point - should it?
+#endif
+    
+    return !!SSL_read_ex;
+}
+
+
+
 PyMODINIT_FUNC PyInit_sabyenc3(void) {
     // Initialize and add version / SIMD information
     Py_Initialize();
     encoder_init();
     decoder_init();
     crc_init();
+    bool openssl_found = openssl_init();
     PyObject* module = PyModule_Create(&sabyenc3_definition);
     PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
     PyModule_AddStringConstant(module, "simd", simd_detected());
+    PyModule_AddIntConstant(module, "openssl_linked", openssl_found ? 1:0);
     return module;
 }
 
@@ -185,7 +240,7 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         }
 
         // Skip over everything untill end of line, where the content starts
-        for( ; *cur_char != LF && *cur_char != CR && *cur_char != ZERO; cur_char++);
+        for( ; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO; cur_char++);
     }
 
     /*
@@ -232,7 +287,7 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         // =yend not found - invalid article
         return 0;
     }
-#if CRC_CHECK
+#if SABYENC_CRC_CHECK
     uint32_t crc = 0;
     uInt crc_yenc = 0;
     tail_buffer_pos += 7; // skip "\r\n=yend"
@@ -273,13 +328,13 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         size_t output_len = do_decode(1, (unsigned char*)str + input_offset, (unsigned char*)output_buffer, len - input_offset, &state);
         decoded_bytes += output_len;
         input_offset = 0;
-#if CRC_CHECK
+#if SABYENC_CRC_CHECK
         crc = do_crc32(output_buffer, output_len, crc);
 #endif
         output_buffer += output_len;
     }
 
-#if CRC_CHECK
+#if SABYENC_CRC_CHECK
     *crc_correct = (crc == crc_yenc);
 #else
     // Do a simple check based on size, faster than CRC
@@ -386,7 +441,7 @@ uLong extract_int_from_pylist(PyObject *Py_input_list, int *cur_index, char **st
     part_value = strtoll(*start_loc, &enc_loc, 0);
 
     // Did we reach the end of a line?
-    if(*enc_loc == ZERO) {
+    if(*enc_loc == SABYENC_ZERO) {
         // Do we even have another item?
         if(*cur_index+1 >= max_lines) return part_value;
 
@@ -427,7 +482,7 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
     end_loc = *start_loc;
     while(1) {
         // Did we reach end of the line but not newline?
-        if(*(end_loc+1) == CR || *(end_loc+1) == LF || *(end_loc+1) == ZERO) {
+        if(*(end_loc+1) == SABYENC_CR || *(end_loc+1) == SABYENC_LF || *(end_loc+1) == SABYENC_ZERO) {
             // Did we allocate yet?
             if(!*filename_ptr) {
                 // Reserve space (plus current char and terminator)
@@ -437,9 +492,9 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
                 // Copy the text, including the current char
                 strncpy(*filename_ptr, *start_loc, end_loc - *start_loc + 1);
                 // Add termininator
-                (*filename_ptr)[strlen(*filename_ptr)] = ZERO;
+                (*filename_ptr)[strlen(*filename_ptr)] = SABYENC_ZERO;
                 // Was this the end?
-                if(*(end_loc+1) == CR || *(end_loc+1) == LF) {
+                if(*(end_loc+1) == SABYENC_CR || *(end_loc+1) == SABYENC_LF) {
                     // Move the pointer and return
                     *cur_char = end_loc+1;
                     return 1;
@@ -458,7 +513,7 @@ int extract_filename_from_pylist(PyObject *Py_input_list, int *cur_index, char *
                 // Copy result at the end
                 strncat(*filename_ptr, *start_loc, end_loc - *start_loc + 1);
                 // Add termininator
-                (*filename_ptr)[strlen(*filename_ptr)] = ZERO;
+                (*filename_ptr)[strlen(*filename_ptr)] = SABYENC_ZERO;
                 // Move the pointer and return
                 *cur_char = end_loc+1;
                 return 1;
@@ -591,7 +646,7 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     // Initialize buffers and CRC's
     input_len = PyBytes_Size(Py_input_string);
     input_buffer = (char *)PyBytes_AsString(Py_input_string);
-    output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, LINESIZE));
+    output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, SABYENC_LINESIZE));
     if(!output_buffer)
         return PyErr_NoMemory();
 
@@ -600,7 +655,7 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
 
     // Encode result
     int column = 0;
-    output_len = do_encode(LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
+    output_len = do_encode(SABYENC_LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
     crc = do_crc32(input_buffer, input_len, 0);
 
     // Restore GIL so we can build Python strings
@@ -614,4 +669,33 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     Py_XDECREF(Py_output_string);
     free(output_buffer);
     return retval;
+}
+
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *Socket; /* weakref to socket on which we're layered */
+    void *ssl;
+} PySSLSocket;
+
+PyObject* test(PyObject* self, PyObject* Py_ssl_socket) {
+    if(!SSL_read_ex) {
+        PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
+        return NULL;
+    }
+    PySSLSocket *test = (PySSLSocket *)Py_ssl_socket;
+
+    PyObject *dest = NULL;
+    char *mem;
+    size_t len = 1000;
+    size_t count = 0;
+    int retval;
+
+    dest = PyBytes_FromStringAndSize(NULL, 1200);
+    mem = PyBytes_AS_STRING(dest);
+
+    retval = SSL_read_ex(test->ssl, mem, 1000, &count);
+    printf("%s", mem);
+
+    return dest;
 }

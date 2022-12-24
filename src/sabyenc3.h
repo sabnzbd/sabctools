@@ -28,13 +28,13 @@
 #define SABYENC_VERSION "5.4.4"
 
 /* Do we CRC check? */
-#define CRC_CHECK   1
+#define SABYENC_CRC_CHECK   1
 
 /* Constants */
-#define LINESIZE    128
-#define ZERO        0x00
-#define CR          0x0d
-#define LF          0x0a
+#define SABYENC_LINESIZE    128
+#define SABYENC_ZERO        0x00
+#define SABYENC_CR          0x0d
+#define SABYENC_LF          0x0a
 
 /* The =yend line shouldn't exceed 1KB */
 #define MAX_TAIL_BYTES 1024
@@ -52,6 +52,7 @@ typedef int Bool;
 /* Functions */
 PyObject* decode_usenet_chunks(PyObject *, PyObject*);
 PyObject* encode(PyObject *, PyObject*);
+PyObject* test(PyObject *, PyObject*);
 PyMODINIT_FUNC initsabyenc3(void);
 
 
