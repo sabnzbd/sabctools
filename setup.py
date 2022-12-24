@@ -100,7 +100,7 @@ class SAByEncBuild(build_ext):
             cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi"]
         else:
             # TODO: consider -flto - may require some extra testing
-            ldflags = []
+            ldflags = ["-ldl"]  # for dlopen
             cflags = [
                 "-Wall",
                 "-Wextra",
