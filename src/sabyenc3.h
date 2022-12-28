@@ -49,10 +49,32 @@ typedef int Bool;
 #define strtoll _strtoi64
 #endif
 
+/* Limited sub-struct of Python struct */
+typedef struct {
+	PyObject_HEAD
+	PyObject *Socket; /* We do not use it, but needs to match Python */
+	void *ssl;
+} PySSLSocket;
+
+/* OpenSSL link */
+#if defined(_WIN32) || defined(__CYGWIN__)
+# define SABYENC_DLL_CALL __stdcall
+# define WIN32_LEAN_AND_MEAN
+# include <Windows.h>
+#else
+# define SABYENC_DLL_CALL
+# include <dlfcn.h>
+#endif
+int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
+int (SABYENC_DLL_CALL *SSL_get_error)(void*, int) = NULL;
+
+/* Have to manually define this OpenSSL constant and hope it never changes */
+# define SSL_ERROR_WANT_READ 2
+
 /* Functions */
 PyObject* decode_usenet_chunks(PyObject *, PyObject*);
 PyObject* encode(PyObject *, PyObject*);
-PyObject* test(PyObject *, PyObject*);
-PyMODINIT_FUNC initsabyenc3(void);
+PyObject* unlocked_ssl_recv(PyObject *, PyObject*);
+PyMODINIT_FUNC PyInit_sabyenc3(void);
 
 
