@@ -28,13 +28,13 @@
 
 /* Declarations */
 
-/* Function declarations */
+/* Function and exception declarations */
 PyMODINIT_FUNC PyInit_sabyenc3(void);
 static size_t decode_buffer_usenet(PyObject *, char *, int, char **, Bool *);
 static char * find_text_in_pylist(PyObject *, const char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
-
+static PyObject *SSLWantReadError;
 
 /* Python API requirements */
 static PyMethodDef sabyenc3_methods[] = {
@@ -51,10 +51,10 @@ static PyMethodDef sabyenc3_methods[] = {
         "encode(input_string)"
     },
     {
-        "test",
-        test,
-        METH_O,
-        "test(socket)"
+        "unlocked_ssl_recv",
+		unlocked_ssl_recv,
+		METH_VARARGS,
+        "unlocked_ssl_recv(ssl_socket, bufsize)"
     },
     {NULL, NULL, 0, NULL}
 };
@@ -67,52 +67,39 @@ static struct PyModuleDef sabyenc3_definition = {
     sabyenc3_methods
 };
 
-
-/* OpenSSL link */
-#if defined(_WIN32) || defined(__CYGWIN__)
-# define SABYENC_DLL_CALL __stdcall
-# define WIN32_LEAN_AND_MEAN
-# include <Windows.h>
-#else
-# define SABYENC_DLL_CALL
-# include <dlfcn.h>
-#endif
-
-int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
-
+/* Linking to OpenSSL function used by Python */
 static bool openssl_init() {
     // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
-    
+
 #if defined(_WIN32) || defined(__CYGWIN__)
-    HMODULE handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+    HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+
     // TODO: more DLL names?
-    if(!handle) return false;
-    
-    *(void**)&SSL_read_ex = GetProcAddress(handle, "SSL_read_ex");
+    if(!openssl_handle) return false;
+    *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
+	*(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
 #else
-    void* handle = dlopen("libssl.so", RTLD_LAZY | RTLD_NOLOAD);
-    if(!handle)
-        handle = dlopen("libssl.so.1.1", RTLD_LAZY | RTLD_NOLOAD);
-    if(!handle)
-        handle = dlopen("libssl.so.3", RTLD_LAZY | RTLD_NOLOAD);
-    if(!handle)
-        handle = dlopen("libssl.so.1.0.2", RTLD_LAZY | RTLD_NOLOAD);
-    if(!handle)
-        handle = dlopen("libssl.so.1.0.1", RTLD_LAZY | RTLD_NOLOAD);
-    if(!handle)
-        handle = dlopen("libssl.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
-    
-    if(!handle) return false;
-    
-    *(void**)&SSL_read_ex = dlsym(handle, "SSL_read_ex");
-    if(!SSL_read_ex) dlclose(handle);
-    // TODO: handle is never closed beyond this point - should it?
+    void* openssl_handle = dlopen("libssl.so", RTLD_LAZY | RTLD_NOLOAD);
+    if(!openssl_handle)
+		openssl_handle = dlopen("libssl.so.1.1", RTLD_LAZY | RTLD_NOLOAD);
+    if(!openssl_handle)
+		openssl_handle = dlopen("libssl.so.3", RTLD_LAZY | RTLD_NOLOAD);
+    if(!openssl_handle)
+		openssl_handle = dlopen("libssl.so.1.0.2", RTLD_LAZY | RTLD_NOLOAD);
+    if(!openssl_handle)
+		openssl_handle = dlopen("libssl.so.1.0.1", RTLD_LAZY | RTLD_NOLOAD);
+    if(!openssl_handle)
+		openssl_handle = dlopen("libssl.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
+
+    if(!openssl_handle) return false;
+
+    *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
+	*(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
+    if(!SSL_read_ex || !SSL_get_error) dlclose(openssl_handle);
 #endif
-    
+
     return !!SSL_read_ex;
 }
-
-
 
 PyMODINIT_FUNC PyInit_sabyenc3(void) {
     // Initialize and add version / SIMD information
@@ -120,12 +107,20 @@ PyMODINIT_FUNC PyInit_sabyenc3(void) {
     encoder_init();
     decoder_init();
     crc_init();
-    bool openssl_found = openssl_init();
-    PyObject* module = PyModule_Create(&sabyenc3_definition);
-    PyModule_AddStringConstant(module, "__version__", SABYENC_VERSION);
-    PyModule_AddStringConstant(module, "simd", simd_detected());
-    PyModule_AddIntConstant(module, "openssl_linked", openssl_found ? 1:0);
-    return module;
+
+    PyObject* m = PyModule_Create(&sabyenc3_definition);
+    PyModule_AddStringConstant(m, "__version__", SABYENC_VERSION);
+    PyModule_AddStringConstant(m, "simd", simd_detected());
+
+	// Add status of linking OpenSSL function
+	PyObject *openssl_linked = openssl_init() ? Py_True : Py_False;
+	Py_INCREF(openssl_linked);
+	PyModule_AddObject(m, "openssl_linked", openssl_linked);
+
+	// Add our own exception
+	SSLWantReadError = PyErr_NewException("sabyenc3.SSLWantReadError", NULL, NULL);
+	PyModule_AddObject(m, "SSLWantReadError", SSLWantReadError);
+    return m;
 }
 
 
@@ -158,6 +153,23 @@ static inline char* my_memstr(const void* haystack, size_t haystackLen, const ch
         return p + len;
     return p;
 }
+
+
+static inline void resize_pybytes(PyBytesObject *sv, size_t output_len) {
+	// Resize data to actual value, how this is done depends on the Python version
+	// We use this instead of "_PyBytes_Resize", as it seems to cause a drop in performance
+#if PY_MINOR_VERSION < 9
+	Py_SIZE(sv) = output_len;
+#else
+	Py_SET_SIZE(sv, output_len);
+#endif
+	sv->ob_sval[output_len] = '\0';
+	// Reset hash, this was removed in Python 3.11
+#if PY_MINOR_VERSION < 11
+	sv->ob_shash = -1;
+#endif
+}
+
 
 static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
                                 char **filename_out, Bool *crc_correct) {
@@ -586,20 +598,8 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
-    // Resize data to actual value, how this is done depends on the Python version
-    // We use this instead of "_PyBytes_Resize", as it seems to cause a drop in performance
-#if PY_MINOR_VERSION < 9
-    Py_SIZE(sv) = output_len;
-#else
-    Py_SET_SIZE(sv, output_len);
-#endif
-    sv->ob_sval[output_len] = '\0';
-    // Reset hash, this was removed in Python 3.11
-#if PY_MINOR_VERSION < 11
-    sv->ob_shash = -1;
-#endif
-
     // Build output
+	resize_pybytes(sv, output_len);
     retval = Py_BuildValue("(S,S,O)", Py_output_buffer, Py_output_filename, crc_correct ? Py_True: Py_False);
 
     // Make sure we free all the buffers
@@ -672,30 +672,64 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
 }
 
 
-typedef struct {
-    PyObject_HEAD
-    PyObject *Socket; /* weakref to socket on which we're layered */
-    void *ssl;
-} PySSLSocket;
+PyObject* unlocked_ssl_recv(PyObject* self, PyObject* args) {
+	PySSLSocket *ssl_socket;
+	int len;
+	PyObject *dest;
+	char *mem;
+	size_t count = 0;
+	size_t readbytes = 0;
+	int retval;
+	int err;
 
-PyObject* test(PyObject* self, PyObject* Py_ssl_socket) {
-    if(!SSL_read_ex) {
+    if(!SSL_read_ex || !SSL_get_error) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
         return NULL;
     }
-    PySSLSocket *test = (PySSLSocket *)Py_ssl_socket;
 
-    PyObject *dest = NULL;
-    char *mem;
-    size_t len = 1000;
-    size_t count = 0;
-    int retval;
+	// Parse input
+	if (!PyArg_ParseTuple(args, "Oi:unlocked_ssl_recv", &ssl_socket, &len)) {
+		return NULL;
+	}
 
-    dest = PyBytes_FromStringAndSize(NULL, 1200);
+	// Basic sanity check
+	if (len < 0) {
+		PyErr_SetString(PyExc_ValueError, "Invalid size");
+		return NULL;
+	}
+
+    dest = PyBytes_FromStringAndSize(NULL, len);
+	if (dest == NULL) {
+		PyErr_NoMemory();
+		return NULL;
+	}
     mem = PyBytes_AS_STRING(dest);
 
-    retval = SSL_read_ex(test->ssl, mem, 1000, &count);
-    printf("%s", mem);
+	Py_BEGIN_ALLOW_THREADS;
+	do {
+		retval = SSL_read_ex(ssl_socket->ssl, mem + count, len, &readbytes);
+		if (retval <= 0) {
+			break;
+		}
+		count += readbytes;
+		len -= readbytes;
+	} while (len > 0);
+	Py_END_ALLOW_THREADS;
 
+	// Check for errors if no data was recieved
+	if (count == 0 && retval == 0) {
+		err = SSL_get_error(ssl_socket->ssl, retval);
+		if (err == SSL_ERROR_WANT_READ) {
+			PyErr_SetString(SSLWantReadError, "Need more data");
+		} else {
+			// Raise general error, since we don't care
+			PyErr_SetString(PyExc_ValueError, "Failed to read data");
+		}
+		Py_XDECREF(dest);
+		return NULL;
+	}
+
+	// Resize to final size
+	resize_pybytes((PyBytesObject *)dest, count);
     return dest;
 }
