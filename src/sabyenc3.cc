@@ -79,6 +79,9 @@ static bool openssl_init() {
     *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
 	*(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
 #else
+ #if defined(__APPLE__)
+    void* openssl_handle = dlopen("libssl.1.1.dylib", RTLD_LAZY | RTLD_NOLOAD);
+ #else
     void* openssl_handle = dlopen("libssl.so", RTLD_LAZY | RTLD_NOLOAD);
     if(!openssl_handle)
 		openssl_handle = dlopen("libssl.so.1.1", RTLD_LAZY | RTLD_NOLOAD);
@@ -90,9 +93,9 @@ static bool openssl_init() {
 		openssl_handle = dlopen("libssl.so.1.0.1", RTLD_LAZY | RTLD_NOLOAD);
     if(!openssl_handle)
 		openssl_handle = dlopen("libssl.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
+ #endif
 
     if(!openssl_handle) return false;
-
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
 	*(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
     if(!SSL_read_ex || !SSL_get_error) dlclose(openssl_handle);
