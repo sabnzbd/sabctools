@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Version information */
-#define SABYENC_VERSION "5.4.4"
+#define SABYENC_VERSION "6.0.0"
 
 /* Do we CRC check? */
 #define SABYENC_CRC_CHECK   1
@@ -51,9 +51,9 @@ typedef int Bool;
 
 /* Limited sub-struct of Python struct */
 typedef struct {
-	PyObject_HEAD
-	PyObject *Socket; /* We do not use it, but needs to match Python */
-	void *ssl;
+    PyObject_HEAD
+    PyObject *Socket; /* We do not use it, but needs to match Python */
+    void *ssl;
 } PySSLSocket;
 
 /* OpenSSL link */
@@ -74,7 +74,5 @@ int (SABYENC_DLL_CALL *SSL_get_error)(void*, int) = NULL;
 /* Functions */
 PyObject* decode_usenet_chunks(PyObject *, PyObject*);
 PyObject* encode(PyObject *, PyObject*);
-PyObject* unlocked_ssl_recv(PyObject *, PyObject*);
+PyObject* unlocked_ssl_recv_into(PyObject *, PyObject*);
 PyMODINIT_FUNC PyInit_sabyenc3(void);
-
-
