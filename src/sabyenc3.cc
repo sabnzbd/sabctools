@@ -71,6 +71,9 @@ static struct PyModuleDef sabyenc3_definition = {
 static bool openssl_init() {
     // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
 
+    PyObject *ssl_module = PyImport_ImportModule("_ssl");
+    if(!ssl_module) return false;
+
 #if defined(_WIN32) || defined(__CYGWIN__)
     HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
 
@@ -80,9 +83,6 @@ static bool openssl_init() {
     *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
-    PyObject *ssl_module = PyImport_ImportModule("_ssl");
-    if(!ssl_module) return false;
-
     PyObject *ssl_module_dict = PyModule_GetDict(ssl_module);
     if(!ssl_module_dict) return false;
 
