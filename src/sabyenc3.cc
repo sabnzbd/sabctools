@@ -79,21 +79,17 @@ static bool openssl_init() {
     *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
 #else
- #if defined(__APPLE__)
-    void* openssl_handle = dlopen("libssl.1.1.dylib", RTLD_LAZY | RTLD_NOLOAD);
- #else
-    void* openssl_handle = dlopen("libssl.so", RTLD_LAZY | RTLD_NOLOAD);
-    if(!openssl_handle)
-        openssl_handle = dlopen("libssl.so.1.1", RTLD_LAZY | RTLD_NOLOAD);
-    if(!openssl_handle)
-        openssl_handle = dlopen("libssl.so.3", RTLD_LAZY | RTLD_NOLOAD);
-    if(!openssl_handle)
-        openssl_handle = dlopen("libssl.so.1.0.2", RTLD_LAZY | RTLD_NOLOAD);
-    if(!openssl_handle)
-        openssl_handle = dlopen("libssl.so.1.0.1", RTLD_LAZY | RTLD_NOLOAD);
-    if(!openssl_handle)
-        openssl_handle = dlopen("libssl.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
- #endif
+    // Find library at "import ssl; print(ssl._ssl.__file__)"
+    PyObject *ssl_module = PyImport_ImportModule("_ssl");
+    if(!ssl_module) return false;
+
+    PyObject *ssl_module_dict = PyModule_GetDict(ssl_module);
+    if(!ssl_module_dict) return false;
+
+    PyObject *ssl_module_path = PyDict_GetItemString(ssl_module_dict, "__file__");
+    if(!ssl_module_path) return false;
+
+    void* openssl_handle = dlopen(PyUnicode_AsUTF8(ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
 
     if(!openssl_handle) return false;
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
