@@ -20,6 +20,7 @@
  */
 
 #include "sabyenc3.h"
+#include "unlocked_ssl.h"
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -34,7 +35,7 @@ static size_t decode_buffer_usenet(PyObject *, char *, int, char **, uint32_t *)
 static char * find_text_in_pylist(PyObject *, const char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
-static PyObject *SSLWantReadError;
+PyObject *SSLWantReadError;
 
 /* Python API requirements */
 static PyMethodDef sabyenc3_methods[] = {
@@ -67,54 +68,22 @@ static struct PyModuleDef sabyenc3_definition = {
     sabyenc3_methods
 };
 
-/* Linking to OpenSSL function used by Python */
-static bool openssl_init() {
-    // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
-
-    PyObject *ssl_module = PyImport_ImportModule("_ssl");
-    if(!ssl_module) return false;
-
-#if defined(_WIN32) || defined(__CYGWIN__)
-    HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
-
-    // TODO: more DLL names?
-    if(!openssl_handle) return false;
-    *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
-    *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
-#else
-    // Find library at "import ssl; print(ssl._ssl.__file__)"
-    PyObject *ssl_module_dict = PyModule_GetDict(ssl_module);
-    if(!ssl_module_dict) return false;
-
-    PyObject *ssl_module_path = PyDict_GetItemString(ssl_module_dict, "__file__");
-    if(!ssl_module_path) return false;
-
-    void* openssl_handle = dlopen(PyUnicode_AsUTF8(ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
-
-    if(!openssl_handle) return false;
-    *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
-    *(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
-    if(!SSL_read_ex || !SSL_get_error) dlclose(openssl_handle);
-#endif
-
-    return !!SSL_read_ex;
-}
-
 PyMODINIT_FUNC PyInit_sabyenc3(void) {
     // Initialize and add version / SIMD information
     Py_Initialize();
     encoder_init();
     decoder_init();
     crc_init();
+    openssl_init();
 
     PyObject* m = PyModule_Create(&sabyenc3_definition);
     PyModule_AddStringConstant(m, "__version__", SABYENC_VERSION);
     PyModule_AddStringConstant(m, "simd", simd_detected());
 
     // Add status of linking OpenSSL function
-    PyObject *openssl_linked = openssl_init() ? Py_True : Py_False;
-    Py_INCREF(openssl_linked);
-    PyModule_AddObject(m, "openssl_linked", openssl_linked);
+    PyObject *openssl_linked_object = openssl_linked() ? Py_True : Py_False;
+    Py_INCREF(openssl_linked_object);
+    PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
 
     // Add our own exception
     SSLWantReadError = PyErr_NewException("sabyenc3.SSLWantReadError", NULL, NULL);
@@ -656,66 +625,4 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     Py_XDECREF(Py_output_string);
     free(output_buffer);
     return retval;
-}
-
-
-PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
-    PySSLSocket *Py_ssl_socket;
-    Py_buffer Py_buffer;
-    size_t nbytes;
-    char *mem;
-    size_t count = 0;
-    size_t readbytes = 0;
-    int retval;
-    int err;
-    PyObject *Py_retval = NULL;
-
-    if(!SSL_read_ex || !SSL_get_error) {
-        PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
-        return NULL;
-    }
-
-    // Parse input
-    if (!PyArg_ParseTuple(args, "Ow*:unlocked_ssl_recv", &Py_ssl_socket, &Py_buffer)) {
-        return NULL;
-    }
-
-    // Basic sanity check
-    nbytes = (size_t)Py_buffer.len;
-    if (nbytes <= 0) {
-        PyErr_SetString(PyExc_ValueError, "No space left in buffer");
-        goto finish;
-    }
-    mem = (char *)Py_buffer.buf;
-
-    Py_BEGIN_ALLOW_THREADS;
-    do {
-        retval = SSL_read_ex(Py_ssl_socket->ssl, mem + count, nbytes, &readbytes);
-        if (retval <= 0) {
-            break;
-        }
-        count += readbytes;
-        nbytes -= readbytes;
-    } while (nbytes > 0);
-    Py_END_ALLOW_THREADS;
-
-    // Check for errors if no data was recieved
-    if (count == 0 && retval == 0) {
-        err = SSL_get_error(Py_ssl_socket->ssl, retval);
-        if (err == SSL_ERROR_WANT_READ) {
-            PyErr_SetString(SSLWantReadError, "Need more data");
-        } else {
-            // Raise general error, since we don't care
-            PyErr_SetString(PyExc_ValueError, "Failed to read data");
-        }
-        goto finish;
-    }
-
-    // All good, return number of bytes fetched
-    Py_retval = PyLong_FromSize_t(count);
-
-finish:
-    // Release buffer
-    PyBuffer_Release(&Py_buffer);
-    return Py_retval;
 }

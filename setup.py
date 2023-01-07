@@ -284,6 +284,12 @@ class SAByEncBuild(build_ext):
                 "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/tests"],
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
+            {
+                "sources": [
+                    "src/unlocked_ssl.cc",
+                ],
+                "gcc_flags": ["-Wno-unused-parameter"],
+            },
         ]:
             args = {
                 "sources": source_files["sources"],
@@ -312,7 +318,7 @@ class SAByEncBuild(build_ext):
 
         # attach to Extension
         ext.extra_link_args = ldflags + compiled_objects
-        ext.depends = ["src/sabyenc3.h"] + compiled_objects
+        ext.depends = ["src/sabyenc3.h", "src/unlocked_ssl.h"] + compiled_objects
 
         # proceed with regular Extension build
         super(SAByEncBuild, self).build_extension(ext)
