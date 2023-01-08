@@ -5,18 +5,6 @@ int (SABYENC_DLL_CALL *SSL_get_error)(void*, int);
 int (SABYENC_DLL_CALL *SSL_get_shutdown)(void*);
 static PyObject *SSLWantReadError;
 
-/* Redefined below for Windows debug builds after important #includes */
-#define _PySSL_FIX_ERRNO
-
-#define PySSL_BEGIN_ALLOW_THREADS_S(save) \
-    do { (save) = PyEval_SaveThread(); } while(0)
-#define PySSL_END_ALLOW_THREADS_S(save) \
-    do { PyEval_RestoreThread(save); _PySSL_FIX_ERRNO; } while(0)
-#define PySSL_BEGIN_ALLOW_THREADS { \
-            PyThreadState *_save = NULL;  \
-            PySSL_BEGIN_ALLOW_THREADS_S(_save);
-#define PySSL_END_ALLOW_THREADS PySSL_END_ALLOW_THREADS_S(_save); }
-
 typedef struct {
     int ssl; /* last seen error from SSL */
     int c; /* last seen error from libc */
@@ -50,7 +38,6 @@ static inline _PySSLError _PySSL_errno(int failed, void *ssl, int retcode)
     if (failed) {
 #ifdef MS_WINDOWS
         err.ws = WSAGetLastError();
-        _PySSL_FIX_ERRNO;
 #endif
         err.c = errno;
         err.ssl = SSL_get_error(ssl, retcode);
@@ -163,7 +150,7 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
     }
 
     do {
-        PySSL_BEGIN_ALLOW_THREADS;
+        Py_BEGIN_ALLOW_THREADS;
         do {
             retval = SSL_read_ex(self->ssl, mem + count, len, &readbytes);
             if (retval <= 0) {
@@ -173,7 +160,7 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
             len -= readbytes;
         } while (len > 0);
         err = _PySSL_errno(retval == 0, self->ssl, retval);
-        PySSL_END_ALLOW_THREADS;
+        Py_END_ALLOW_THREADS;
         self->err = err;
 
         if (count > 0) {
