@@ -23,13 +23,6 @@ typedef struct {
     PyObject *owner; /* Python level "owner" passed to servername callback */
     PyObject *server_hostname;
     _PySSLError err; /* last seen error from various sources */
-    /* Some SSL callbacks don't have error reporting. Callback wrappers
-     * store exception information on the socket. The handshake, read, write,
-     * and shutdown methods check for chained exceptions.
-     */
-    PyObject *exc_type;
-    PyObject *exc_value;
-    PyObject *exc_tb;
 } PySSLSocket;
 
 static inline _PySSLError _PySSL_errno(int failed, void *ssl, int retcode)
@@ -110,17 +103,6 @@ bool openssl_linked() {
         SSLWantReadError;
 }
 
-static int PySSL_ChainExceptions(PySSLSocket *sslsock) {
-    if (sslsock->exc_type == NULL)
-        return 0;
-
-    _PyErr_ChainExceptions(sslsock->exc_type, sslsock->exc_value, sslsock->exc_tb);
-    sslsock->exc_type = NULL;
-    sslsock->exc_value = NULL;
-    sslsock->exc_tb = NULL;
-    return -1;
-}
-
 static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, Py_buffer *buffer) {
     char *mem;
     size_t count = 0;
@@ -146,10 +128,6 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
 
     if (sock != NULL) {
         if (((PyObject*)sock) == Py_None) {
-            // TODO: likely need this exception
-//            _setSSLError(get_state_sock(self),
-//                         "Underlying socket connection gone",
-//                         PY_SSL_ERROR_NO_SOCKET, __FILE__, __LINE__);  // TODO:
             PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
             return NULL;
         }
@@ -197,7 +175,6 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
              err.ssl == SSL_ERROR_WANT_WRITE);
 
     if (count == 0) {
-//        PySSL_SetError(self, retval, __FILE__, __LINE__); // TODO:
         if (err.ssl == SSL_ERROR_WANT_READ) {
             PyErr_SetString(SSLWantReadError, "Need more data");
         } else {
@@ -206,15 +183,12 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
         }
         goto error;
     }
-    if (self->exc_type != NULL)
-        goto error;
 
     done:
     Py_XDECREF(sock);
     return PyLong_FromSize_t(count);
 
     error:
-    PySSL_ChainExceptions(self);
     Py_XDECREF(sock);
     return NULL;
 }
