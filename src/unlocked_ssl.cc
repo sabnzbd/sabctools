@@ -63,37 +63,44 @@ void openssl_init() {
     // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
 
     PyObject *ssl_module = PyImport_ImportModule("_ssl");
-    if(!ssl_module) return;
+    if(!ssl_module) goto cleanup;
 
-    PyObject *ssl_module_dict = PyModule_GetDict(ssl_module);
-    if(!ssl_module_dict) return;
-
-    SSLWantReadError = PyDict_GetItemString(ssl_module_dict, "SSLWantReadError");
+    SSLWantReadError = PyObject_GetAttrString(ssl_module, "SSLWantReadError");
+    if(!SSLWantReadError) goto cleanup;
 
 #if defined(_WIN32) || defined(__CYGWIN__)
-    HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
-
     // TODO: more DLL names?
-    if(!openssl_handle) return;
+
+    HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+    if(!openssl_handle) goto cleanup;
+
     *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
     *(void**)&SSL_get_shutdown = GetProcAddress(openssl_handle, "SSL_get_shutdown");
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 
-    PyObject *ssl_module_path = PyDict_GetItemString(ssl_module_dict, "__file__");
-    if(!ssl_module_path) return;
+    PyObject *ssl_module_path;
+    void* openssl_handle;
 
-    void* openssl_handle = dlopen(PyUnicode_AsUTF8(ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
+    ssl_module_path = PyObject_GetAttrString(ssl_module, "__file__");
+    if(!ssl_module_path) goto error;
 
-    if(!openssl_handle) return;
+    openssl_handle = dlopen(PyUnicode_AsUTF8(ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
+    if(!openssl_handle) goto error;
 
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
     *(void**)&SSL_get_shutdown = dlsym(openssl_handle, "SSL_get_shutdown");
 
-    if (!openssl_linked()) dlclose(openssl_handle);
+    error:
+    if (!openssl_linked() && openssl_handle) dlclose(openssl_handle);
+    Py_XDECREF(ssl_module_path);
 #endif
+
+    cleanup:
+    Py_XDECREF(ssl_module);
+    if (!openssl_linked()) Py_XDECREF(SSLWantReadError);
 }
 
 bool openssl_linked() {
