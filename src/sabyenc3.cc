@@ -35,7 +35,6 @@ static size_t decode_buffer_usenet(PyObject *, char *, int, char **, uint32_t *)
 static char * find_text_in_pylist(PyObject *, const char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
-PyObject *SSLWantReadError;
 
 /* Python API requirements */
 static PyMethodDef sabyenc3_methods[] = {
@@ -85,9 +84,6 @@ PyMODINIT_FUNC PyInit_sabyenc3(void) {
     Py_INCREF(openssl_linked_object);
     PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
 
-    // Add our own exception
-    SSLWantReadError = PyErr_NewException("sabyenc3.SSLWantReadError", NULL, NULL);
-    PyModule_AddObject(m, "SSLWantReadError", SSLWantReadError);
     return m;
 }
 

@@ -58,8 +58,6 @@ typedef int SOCKET_T;
 #       define SIZEOF_SOCKET_T SIZEOF_INT
 #endif
 
-extern PyObject *SSLWantReadError;
-
 void openssl_init();
 bool openssl_linked();
 PyObject *unlocked_ssl_recv_into(PyObject *, PyObject*);

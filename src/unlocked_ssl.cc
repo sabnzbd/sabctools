@@ -3,6 +3,7 @@
 int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*);
 int (SABYENC_DLL_CALL *SSL_get_error)(void*, int);
 int (SABYENC_DLL_CALL *SSL_get_shutdown)(void*);
+static PyObject *SSLWantReadError;
 
 /* Redefined below for Windows debug builds after important #includes */
 #define _PySSL_FIX_ERRNO
@@ -77,6 +78,11 @@ void openssl_init() {
     PyObject *ssl_module = PyImport_ImportModule("_ssl");
     if(!ssl_module) return;
 
+    PyObject *ssl_module_dict = PyModule_GetDict(ssl_module);
+    if(!ssl_module_dict) return;
+
+    SSLWantReadError = PyDict_GetItemString(ssl_module_dict, "SSLWantReadError");
+
 #if defined(_WIN32) || defined(__CYGWIN__)
     HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
 
@@ -87,8 +93,6 @@ void openssl_init() {
     *(void**)&SSL_get_shutdown = GetProcAddress(openssl_handle, "SSL_get_shutdown");
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
-    PyObject *ssl_module_dict = PyModule_GetDict(ssl_module);
-    if(!ssl_module_dict) return;
 
     PyObject *ssl_module_path = PyDict_GetItemString(ssl_module_dict, "__file__");
     if(!ssl_module_path) return;
@@ -106,7 +110,10 @@ void openssl_init() {
 }
 
 bool openssl_linked() {
-    return SSL_read_ex && SSL_get_error && SSL_get_shutdown;
+    return SSL_read_ex &&
+        SSL_get_error &&
+        SSL_get_shutdown &&
+        SSLWantReadError;
 }
 
 static int PySSL_ChainExceptions(PySSLSocket *sslsock) {
