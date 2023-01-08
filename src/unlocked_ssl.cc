@@ -57,23 +57,6 @@ static inline _PySSLError _PySSL_errno(int failed, void *ssl, int retcode)
     return err;
 }
 
-/* The object holding a socket.  It holds some extra information,
-   like the address family, which is used to decode socket address
-   arguments properly. */
-
-typedef struct {
-    PyObject_HEAD
-            SOCKET_T sock_fd;           /* Socket file descriptor */
-    int sock_family;            /* Address family, e.g., AF_INET */
-    int sock_type;              /* Socket type, e.g., SOCK_STREAM */
-    int sock_proto;             /* Protocol type, usually 0 */
-    PyObject *(*errorhandler)(void); /* Error handler; checks
-                                        errno, returns NULL and
-                                        sets a Python exception */
-    _PyTime_t sock_timeout;     /* Operation timeout in seconds;
-                                        0.0 means non-blocking */
-} PySocketSockObject;
-
 typedef enum {
     SOCKET_IS_NONBLOCKING,
     SOCKET_IS_BLOCKING,
@@ -85,7 +68,7 @@ typedef enum {
 
 /* Get the socket from a PySSLSocket, if it has one */
 #define GET_SOCKET(obj) ((obj)->Socket ? \
-    (PySocketSockObject *) PyWeakref_GetObject((obj)->Socket) : NULL)
+    (PyObject *) PyWeakref_GetObject((obj)->Socket) : NULL)
 
 /* Linking to OpenSSL function used by Python */
 void openssl_init() {
@@ -144,7 +127,7 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
     int retval;
     int sockstate;
     _PySSLError err;
-    PySocketSockObject *sock = GET_SOCKET(self);
+    PyObject *sock = GET_SOCKET(self);
 
     mem = (char *)buffer->buf;
     if (len <= 0 || len > buffer->len) {
