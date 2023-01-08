@@ -224,7 +224,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     PySSLSocket *Py_ssl_socket;
     Py_ssize_t len;
     Py_buffer Py_buffer;
-    PyObject *retval;
+    PyObject *retval = NULL;
 
     if(!openssl_linked()) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
@@ -250,15 +250,8 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     }
 
     retval = unlocked_ssl_recv_into_impl(Py_ssl_socket, len, &Py_buffer);
-    if (!retval) {
-        goto error;
-    }
-
-    done:
-    PyBuffer_Release(&Py_buffer);
-    return retval;
 
     error:
     PyBuffer_Release(&Py_buffer);
-    return NULL;
+    return retval;
 }
