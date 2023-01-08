@@ -30,7 +30,7 @@
 
 /* Function and exception declarations */
 PyMODINIT_FUNC PyInit_sabyenc3(void);
-static size_t decode_buffer_usenet(PyObject *, char *, int, char **, Bool *);
+static size_t decode_buffer_usenet(PyObject *, char *, int, char **, uint32_t *);
 static char * find_text_in_pylist(PyObject *, const char *, char **, int *);
 int extract_filename_from_pylist(PyObject *, int *, char **, char **, char **);
 uLong extract_int_from_pylist(PyObject *, int *, char **, char **);
@@ -171,7 +171,7 @@ static inline void resize_pybytes(PyBytesObject *sv, size_t output_len) {
 
 
 static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer, int num_bytes_reserved,
-                                char **filename_out, Bool *crc_correct) {
+                                char **filename_out, uint32_t *crc) {
     // For the list
     Py_ssize_t num_lines;
     int list_index = 0;
@@ -298,8 +298,7 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         // =yend not found - invalid article
         return 0;
     }
-#if SABYENC_CRC_CHECK
-    uint32_t crc = 0;
+
     uInt crc_yenc = 0;
     tail_buffer_pos += 7; // skip "\r\n=yend"
     int tail_buffer_len = tail_buffer + MAX_TAIL_BYTES - tail_buffer_pos;
@@ -319,7 +318,6 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         // CRC32 not found - article is invalid
         return 0;
     }
-#endif
 
     size_t input_offset = cur_char - PyBytes_AsString(PyList_GetItem(Py_input_list, list_index));;
     YencDecoderState state = YDEC_STATE_CRLF;
@@ -339,22 +337,14 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         size_t output_len = do_decode(1, (unsigned char*)str + input_offset, (unsigned char*)output_buffer, len - input_offset, &state);
         decoded_bytes += output_len;
         input_offset = 0;
-#if SABYENC_CRC_CHECK
-        crc = do_crc32(output_buffer, output_len, crc);
-#endif
+        *crc = do_crc32(output_buffer, output_len, *crc);
         output_buffer += output_len;
     }
 
-#if SABYENC_CRC_CHECK
-    *crc_correct = (crc == crc_yenc);
-#else
-    // Do a simple check based on size, faster than CRC
-    if(part_size != (int)decoded_bytes) {
-        *crc_correct = 0;
-    } else {
-        *crc_correct = 1;
+    // Empty CRC if it's invalid
+    if (*crc != crc_yenc) {
+        *crc = 0;
     }
-#endif
 
     return decoded_bytes;
 }
@@ -544,12 +534,10 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     PyObject *Py_output_filename;
     PyObject *retval = NULL;
 
-    // CRC
-    Bool crc_correct = 0;
-
     // Buffers
     char *filename_out = NULL;
     size_t output_len = 0;
+	uint32_t crc = 0;
     int num_bytes_reserved;
     int lp_max;
     int lp;
@@ -580,7 +568,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     Py_BEGIN_ALLOW_THREADS;
 
     // Calculate
-    output_len = decode_buffer_usenet(Py_input_list, sv->ob_sval, num_bytes_reserved, &filename_out, &crc_correct);
+    output_len = decode_buffer_usenet(Py_input_list, sv->ob_sval, num_bytes_reserved, &filename_out, &crc);
 
     // Aaah there you are again GIL..
     Py_END_ALLOW_THREADS;
@@ -599,7 +587,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
 
     // Build output
     resize_pybytes(sv, output_len);
-    retval = Py_BuildValue("(S,S,O)", Py_output_buffer, Py_output_filename, crc_correct ? Py_True: Py_False);
+    retval = Py_BuildValue("(S,S,L)", Py_output_buffer, Py_output_filename, crc);
 
     // Make sure we free all the buffers
     Py_XDECREF(Py_output_buffer);
