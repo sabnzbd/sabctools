@@ -227,5 +227,6 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
 
     error:
     PyBuffer_Release(&Py_buffer);
+    Py_XDECREF(Py_ssl_socket);
     return retval;
 }
