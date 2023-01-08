@@ -288,7 +288,8 @@ class SAByEncBuild(build_ext):
                 "sources": [
                     "src/unlocked_ssl.cc",
                 ],
-                "gcc_flags": ["-Wno-unused-parameter"],
+                "gcc_flags": ["-Wno-unused-parameter", "-Wno-missing-field-initializers"],
+                'msvc_x86_libraries': ['ws2_32'],
             },
         ]:
             args = {
@@ -300,6 +301,8 @@ class SAByEncBuild(build_ext):
             if self.compiler.compiler_type == "msvc":
                 if IS_X86 and "msvc_x86_flags" in source_files:
                     args["extra_postargs"] += source_files["msvc_x86_flags"]
+                if IS_X86 and "msvc_x86_libraries" in source_files:
+                    ext.libraries += source_files["msvc_x86_libraries"]
             else:
                 if "gcc_flags" in source_files:
                     args["extra_postargs"] += source_files["gcc_flags"]
