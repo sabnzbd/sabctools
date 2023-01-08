@@ -226,6 +226,7 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
 }
 
 PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
+    PyObject *ssl_socket;
     PySSLSocket *Py_ssl_socket;
     Py_ssize_t len;
     Py_buffer Py_buffer;
@@ -237,8 +238,14 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     }
 
     // Parse input
-    if (!PyArg_ParseTuple(args, "Ow*:unlocked_ssl_recv_into", &Py_ssl_socket, &Py_buffer)) {
+    if (!PyArg_ParseTuple(args, "Ow*:unlocked_ssl_recv_into", &ssl_socket, &Py_buffer)) {
         return NULL;
+    }
+
+    Py_ssl_socket = (PySSLSocket*)PyObject_GetAttrString(ssl_socket, "_sslobj");
+    if (Py_ssl_socket == NULL) {
+        PyErr_SetString(PyExc_ValueError, "Not an SSLSocket");
+        goto error;
     }
 
     // Basic sanity check
