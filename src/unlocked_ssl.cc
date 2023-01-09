@@ -15,9 +15,9 @@ typedef struct {
 
 typedef struct {
     PyObject_HEAD
-            PyObject *Socket; /* weakref to socket on which we're layered */
+    PyObject *Socket; /* weakref to socket on which we're layered */
     void *ssl;
-    void *ctx; /* weakref to SSL context */
+    PyObject *ctx; /* weakref to SSL context */
     char shutdown_seen_zero;
     int socket_type;
     PyObject *owner; /* Python level "owner" passed to servername callback */
