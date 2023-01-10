@@ -4,6 +4,7 @@ int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*);
 int (SABYENC_DLL_CALL *SSL_get_error)(void*, int);
 int (SABYENC_DLL_CALL *SSL_get_shutdown)(void*);
 static PyObject *SSLWantReadError;
+static PyObject *SSLSocketType;
 
 typedef struct {
     int ssl; /* last seen error from SSL */
@@ -55,10 +56,14 @@ typedef enum {
 void openssl_init() {
     // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
 
-    PyObject *ssl_module = PyImport_ImportModule("_ssl");
-    if(!ssl_module) goto cleanup;
+    PyObject *ssl_module = PyImport_ImportModule("ssl");
+    PyObject *_ssl_module = PyImport_ImportModule("_ssl");
+    if(!ssl_module || !_ssl_module) goto cleanup;
 
-    SSLWantReadError = PyObject_GetAttrString(ssl_module, "SSLWantReadError");
+    SSLSocketType = PyObject_GetAttrString(ssl_module, "SSLSocket");
+    if(!SSLSocketType) goto cleanup;
+
+    SSLWantReadError = PyObject_GetAttrString(_ssl_module, "SSLWantReadError");
     if(!SSLWantReadError) goto cleanup;
 
 #if defined(_WIN32) || defined(__CYGWIN__)
@@ -73,13 +78,13 @@ void openssl_init() {
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 
-    PyObject *ssl_module_path;
+    PyObject *_ssl_module_path;
     void* openssl_handle;
 
-    ssl_module_path = PyObject_GetAttrString(ssl_module, "__file__");
-    if(!ssl_module_path) goto error;
+    _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
+    if(!_ssl_module_path) goto error;
 
-    openssl_handle = dlopen(PyUnicode_AsUTF8(ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
+    openssl_handle = dlopen(PyUnicode_AsUTF8(_ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
     if(!openssl_handle) goto error;
 
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
@@ -88,19 +93,24 @@ void openssl_init() {
 
     error:
     if (!openssl_linked() && openssl_handle) dlclose(openssl_handle);
-    Py_XDECREF(ssl_module_path);
+    Py_XDECREF(_ssl_module_path);
 #endif
 
     cleanup:
     Py_XDECREF(ssl_module);
-    if (!openssl_linked()) Py_XDECREF(SSLWantReadError);
+    Py_XDECREF(_ssl_module);
+    if (!openssl_linked()) {
+        Py_XDECREF(SSLWantReadError);
+        Py_XDECREF(SSLSocketType);
+    }
 }
 
 bool openssl_linked() {
     return SSL_read_ex &&
         SSL_get_error &&
         SSL_get_shutdown &&
-        SSLWantReadError;
+        SSLWantReadError &&
+        SSLSocketType;
 }
 
 static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, Py_buffer *buffer) {
@@ -199,6 +209,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     Py_ssize_t len;
     Py_buffer Py_buffer;
     PyObject *retval = NULL;
+    PyObject *blocking;
 
     if(!openssl_linked()) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
@@ -206,13 +217,19 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     }
 
     // Parse input
-    if (!PyArg_ParseTuple(args, "Ow*:unlocked_ssl_recv_into", &ssl_socket, &Py_buffer)) {
+    if (!PyArg_ParseTuple(args, "O!w*:unlocked_ssl_recv_into", SSLSocketType, &ssl_socket, &Py_buffer)) {
         return NULL;
     }
 
     Py_ssl_socket = (PySSLSocket*)PyObject_GetAttrString(ssl_socket, "_sslobj");
     if (Py_ssl_socket == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Not an SSLSocket");
+        PyErr_SetString(PyExc_ValueError, "Could not find _sslobj attribute");
+        goto error;
+    }
+
+    blocking = PyObject_CallMethod(ssl_socket, "getblocking", NULL);
+    if (blocking == Py_True) {
+        PyErr_SetString(PyExc_ValueError, "Only non-blocking sockets are supported");
         goto error;
     }
 
@@ -228,5 +245,6 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     error:
     PyBuffer_Release(&Py_buffer);
     Py_XDECREF(Py_ssl_socket);
+    Py_XDECREF(blocking);
     return retval;
 }
