@@ -1,10 +1,10 @@
 #include "unlocked_ssl.h"
 
-int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*);
-int (SABYENC_DLL_CALL *SSL_get_error)(void*, int);
-int (SABYENC_DLL_CALL *SSL_get_shutdown)(void*);
-static PyObject *SSLWantReadError;
-static PyObject *SSLSocketType;
+static int (SABYENC_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
+static int (SABYENC_DLL_CALL *SSL_get_error)(void*, int) = NULL;
+static int (SABYENC_DLL_CALL *SSL_get_shutdown)(void*) = NULL;
+static PyObject *SSLWantReadError = NULL;
+static PyObject *SSLSocketType = NULL;
 
 typedef struct {
     int ssl; /* last seen error from SSL */
@@ -56,9 +56,16 @@ typedef enum {
 void openssl_init() {
     // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
 
-    PyObject *ssl_module = PyImport_ImportModule("ssl");
-    PyObject *_ssl_module = PyImport_ImportModule("_ssl");
-    if(!ssl_module || !_ssl_module) goto cleanup;
+    PyObject *ssl_module = NULL;
+    PyObject *_ssl_module = NULL;
+    PyObject *_ssl_module_path = NULL;
+    void* openssl_handle = NULL;
+
+    ssl_module = PyImport_ImportModule("ssl");
+    if(!ssl_module) goto cleanup;
+
+    _ssl_module = PyImport_ImportModule("_ssl");
+    if(!_ssl_module) goto cleanup;
 
     SSLSocketType = PyObject_GetAttrString(ssl_module, "SSLSocket");
     if(!SSLSocketType) goto cleanup;
@@ -77,9 +84,6 @@ void openssl_init() {
     *(void**)&SSL_get_shutdown = GetProcAddress(openssl_handle, "SSL_get_shutdown");
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
-
-    PyObject *_ssl_module_path;
-    void* openssl_handle;
 
     _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
     if(!_ssl_module_path) goto error;
@@ -205,11 +209,11 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
 
 PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     PyObject *ssl_socket;
-    PySSLSocket *Py_ssl_socket;
+    PyObject *Py_ssl_socket;
     Py_ssize_t len;
     Py_buffer Py_buffer;
     PyObject *retval = NULL;
-    PyObject *blocking;
+    PyObject *blocking = NULL;
 
     if(!openssl_linked()) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
@@ -221,8 +225,8 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    Py_ssl_socket = (PySSLSocket*)PyObject_GetAttrString(ssl_socket, "_sslobj");
-    if (Py_ssl_socket == NULL) {
+    Py_ssl_socket = PyObject_GetAttrString(ssl_socket, "_sslobj");
+    if (!Py_ssl_socket) {
         PyErr_SetString(PyExc_ValueError, "Could not find _sslobj attribute");
         goto error;
     }
@@ -240,7 +244,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
         goto error;
     }
 
-    retval = unlocked_ssl_recv_into_impl(Py_ssl_socket, len, &Py_buffer);
+    retval = unlocked_ssl_recv_into_impl((PySSLSocket*)Py_ssl_socket, len, &Py_buffer);
 
     error:
     PyBuffer_Release(&Py_buffer);
