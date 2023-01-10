@@ -129,14 +129,13 @@ class EchoServer(threading.Thread):
 
             server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.settimeout(0.2)
+            server_socket.settimeout(2)
             server_socket.bind((self.host, self.port))
             server_socket.listen()
 
             try:
                 with server_context.wrap_socket(sock=server_socket, server_side=True) as ssock:
                     self.running.set()
-                    ssock.settimeout(1)
                     while not self.should_stop.is_set():
                         try:
                             conn, addr = ssock.accept()
@@ -146,6 +145,8 @@ class EchoServer(threading.Thread):
                             conn.sendall(data)
                             conn.close()
                         except socket.timeout:
+                            pass
+                        except OSError:
                             pass
             finally:
                 server_socket.close()
@@ -159,7 +160,7 @@ class EchoServer(threading.Thread):
 def server():
     server = EchoServer()
     server.start()
-    if server.running.wait(2.0):
+    if server.running.wait(10):
         yield server
     else:
         raise ValueError("EchoServer is not ready for connections within timeout")
