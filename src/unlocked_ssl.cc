@@ -76,12 +76,12 @@ void openssl_init() {
 #if defined(_WIN32) || defined(__CYGWIN__)
     // TODO: more DLL names?
 
-    HMODULE openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
-    if(!openssl_handle) goto cleanup;
+    HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+    if(!windows_openssl_handle) goto cleanup;
 
-    *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
-    *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
-    *(void**)&SSL_get_shutdown = GetProcAddress(openssl_handle, "SSL_get_shutdown");
+    *(void**)&SSL_read_ex = GetProcAddress(windows_openssl_handle, "SSL_read_ex");
+    *(void**)&SSL_get_error = GetProcAddress(windows_openssl_handle, "SSL_get_error");
+    *(void**)&SSL_get_shutdown = GetProcAddress(windows_openssl_handle, "SSL_get_shutdown");
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 
