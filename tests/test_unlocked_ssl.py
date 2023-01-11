@@ -1,9 +1,11 @@
 import os
+import select
 import socket
 import ssl
 import sys
 import tempfile
 import threading
+import time
 
 import pytest
 import portend
@@ -102,69 +104,146 @@ ZNWqBl74DpmsArY6Tz4P6sbK+jVl
 
 class EchoServer(threading.Thread):
     """An SSL echo server"""
-    def __init__(self, host=HOST):
-        super().__init__()
-        self.host = host
+
+    class ConnectionHandler(threading.Thread):
+        def __init__(self, server, connsock, addr, buffer_size):
+            self.server = server
+            self.sock = connsock
+            self.addr = addr
+            self.buffer_size = buffer_size
+            self.running = False
+            self.sslconn = None
+            super().__init__()
+
+        def wrap_conn(self):
+            try:
+                self.sslconn = self.server.context.wrap_socket(self.sock, server_side=True)
+            except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError) as e:
+                self.running = False
+                self.close()
+                return False
+            except (ssl.SSLError, OSError):
+                return False
+            return True
+
+        def read(self):
+            return self.sslconn.read(self.buffer_size)
+
+        def write(self, bytes: bytes):
+            self.sslconn.write(bytes)
+
+        def close(self):
+            self.sslconn.close()
+
+        def run(self) -> None:
+            self.running = True
+            if not self.wrap_conn():
+                return
+            while self.running:
+                try:
+                    data = self.read()
+                    if not data.strip():
+                        self.running = False
+                        try:
+                            self.sock = self.sslconn.unwrap()
+                        except OSError:
+                            # Incorrect shutdown of SSL session
+                            pass
+                        else:
+                            self.sslconn = None
+                        self.close()
+                    else:
+                        self.write(data)
+                except OSError:
+                    self.close()
+                    self.running = False
+                    self.server.stop()
+
+    def __init__(self):
+        self.host = HOST
         self.port = portend.find_available_local_port()
-        self.should_stop = threading.Event()
-        self.running = threading.Event()
+        self.flag = None
+        self.active = False
+        super().__init__()
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            self.certfile = tmp.name
+            with open(self.certfile, 'w') as f:
+                f.write(cert)
+                f.close()
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            self.keyfile = tmp.name
+            with open(self.keyfile, 'w') as f:
+                f.write(key)
+                f.close()
+
+        self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self.context.load_cert_chain(certfile=self.certfile, keyfile=self.keyfile)
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((self.host, self.port))
+
+    def __enter__(self):
+        self.start(threading.Event())
+        self.flag.wait()
+        return self
+
+    def __exit__(self, *args):
+        self.stop()
+        self.join()
+
+    def start(self, flag=None):
+        self.flag = flag
+        threading.Thread.start(self)
 
     def run(self) -> None:
-        try:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                certfile = tmp.name
-                with open(certfile, 'w') as f:
-                    f.write(cert)
-                    f.close()
-
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                keyfile = tmp.name
-                with open(keyfile, 'w') as f:
-                    f.write(key)
-                    f.close()
-
-            server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            server_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
-            server_context.set_ciphers("HIGH")
-
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.settimeout(2)
-            server_socket.bind((self.host, self.port))
-            server_socket.listen()
-
+        self.sock.settimeout(2)
+        self.sock.listen(5)
+        self.active = True
+        if self.flag:
+            self.flag.set()
+        while self.active:
             try:
-                with server_context.wrap_socket(sock=server_socket, server_side=True) as ssock:
-                    self.running.set()
-                    while not self.should_stop.is_set():
-                        try:
-                            conn, addr = ssock.accept()
-                            data = conn.read()
-                            if not data:
-                                continue
-                            conn.sendall(data)
-                            conn.close()
-                        except socket.timeout:
-                            pass
-                        except OSError:
-                            pass
-            finally:
-                server_socket.close()
-                self.running.clear()
-        finally:
-            os.unlink(certfile)
-            os.unlink(keyfile)
+                conn, addr = self.sock.accept()
+                handler = self.ConnectionHandler(self, conn, addr, 65536)
+                handler.start()
+                handler.join()
+            except TimeoutError:
+                pass
+            except KeyboardInterrupt:
+                self.stop()
+
+        self.close()
+
+    def close(self):
+        if self.sock is not None:
+            self.sock.close()
+            self.sock = None
+        os.unlink(self.certfile)
+        os.unlink(self.keyfile)
+
+    def stop(self):
+        self.active = False
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture()
 def server():
     server = EchoServer()
-    server.start()
-    if server.running.wait(10):
+    with server:
         yield server
-    else:
-        raise ValueError("EchoServer is not ready for connections within timeout")
-    server.should_stop.set()
+
+
+@pytest.fixture()
+def client(server):
+    with socket.create_connection((server.host, server.port)) as sock:
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        context.check_hostname = False
+        context.verify_mode = ssl.VerifyMode.CERT_NONE
+        with context.wrap_socket(sock, server_hostname=server.host) as ssock:
+            ssock.setblocking(False)
+            yield ssock
 
 
 def unlocked_ssl_recv_into_wrapper(sock: ssl.SSLSocket, data: bytes, data_view: memoryview) -> int:
@@ -179,17 +258,6 @@ def unlocked_ssl_recv_into_wrapper(sock: ssl.SSLSocket, data: bytes, data_view: 
         if data_position > 0:
             break
     return data_position
-
-
-@pytest.fixture()
-def client(server):
-    with socket.create_connection((server.host, server.port)) as sock:
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        context.check_hostname = False
-        context.verify_mode = ssl.VerifyMode.CERT_NONE
-        with context.wrap_socket(sock, server_hostname=server.host) as ssock:
-            ssock.setblocking(False)
-            yield ssock
 
 
 @pytest.fixture()
@@ -214,6 +282,32 @@ def test_unlocked_ssl_recv_into_not_a_buffer_fails(client):
 def test_unlocked_ssl_recv_into_response(client, buffer):
     bytes_received = unlocked_ssl_recv_into_wrapper(client, b"TEST", buffer)
     assert buffer[:bytes_received].tobytes() == b"TEST"
+
+
+def test_unlocked_ssl_recv_into_bulk_response(client):
+    # 65536 bytes divide up into 4 TLS records (16 KB each)
+    # In nonblocking mode, we should be able to read all four in a single
+    # drop of the GIL.
+    size = 65536
+    buffer = bytearray(size)
+
+    client.sendall(b'\xFF' * size)
+
+    select.select([client], [], [])
+
+    while size > 0:
+        try:
+            count = sabyenc3.unlocked_ssl_recv_into(client, buffer)
+        except ssl.SSLWantReadError:
+            select.select([client], [], [])
+            # Give the sender some more time to complete sending.
+            time.sleep(0.01)
+        else:
+            if count > 16384:
+                return
+            size -= count
+
+    pytest.fail("All TLS reads were smaller than 16KB")
 
 
 #
