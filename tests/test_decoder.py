@@ -83,7 +83,7 @@ def test_bad_filename_pickle():
     data_plain, data_chunks = read_pickle("tests/yencfiles/split_filename")
     decoded_data, filename, crc_correct = sabyenc3_wrapper(data_chunks)
     assert filename == "Low.Winter.Sun.US.S01E01.720p.BluRay.x264-DEMAND.part04.rar"
-    assert crc_correct == True
+    assert crc_correct == 3109790991
     assert len(decoded_data) == 384000
 
 
@@ -99,7 +99,7 @@ def test_empty_size_pickles():
     data_plain, data_chunks = read_pickle("tests/yencfiles/emptysize_67caae212")
     decoded_data, filename, crc_correct = sabyenc3_wrapper(data_chunks)
     assert filename == "Jake.and.the.Never.Land.Pirates.S02E38.480p.hdtv.x264.r05"
-    assert crc_correct == True
+    assert crc_correct == 3257035433
     assert len(decoded_data) == 384000
 
 
