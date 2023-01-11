@@ -341,9 +341,9 @@ static size_t decode_buffer_usenet(PyObject *Py_input_list, char *output_buffer,
         output_buffer += output_len;
     }
 
-    // Empty CRC if it's invalid
+    // Empty CRC if it's invalid, set to NULL since 0 is a valid CRC
     if (*crc != crc_yenc) {
-        *crc = 0;
+        *crc = NULL;
     }
 
     return decoded_bytes;
@@ -532,6 +532,7 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     (void)self;
     PyObject *Py_output_buffer;
     PyObject *Py_output_filename;
+    PyObject *Py_output_crc;
     PyObject *retval = NULL;
 
     // Buffers
@@ -585,9 +586,18 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     // Use special Python function to go from Latin-1 to Unicode
     Py_output_filename = PyUnicode_DecodeLatin1((char *)filename_out, strlen((char *)filename_out), NULL);
 
+    // Is there a valid CRC?
+    if (crc == NULL) {
+        Py_output_crc = Py_None;
+        Py_INCREF(Py_output_crc);
+    }
+    else {
+        Py_output_crc = PyLong_FromUnsignedLong(crc);
+    }
+
     // Build output
     resize_pybytes(sv, output_len);
-    retval = Py_BuildValue("(S,S,L)", Py_output_buffer, Py_output_filename, crc);
+    retval = Py_BuildValue("(S,S,O)", Py_output_buffer, Py_output_filename, Py_output_crc);
 
     // Make sure we free all the buffers
     Py_XDECREF(Py_output_buffer);
