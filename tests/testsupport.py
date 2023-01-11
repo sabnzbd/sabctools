@@ -104,21 +104,7 @@ def python_yenc(data_plain):
     translate_table = bytes.maketrans(from_bytes, to_bytes)
     decoded_data = flat_yenc_data.translate(translate_table)
 
-    # Let's get the CRC
-    crc = binascii.crc32(decoded_data)
-    partcrc = "%08X" % (crc & 2**32 - 1)
-
-    if ypart:
-        crcname = "pcrc32"
-    else:
-        crcname = "crc32"
-
-    if crcname in yend:
-        _partcrc = "0" * (8 - len(yend[crcname])) + yend[crcname].upper()
-    else:
-        _partcrc = None
-
-    return decoded_data, ybegin["name"], _partcrc == partcrc
+    return decoded_data, ybegin["name"], binascii.crc32(decoded_data)
 
 
 def parse_yenc_data(data):
