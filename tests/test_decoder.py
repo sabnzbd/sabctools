@@ -25,7 +25,7 @@ def test_partial():
     data_plain, data_chunks = read_and_split("test_partial.txt")
     decoded_data, filename, crc_correct = sabyenc3_wrapper(data_chunks)
     assert filename == "90E2Sdvsmds0801dvsmds90E.part06.rar"
-    assert crc_correct == False
+    assert crc_correct is None
     assert len(decoded_data) == 549
 
 
