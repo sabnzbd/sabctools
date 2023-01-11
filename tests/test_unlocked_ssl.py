@@ -207,7 +207,7 @@ class EchoServer(threading.Thread):
         while self.active:
             try:
                 conn, addr = self.sock.accept()
-                handler = self.ConnectionHandler(self, conn, addr, 65536)
+                handler = self.ConnectionHandler(self, conn, addr, 131072)
                 handler.start()
                 handler.join()
             except TimeoutError:
@@ -285,10 +285,10 @@ def test_unlocked_ssl_recv_into_response(client, buffer):
 
 
 def test_unlocked_ssl_recv_into_bulk_response(client):
-    # 65536 bytes divide up into 4 TLS records (16 KB each)
-    # In nonblocking mode, we should be able to read all four in a single
+    # 131072 bytes divide up into 8 TLS records (16 KB each)
+    # In nonblocking mode, we should be able to read all eight in a single
     # drop of the GIL.
-    size = 65536
+    size = 131072
     buffer = bytearray(size)
 
     client.sendall(b'\xFF' * size)
@@ -301,7 +301,7 @@ def test_unlocked_ssl_recv_into_bulk_response(client):
         except ssl.SSLWantReadError:
             select.select([client], [], [])
             # Give the sender some more time to complete sending.
-            time.sleep(0.01)
+            time.sleep(0.1)
         else:
             if count > 16384:
                 return
