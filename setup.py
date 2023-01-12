@@ -284,6 +284,13 @@ class SAByEncBuild(build_ext):
                 "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/tests"],
                 "macros": [("CRCUTIL_USE_MM_CRC32", "0")],
             },
+            {
+                "sources": [
+                    "src/unlocked_ssl.cc",
+                ],
+                "gcc_flags": ["-Wno-unused-parameter", "-Wno-missing-field-initializers"],
+                'msvc_x86_libraries': ['ws2_32'],
+            },
         ]:
             args = {
                 "sources": source_files["sources"],
@@ -294,6 +301,8 @@ class SAByEncBuild(build_ext):
             if self.compiler.compiler_type == "msvc":
                 if IS_X86 and "msvc_x86_flags" in source_files:
                     args["extra_postargs"] += source_files["msvc_x86_flags"]
+                if IS_X86 and "msvc_x86_libraries" in source_files:
+                    ext.libraries += source_files["msvc_x86_libraries"]
             else:
                 if "gcc_flags" in source_files:
                     args["extra_postargs"] += source_files["gcc_flags"]
@@ -312,7 +321,7 @@ class SAByEncBuild(build_ext):
 
         # attach to Extension
         ext.extra_link_args = ldflags + compiled_objects
-        ext.depends = ["src/sabyenc3.h"] + compiled_objects
+        ext.depends = ["src/sabyenc3.h", "src/unlocked_ssl.h"] + compiled_objects
 
         # proceed with regular Extension build
         super(SAByEncBuild, self).build_extension(ext)
