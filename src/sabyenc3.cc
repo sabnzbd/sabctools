@@ -581,7 +581,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     // The input/output PyObjects
     (void)self;
     PyObject *retval = NULL;
-    Py_buffer Py_input_buffer;
+    PyBytesObject *Py_bytes_obj = NULL;
     PyObject *Py_output_filename = NULL;
     PyObject *Py_output_crc = NULL;
     int data_length;
@@ -598,13 +598,13 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     const char* crc_pos;
 
     // Parse input
-    if (!PyArg_ParseTuple(args, "y*i:decode", &Py_input_buffer, &data_length)) {
+    if (!PyArg_ParseTuple(args, "Si:decode", &Py_bytes_obj, &data_length)) {
         return NULL;
     }
-    dest_loc = cur_char = (char *)Py_input_buffer.buf;
+    dest_loc = cur_char = (char *)Py_bytes_obj->ob_sval;
 
     // Check for valid size
-    if(data_length <= 0 || data_length > Py_input_buffer.len) {
+    if(data_length <= 0 || data_length > Py_SIZE(Py_bytes_obj)) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length");
         retval = NULL;
         goto finish;
@@ -699,13 +699,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     Py_END_ALLOW_THREADS;
 
     // Terminate buffer and adjust the Python-size of the bytes-object
-    dest_loc[output_len] = SABYENC_ZERO;
-    Py_input_buffer.len = output_len;
-#if PY_MINOR_VERSION < 9
-    Py_SIZE(Py_input_buffer.obj) = output_len;
-#else
-    Py_SET_SIZE(Py_input_buffer.obj, output_len);
-#endif
+    resize_pybytes(Py_bytes_obj, output_len);
 
     // Is there a valid CRC?
     if (crc != crc_yenc) {
@@ -719,7 +713,6 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     retval = Py_BuildValue("(S, O)", Py_output_filename, Py_output_crc);
 
 finish:
-    PyBuffer_Release(&Py_input_buffer);
     if(Py_output_filename) Py_XDECREF(Py_output_filename);
     return retval;
 }

@@ -66,9 +66,8 @@ def read_pickle(filename):
 
 
 def sabyenc3_wrapper(data: bytes):
-    data_buffer = bytearray(data)
-    filename, crc_correct = sabyenc3.decode_buffer(data_buffer, len(data))
-    return bytes(data_buffer), correct_unknown_encoding(filename), crc_correct
+    filename, crc_correct = sabyenc3.decode_buffer(data, len(data))
+    return data, correct_unknown_encoding(filename), crc_correct
 
 
 def python_yenc(data_plain):

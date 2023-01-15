@@ -46,7 +46,7 @@ def test_no_filename():
 
 def test_bad_size():
     with pytest.raises(ValueError) as excinfo:
-        sabyenc3.decode_buffer(bytearray(b"1234"), 10)
+        sabyenc3.decode_buffer(b"1234", 10)
     assert "Invalid data length" in str(excinfo.value)
 
 
