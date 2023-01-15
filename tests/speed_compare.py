@@ -42,7 +42,7 @@ for _ in range(5):
     list_bytes = []
     for _ in range(nr_runs):
         list_chunks.append(list(map(lambda x: bytes(bytearray(x)), data_chunks)))
-        list_bytes.append(bytearray(data_raw))
+        list_bytes.append(bytes(bytearray(data_raw)))
 
     # Buffer version
     time2_new = time.process_time()
