@@ -21,6 +21,8 @@
 import binascii
 import re
 import pickle
+from typing import Tuple
+
 import chardet
 import sabyenc3
 
@@ -47,13 +49,9 @@ def correct_unknown_encoding(str_or_bytes_in):
             return str_or_bytes_in.decode(chardet.detect(str_or_bytes_in)["encoding"])
 
 
-def read_and_split(filename, chunk_size=14):
-    # Default to chunks of 16K, as used in SSL
+def read_plain_yenc_file(filename: str) -> bytes:
     with open("tests/yencfiles/%s" % filename, "rb") as yencfile:
-        data_raw = yencfile.read()
-        n = 2**chunk_size
-        data_chunks = [data_raw[i : i + n] for i in range(0, len(data_raw), n)]
-    return data_raw, data_chunks
+        return yencfile.read()
 
 
 def read_pickle(filename):
@@ -64,13 +62,13 @@ def read_pickle(filename):
             # Reset the pointer and try again
             yencfile.seek(0)
             data_chunks, data_bytes, lines = pickle.load(yencfile, encoding="bytes")
-    return b"".join(data_chunks), data_chunks
+    return b"".join(data_chunks)
 
 
-def sabyenc3_wrapper(data_chunks):
-    """CRC's are"""
-    decoded_data, filename, crc_correct = sabyenc3.decode_usenet_chunks(data_chunks)
-    return decoded_data, correct_unknown_encoding(filename), crc_correct
+def sabyenc3_wrapper(data: bytes):
+    data_buffer = bytearray(data)
+    filename, crc_correct = sabyenc3.decode_buffer(data_buffer, len(data))
+    return bytes(data_buffer), correct_unknown_encoding(filename), crc_correct
 
 
 def python_yenc(data_plain):

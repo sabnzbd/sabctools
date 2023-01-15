@@ -21,17 +21,6 @@ import sabyenc3
 from testsupport import read_pickle
 
 ###################
-# Input
-###################
-
-# Use a number of files from the tests/yencfiles folder
-input_data = []
-all_pickles = glob.glob("tests/yencfiles/*_file*")
-for fname in all_pickles:
-    _, data_chunks = read_pickle(fname)
-    input_data.append(data_chunks)
-
-###################
 # Real test
 ###################
 
@@ -58,7 +47,7 @@ for _ in range(5):
     # Buffer version
     time2_new = time.process_time()
     for i in range(nr_runs):
-        output_filename = sabyenc3.decode(list_bytes[i], data_length)
+        output_filename = sabyenc3.decode_buffer(list_bytes[i], data_length)
     time2_new_disp = 1000 * (time.process_time() - time2_new)
 
     # Current version
