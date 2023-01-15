@@ -48,6 +48,6 @@ typedef int Bool;
 
 /* Functions */
 PyObject* decode_usenet_chunks(PyObject *, PyObject*);
-PyObject* decode(PyObject *, PyObject*);
+PyObject* decode_buffer(PyObject *, PyObject*);
 PyObject* encode(PyObject *, PyObject*);
 PyMODINIT_FUNC PyInit_sabyenc3(void);
