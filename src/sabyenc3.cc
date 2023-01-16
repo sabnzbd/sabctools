@@ -62,6 +62,12 @@ static PyMethodDef sabyenc3_methods[] = {
         METH_VARARGS,
         "unlocked_ssl_recv_into(ssl_socket, buffer)"
     },
+    {
+        "crc32_combine",
+        (PyCFunction)crc32_combine,
+        METH_FASTCALL,
+        "crc32_combine(crc1, crc2, length)"
+    },
     {NULL, NULL, 0, NULL}
 };
 
@@ -778,4 +784,15 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     Py_XDECREF(Py_output_string);
     free(output_buffer);
     return retval;
+}
+
+PyObject* crc32_combine(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
+    uint32_t crc1, crc2;
+    size_t length;
+
+    if(!_PyArg_ParseStack(args, nargs, "IIn:crc32_combine", &crc1, &crc2, &length)) {
+        return NULL;
+    }
+
+    return PyLong_FromUnsignedLong(do_crc32_combine(crc1, crc2, length));
 }
