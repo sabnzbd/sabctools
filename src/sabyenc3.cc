@@ -64,8 +64,8 @@ static PyMethodDef sabyenc3_methods[] = {
     },
     {
         "crc32_combine",
-        (PyCFunction)crc32_combine,
-        METH_FASTCALL,
+        crc32_combine,
+        METH_VARARGS,
         "crc32_combine(crc1, crc2, length)"
     },
     {NULL, NULL, 0, NULL}
@@ -786,11 +786,11 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     return retval;
 }
 
-PyObject* crc32_combine(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
+PyObject* crc32_combine(PyObject *self, PyObject *args) {
     uint32_t crc1, crc2;
     size_t length;
 
-    if(!_PyArg_ParseStack(args, nargs, "IIn:crc32_combine", &crc1, &crc2, &length)) {
+    if(!PyArg_ParseTuple(args, "IIn:crc32_combine", &crc1, &crc2, &length)) {
         return NULL;
     }
 
