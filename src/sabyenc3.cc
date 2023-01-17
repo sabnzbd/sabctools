@@ -589,12 +589,12 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     // Used buffers
     char *cur_char = NULL;
     char *start_loc = NULL;
+    char *end_loc = NULL;
     char *dest_loc = NULL;
     uint32_t crc = 0;
     uint32_t crc_yenc = 0;
     size_t yenc_data_length;
     size_t output_len;
-    ptrdiff_t data_step;
     const char* crc_pos;
 
     // Parse input
@@ -602,6 +602,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
         return NULL;
     }
     dest_loc = cur_char = (char *)Py_bytes_obj->ob_sval;
+    end_loc = dest_loc + data_length;
 
     // Check for valid size
     if(data_length <= 0 || data_length > Py_SIZE(Py_bytes_obj)) {
@@ -609,6 +610,9 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
         retval = NULL;
         goto finish;
     }
+
+    // Lift the GIL
+    Py_BEGIN_ALLOW_THREADS;
 
     /*
      ANALYZE HEADER
@@ -620,29 +624,30 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
      But we only care about the filename
     */
     // Start of header
-    start_loc = strstr(cur_char, "=ybegin");
+    start_loc = my_memstr(cur_char, end_loc - cur_char, "=ybegin", 1);
     if (!start_loc) {
+        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Invalid yEnc header");
         retval = NULL;
         goto finish;
     }
 
     // Find start of the filename
-    start_loc = strstr(start_loc, "name=");
+    start_loc = my_memstr(start_loc, end_loc - cur_char, " name=", 1);
     if (!start_loc) {
+        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
         retval = NULL;
         goto finish;
     }
 
     // Extract filename
-    start_loc += 5;
     cur_char = start_loc;
     for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO; cur_char++);
     Py_output_filename = PyUnicode_DecodeLatin1(start_loc, cur_char - start_loc, NULL);
 
     // Check for =ypart, so we know where to start with decoding
-    start_loc = my_memstr(cur_char, data_length - *cur_char, "=ypart ", 1);
+    start_loc = my_memstr(cur_char, end_loc - cur_char, "=ypart ", 1);
     if (start_loc) {
         // Move to end of this line
         cur_char = start_loc;
@@ -655,13 +660,12 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
         =yend size=384000 part=41 pcrc32=084e170f
     */
     // Make sure we don't go past the end of the buffer
-    data_step = *cur_char + data_length - MAX_TAIL_BYTES;
-    if (data_step > 0 && data_step < data_length) {
-        cur_char += data_length - MAX_TAIL_BYTES;
+    if (end_loc - MAX_TAIL_BYTES > cur_char) {
+        cur_char = end_loc - MAX_TAIL_BYTES;
     }
-
-    cur_char = my_memstr(cur_char, data_length - *cur_char, "\r\n=yend", 0);
+    cur_char = my_memstr(cur_char, end_loc - cur_char, "\r\n=yend", 0);
     if (!cur_char) {
+        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Invalid yEnc footer");
         retval = NULL;
         goto finish;
@@ -670,25 +674,23 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
 
     // Try to find the crc32 of the part (skip "\r\n=yend")
     cur_char += 7;
-    crc_pos = my_memstr(cur_char, data_length - (cur_char - dest_loc), " pcrc32=", 1);
+    crc_pos = my_memstr(cur_char, end_loc - cur_char, " pcrc32=", 1);
 
     // Sometimes only crc32 is used
     if (!crc_pos) {
-        crc_pos = my_memstr(cur_char, data_length - (cur_char - dest_loc), " crc32=", 1);
+        crc_pos = my_memstr(cur_char, end_loc - cur_char, " crc32=", 1);
     }
 
     // Parse CRC32
-    if (crc_pos && (data_length - (crc_pos - dest_loc)) >= 8) {
+    if (crc_pos && (end_loc - crc_pos) >= 8) {
         crc_yenc = strtoul(crc_pos, NULL, 16);
     } else {
         // CRC32 not found - article is invalid
+        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Invalid CRC in footer");
         retval = NULL;
         goto finish;
     }
-
-    // Lift the GIL
-    Py_BEGIN_ALLOW_THREADS;
 
     // send to decoder
     YencDecoderState state = YDEC_STATE_CRLF;
