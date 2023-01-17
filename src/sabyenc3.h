@@ -33,8 +33,8 @@
 #define SABYENC_CR          0x0d
 #define SABYENC_LF          0x0a
 
-/* The =yend line shouldn't exceed 1KB */
-#define MAX_TAIL_BYTES 1024
+/* The =yend line cannot be crazy long*/
+#define MAX_TAIL_BYTES      256
 
 /* Customized types */
 typedef unsigned long long uLong;
