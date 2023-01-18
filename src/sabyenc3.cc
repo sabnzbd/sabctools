@@ -82,16 +82,16 @@ static PyMethodDef sabyenc3_methods[] = {
         "crc32_zero_unpad(crc1, length)"
     },
     {
-        "crc32_XpowN",
-        crc32_XpowN,
+        "crc32_xpown",
+        crc32_xpown,
         METH_O,
-        "crc32_XpowN(n)"
+        "crc32_xpown(n)"
     },
     {
-        "crc32_Xpow8N",
-        crc32_Xpow8N,
+        "crc32_xpow8n",
+        crc32_xpow8n,
         METH_O,
-        "crc32_Xpow8N(n)"
+        "crc32_xpow8n(n)"
     },
     {NULL, NULL, 0, NULL}
 };

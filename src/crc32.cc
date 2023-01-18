@@ -4,48 +4,45 @@
 extern crcutil_interface::CRC *crc;
 
 PyObject* crc32_combine(PyObject *self, PyObject *args) {
-    uint32_t crc1, crc2;
-    size_t length;
+    crcutil_interface::UINT64 crc1, crc2;
+    Py_ssize_t length;
 
-    if(!PyArg_ParseTuple(args, "IIn:crc32_combine", &crc1, &crc2, &length)) {
+    if(!PyArg_ParseTuple(args, "KKn:crc32_combine", &crc1, &crc2, &length)) {
         return NULL;
     }
 
-    crcutil_interface::UINT64 crc1_ = crc1, crc2_ = crc2;
-    crc->Concatenate(crc2_, 0, length, &crc1_);
+    crc->Concatenate(crc2, 0, length, &crc1);
 
-    return PyLong_FromUnsignedLong((uint32_t) crc1_);
+    return PyLong_FromUnsignedLong((uint32_t) crc1);
 }
 
 PyObject* crc32_multiply(PyObject *self, PyObject *args) {
-    uint32_t crc1, crc2;
+    crcutil_interface::UINT64 crc1, crc2;
 
-    if(!PyArg_ParseTuple(args, "II:crc32_multiply", &crc1, &crc2)) {
+    if(!PyArg_ParseTuple(args, "KK:crc32_multiply", &crc1, &crc2)) {
         return NULL;
     }
 
-    crcutil_interface::UINT64 crc1_ = crc1, crc2_ = crc2;
-    crc->Multiply(crc2_, &crc1_);
+    crc->Multiply(crc2, &crc1);
 
-    return PyLong_FromUnsignedLong((uint32_t) crc1_);
+    return PyLong_FromUnsignedLong((uint32_t)crc1);
 }
 
 PyObject* crc32_zero_unpad(PyObject *self, PyObject *args) {
-    uint32_t crc1;
-    size_t length;
+    crcutil_interface::UINT64 crc1;
+    Py_ssize_t length;
 
-    if(!PyArg_ParseTuple(args, "In:crc32_zero_unpad", &crc1, &length)) {
+    if(!PyArg_ParseTuple(args, "Kn:crc32_zero_unpad", &crc1, &length)) {
         return NULL;
     }
 
-    crcutil_interface::UINT64 crc_ = crc1;
-    crc->ZeroUnpad(length, &crc_);
+    crc->ZeroUnpad(length, &crc1);
 
-    return PyLong_FromUnsignedLong((uint32_t) crc_);
+    return PyLong_FromUnsignedLong((uint32_t) crc1);
 }
 
-PyObject* crc32_XpowN(PyObject* self, PyObject* arg) {
-    crcutil_interface::UINT64 n = PyLong_AsUnsignedLongLong(arg);
+PyObject* crc32_xpown(PyObject* self, PyObject* arg) {
+    crcutil_interface::UINT64 n = PyLong_AsUnsignedLongLongMask(arg);
 
     if (PyErr_Occurred()) {
         return NULL;
@@ -56,8 +53,8 @@ PyObject* crc32_XpowN(PyObject* self, PyObject* arg) {
     return PyLong_FromUnsignedLongLong(n);
 }
 
-PyObject* crc32_Xpow8N(PyObject* self, PyObject* arg) {
-    crcutil_interface::UINT64 n = PyLong_AsUnsignedLongLong(arg);
+PyObject* crc32_xpow8n(PyObject* self, PyObject* arg) {
+    crcutil_interface::UINT64 n = PyLong_AsUnsignedLongLongMask(arg);
 
     if (PyErr_Occurred()) {
         return NULL;
