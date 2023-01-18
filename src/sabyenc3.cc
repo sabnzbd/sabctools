@@ -21,6 +21,7 @@
 
 #include "sabyenc3.h"
 #include "unlocked_ssl.h"
+#include "crc32.h"
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -67,6 +68,30 @@ static PyMethodDef sabyenc3_methods[] = {
         crc32_combine,
         METH_VARARGS,
         "crc32_combine(crc1, crc2, length)"
+    },
+    {
+        "crc32_multiply",
+        crc32_multiply,
+        METH_VARARGS,
+        "crc32_multiply(crc1, crc2)"
+    },
+    {
+        "crc32_zero_unpad",
+        crc32_zero_unpad,
+        METH_VARARGS,
+        "crc32_zero_unpad(crc1, length)"
+    },
+    {
+        "crc32_XpowN",
+        crc32_XpowN,
+        METH_O,
+        "crc32_XpowN(n)"
+    },
+    {
+        "crc32_Xpow8N",
+        crc32_Xpow8N,
+        METH_O,
+        "crc32_Xpow8N(n)"
     },
     {NULL, NULL, 0, NULL}
 };
@@ -784,15 +809,4 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     Py_XDECREF(Py_output_string);
     free(output_buffer);
     return retval;
-}
-
-PyObject* crc32_combine(PyObject *self, PyObject *args) {
-    uint32_t crc1, crc2;
-    size_t length;
-
-    if(!PyArg_ParseTuple(args, "IIn:crc32_combine", &crc1, &crc2, &length)) {
-        return NULL;
-    }
-
-    return PyLong_FromUnsignedLong(do_crc32_combine(crc1, crc2, length));
 }
