@@ -42,7 +42,7 @@ PyObject* crc32_zero_unpad(PyObject *self, PyObject *args) {
 }
 
 PyObject* crc32_xpown(PyObject* self, PyObject* arg) {
-    crcutil_interface::UINT64 n = PyLong_AsUnsignedLong(arg);
+    crcutil_interface::UINT64 n = PyLong_AsUnsignedLongLong(arg) & 0xffffffff;
 
     if (PyErr_Occurred()) {
         return NULL;
@@ -54,7 +54,7 @@ PyObject* crc32_xpown(PyObject* self, PyObject* arg) {
 }
 
 PyObject* crc32_xpow8n(PyObject* self, PyObject* arg) {
-    crcutil_interface::UINT64 n = PyLong_AsUnsignedLong(arg);
+    crcutil_interface::UINT64 n = PyLong_AsUnsignedLongLong(arg) & 0xffffffff;
 
     if (PyErr_Occurred()) {
         return NULL;
