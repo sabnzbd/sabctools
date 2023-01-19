@@ -633,7 +633,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     }
 
     // Find start of the filename
-    start_loc = my_memstr(start_loc, end_loc - cur_char, " name=", 1);
+    start_loc = my_memstr(start_loc, end_loc - start_loc, " name=", 1);
     if (!start_loc) {
         Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
