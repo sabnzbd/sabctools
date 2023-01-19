@@ -712,7 +712,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     }
 
     // Build output
-    retval = Py_BuildValue("(S, O)", Py_output_filename, Py_output_crc);
+    retval = Py_BuildValue("(S, N)", Py_output_filename, Py_output_crc);
 
 finish:
     if(Py_output_filename) Py_XDECREF(Py_output_filename);
