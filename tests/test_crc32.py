@@ -56,11 +56,22 @@ def test_crc32_zero_unpad_expected(crc1, zeroes, expected):
         (30, 2),
         (31, 1),
         (4294967295, 2147483648),
-        (18446744073709551615, 2147483648),
     ],
 )
 def test_crc32_xpown_expected(n, expected):
     assert sabyenc3.crc32_xpown(n) == expected
+
+
+@pytest.mark.parametrize(
+    "n",
+    [
+        -1,
+        4294967296,
+    ],
+)
+def test_crc32_xpown_out_of_range(n):
+    with pytest.raises(OverflowError):
+        sabyenc3.crc32_xpown(n)
 
 
 @pytest.mark.parametrize(
@@ -69,9 +80,19 @@ def test_crc32_xpown_expected(n, expected):
         (0, 2147483648),
         (1, 8388608),
         (4294967295, 2147483648),
-        (18446744073709551615, 3742066410),
-        (112233445566, 1480064961),
     ],
 )
 def test_crc32_xpow8n_expected(n, expected):
     assert sabyenc3.crc32_xpow8n(n) == expected
+
+
+@pytest.mark.parametrize(
+    "n",
+    [
+        -1,
+        4294967296,
+    ],
+)
+def test_crc32_xpow8n_out_of_range(n):
+    with pytest.raises(OverflowError):
+        sabyenc3.crc32_xpow8n(n)
