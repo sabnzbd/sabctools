@@ -56,7 +56,7 @@ def test_crc32_zero_unpad_expected(crc1, zeroes, expected):
         (30, 2),
         (31, 1),
         (4294967295, 2147483648),
-        (4294967296, 2147483648),  # 0
+        (4294967296, 1073741824),  # 1
     ],
 )
 def test_crc32_xpown_expected(n, expected):
@@ -69,7 +69,7 @@ def test_crc32_xpown_expected(n, expected):
         (0, 2147483648),
         (1, 8388608),
         (4294967295, 2147483648),
-        (4294967296, 2147483648),  # 0
+        (4294967296, 8388608),  # 1
     ],
 )
 def test_crc32_xpow8n_expected(n, expected):
