@@ -49,9 +49,9 @@ def correct_unknown_encoding(str_or_bytes_in):
             return str_or_bytes_in.decode(chardet.detect(str_or_bytes_in)["encoding"])
 
 
-def read_plain_yenc_file(filename: str) -> bytes:
+def read_plain_yenc_file(filename: str) -> bytearray:
     with open("tests/yencfiles/%s" % filename, "rb") as yencfile:
-        return yencfile.read()
+        return bytearray(yencfile.read())
 
 
 def read_pickle(filename):
@@ -62,11 +62,11 @@ def read_pickle(filename):
             # Reset the pointer and try again
             yencfile.seek(0)
             data_chunks, data_bytes, lines = pickle.load(yencfile, encoding="bytes")
-    return b"".join(data_chunks)
+    return bytearray(b"".join(data_chunks))
 
 
-def sabyenc3_wrapper(data: bytes):
-    filename, crc_correct = sabyenc3.decode_buffer(data, len(data))
+def sabyenc3_wrapper(data: bytearray):
+    filename, crc_correct = sabyenc3.decode_buffer(data)
     return data, correct_unknown_encoding(filename), crc_correct
 
 
