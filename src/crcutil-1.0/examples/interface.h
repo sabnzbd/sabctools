@@ -151,6 +151,16 @@ class CRC {
                            /* INOUT */ UINT64* crcA_lo,
                            /* INOUT */ UINT64* crcA_hi = NULL) const = 0;
 
+  virtual void Multiply(UINT64 crcA_lo,
+                        /* INOUT */ UINT64* crcB_lo = NULL) const = 0;
+
+  virtual void ZeroUnpad(UINT64 bytes,
+                         /* INOUT */ UINT64 *lo) const = 0;
+
+  virtual void XpowN(/* INOUT */ UINT64 *n) const = 0;
+
+  virtual void Xpow8N(/* INOUT */ UINT64 *n) const = 0;
+
   // Given CRC of a message, stores extra (degree + 7)/8 bytes after
   // the message so that CRC(message+extra, start) = result.
   // Does not change CRC start value (use ChangeStartValue for that).
