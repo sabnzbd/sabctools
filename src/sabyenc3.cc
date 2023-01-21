@@ -47,8 +47,8 @@ static PyMethodDef sabyenc3_methods[] = {
     {
         "decode_buffer",
         decode_buffer,
-        METH_VARARGS,
-        "decode_buffer(raw_data, raw_data_size)"
+        METH_O,
+        "decode_buffer(raw_data)"
     },
     {
         "encode",
@@ -577,11 +577,11 @@ PyObject* decode_usenet_chunks(PyObject* self, PyObject* Py_input_list) {
     return retval;
 }
 
-PyObject* decode_buffer(PyObject* self, PyObject* args) {
+PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
     // The input/output PyObjects
     (void)self;
     PyObject *retval = NULL;
-    PyBytesObject *Py_bytes_obj = NULL;
+    Py_buffer Py_buffer_obj;
     PyObject *Py_output_filename = NULL;
     PyObject *Py_output_crc = NULL;
     int data_length;
@@ -597,15 +597,22 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     size_t output_len;
     const char* crc_pos;
 
-    // Parse input
-    if (!PyArg_ParseTuple(args, "Si:decode", &Py_bytes_obj, &data_length)) {
+    // Verify it's a bytearray
+    if (!PyByteArray_Check(Py_bytesarray_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expected bytearray");        
         return NULL;
     }
-    dest_loc = cur_char = (char *)Py_bytes_obj->ob_sval;
-    end_loc = dest_loc + data_length;
+
+    if (PyObject_GetBuffer(Py_bytesarray_obj, &Py_buffer_obj, PyBUF_CONTIG) != 0) {
+        return NULL;
+    }
+
+    dest_loc = cur_char = (char*)Py_buffer_obj.buf;
+    end_loc = dest_loc + Py_buffer_obj.len;
+    output_len = Py_buffer_obj.len;
 
     // Check for valid size
-    if(data_length <= 0 || data_length > Py_SIZE(Py_bytes_obj)) {
+    if (Py_buffer_obj.len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length");
         retval = NULL;
         goto finish;
@@ -700,9 +707,6 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     // Return GIL to perform Python modifications
     Py_END_ALLOW_THREADS;
 
-    // Terminate buffer and adjust the Python-size of the bytes-object
-    resize_pybytes(Py_bytes_obj, output_len);
-
     // Is there a valid CRC?
     if (crc != crc_yenc) {
         Py_output_crc = Py_None;
@@ -715,7 +719,12 @@ PyObject* decode_buffer(PyObject* self, PyObject* args) {
     retval = Py_BuildValue("(S, N)", Py_output_filename, Py_output_crc);
 
 finish:
-    if(Py_output_filename) Py_XDECREF(Py_output_filename);
+    Py_XDECREF(Py_output_filename);
+
+    // Terminate buffer and adjust the Python-size of the bytes-object
+    PyBuffer_Release(&Py_buffer_obj);
+    PyByteArray_Resize(Py_bytesarray_obj, output_len);
+    
     return retval;
 }
 
