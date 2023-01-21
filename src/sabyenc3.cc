@@ -21,6 +21,7 @@
 
 #include "sabyenc3.h"
 #include "unlocked_ssl.h"
+#include "crc32.h"
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -61,6 +62,36 @@ static PyMethodDef sabyenc3_methods[] = {
         unlocked_ssl_recv_into,
         METH_VARARGS,
         "unlocked_ssl_recv_into(ssl_socket, buffer)"
+    },
+    {
+        "crc32_combine",
+        crc32_combine,
+        METH_VARARGS,
+        "crc32_combine(crc1, crc2, length)"
+    },
+    {
+        "crc32_multiply",
+        crc32_multiply,
+        METH_VARARGS,
+        "crc32_multiply(crc1, crc2)"
+    },
+    {
+        "crc32_zero_unpad",
+        crc32_zero_unpad,
+        METH_VARARGS,
+        "crc32_zero_unpad(crc1, length)"
+    },
+    {
+        "crc32_xpown",
+        crc32_xpown,
+        METH_O,
+        "crc32_xpown(n)"
+    },
+    {
+        "crc32_xpow8n",
+        crc32_xpow8n,
+        METH_O,
+        "crc32_xpow8n(n)"
     },
     {NULL, NULL, 0, NULL}
 };

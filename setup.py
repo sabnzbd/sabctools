@@ -291,6 +291,13 @@ class SAByEncBuild(build_ext):
                 "gcc_flags": ["-Wno-unused-parameter", "-Wno-missing-field-initializers"],
                 'msvc_x86_libraries': ['ws2_32'],
             },
+            {
+                "sources": [
+                    "src/crc32.cc",
+                ],
+                "gcc_flags": ["-Wno-unused-parameter"],
+                "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/examples"],
+            },
         ]:
             args = {
                 "sources": source_files["sources"],
