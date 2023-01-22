@@ -289,7 +289,7 @@ class SAByEncBuild(build_ext):
                     "src/unlocked_ssl.cc",
                 ],
                 "gcc_flags": ["-Wno-unused-parameter", "-Wno-missing-field-initializers"],
-                'msvc_x86_libraries': ['ws2_32'],
+                "msvc_x86_libraries": ["ws2_32"],
             },
             {
                 "sources": [

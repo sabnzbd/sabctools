@@ -21,7 +21,7 @@
 import binascii
 import re
 import pickle
-from typing import Tuple
+from typing import Tuple, Optional
 
 import chardet
 import sabyenc3
@@ -65,7 +65,7 @@ def read_pickle(filename):
     return bytearray(b"".join(data_chunks))
 
 
-def sabyenc3_wrapper(data: bytearray):
+def sabyenc3_wrapper(data: bytearray) -> Tuple[bytearray, str, Optional[int]]:
     filename, crc_correct = sabyenc3.decode_buffer(data)
     return data, correct_unknown_encoding(filename), crc_correct
 

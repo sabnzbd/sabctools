@@ -5,7 +5,7 @@ import socket
 import time
 
 
-hostname = 'eunews.frugalusenet.com'
+hostname = "eunews.frugalusenet.com"
 context = ssl.create_default_context()
 
 print(sabyenc3.openssl_linked)
