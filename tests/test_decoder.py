@@ -44,6 +44,12 @@ def test_no_filename():
     assert "Could not find yEnc filename" in str(excinfo.value)
 
 
+def test_end_after_filename():
+    data_plain = read_plain_yenc_file("test_end_after_filename.txt")
+    with pytest.raises(ValueError):
+        sabyenc3_wrapper(data_plain)
+
+
 def test_bad_size():
     with pytest.raises(ValueError) as excinfo:
         sabyenc3.decode_buffer(bytearray())
