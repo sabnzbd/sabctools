@@ -676,7 +676,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
 
     // Extract filename
     cur_char = start_loc;
-    for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO; cur_char++);
+    for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO && cur_char < end_loc; cur_char++);
     Py_output_filename = PyUnicode_DecodeLatin1(start_loc, cur_char - start_loc, NULL);
 
     // Check for =ypart, so we know where to start with decoding
@@ -684,7 +684,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
     if (start_loc) {
         // Move to end of this line
         cur_char = start_loc;
-        for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO; cur_char++);
+        for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO && cur_char < end_loc; cur_char++);
     }
     start_loc = cur_char;
 
