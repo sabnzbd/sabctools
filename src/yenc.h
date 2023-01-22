@@ -16,15 +16,27 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef SABCTOOLS_CRC32_H
-#define SABCTOOLS_CRC32_H
+#ifndef SABCTOOLS_YENC_H
+#define SABCTOOLS_YENC_H
 
 #include <Python.h>
 
-PyObject* crc32_combine(PyObject *, PyObject*);
-PyObject* crc32_multiply(PyObject *, PyObject*);
-PyObject* crc32_zero_unpad(PyObject *, PyObject*);
-PyObject* crc32_xpown(PyObject *, PyObject*);
-PyObject* crc32_xpow8n(PyObject *, PyObject*);
+#include "yencode/common.h"
+#include "yencode/encoder.h"
+#include "yencode/decoder.h"
+#include "yencode/crc.h"
 
-#endif //SABCTOOLS_CRC32_H
+/* Constants */
+#define YENC_LINESIZE    128
+#define YENC_ZERO        0x00
+#define YENC_CR          0x0d
+#define YENC_LF          0x0a
+
+/* The =yend line cannot be crazy long*/
+#define YENC_MAX_TAIL_BYTES 256
+
+/* Functions */
+PyObject* yenc_decode(PyObject *, PyObject*);
+PyObject* yenc_encode(PyObject *, PyObject*);
+
+#endif //SABCTOOLS_YENC_H

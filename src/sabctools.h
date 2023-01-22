@@ -16,15 +16,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef SABCTOOLS_CRC32_H
-#define SABCTOOLS_CRC32_H
-
 #include <Python.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <string.h>
 
-PyObject* crc32_combine(PyObject *, PyObject*);
-PyObject* crc32_multiply(PyObject *, PyObject*);
-PyObject* crc32_zero_unpad(PyObject *, PyObject*);
-PyObject* crc32_xpown(PyObject *, PyObject*);
-PyObject* crc32_xpow8n(PyObject *, PyObject*);
+/* Version information */
+#define SABCTOOLS_VERSION "6.0.0"
 
-#endif //SABCTOOLS_CRC32_H
+PyMODINIT_FUNC PyInit_sabctools(void);

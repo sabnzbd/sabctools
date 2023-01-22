@@ -1,120 +1,27 @@
- /*=============================================================================
+/*
+ * Copyright 2007-2022 The SABnzbd-Team <team@sabnzbd.org>
  *
- * Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
- * Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
- *=============================================================================
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include "sabyenc3.h"
-#include "unlocked_ssl.h"
-#include "crc32.h"
+#include "yenc.h"
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
 #include "yencode/decoder.h"
 #include "yencode/crc.h"
-
-/* Declarations */
-
-/* Function and exception declarations */
-PyMODINIT_FUNC PyInit_sabyenc3(void);
-static size_t decode_buffer_usenet(PyObject *, char *, int, char **, uint32_t *);
-
-/* Python API requirements */
-static PyMethodDef sabyenc3_methods[] = {
-    {
-        "decode_buffer",
-        decode_buffer,
-        METH_O,
-        "decode_buffer(raw_data)"
-    },
-    {
-        "encode",
-        encode,
-        METH_O,
-        "encode(input_string)"
-    },
-    {
-        "unlocked_ssl_recv_into",
-        unlocked_ssl_recv_into,
-        METH_VARARGS,
-        "unlocked_ssl_recv_into(ssl_socket, buffer)"
-    },
-    {
-        "crc32_combine",
-        crc32_combine,
-        METH_VARARGS,
-        "crc32_combine(crc1, crc2, length)"
-    },
-    {
-        "crc32_multiply",
-        crc32_multiply,
-        METH_VARARGS,
-        "crc32_multiply(crc1, crc2)"
-    },
-    {
-        "crc32_zero_unpad",
-        crc32_zero_unpad,
-        METH_VARARGS,
-        "crc32_zero_unpad(crc1, length)"
-    },
-    {
-        "crc32_xpown",
-        crc32_xpown,
-        METH_O,
-        "crc32_xpown(n)"
-    },
-    {
-        "crc32_xpow8n",
-        crc32_xpow8n,
-        METH_O,
-        "crc32_xpow8n(n)"
-    },
-    {NULL, NULL, 0, NULL}
-};
-
-static struct PyModuleDef sabyenc3_definition = {
-    PyModuleDef_HEAD_INIT,
-    "sabyenc3",
-    "Processing of raw NNTP-yEnc streams for SABnzbd.",
-    -1,
-    sabyenc3_methods
-};
-
-PyMODINIT_FUNC PyInit_sabyenc3(void) {
-    // Initialize and add version / SIMD information
-    Py_Initialize();
-    encoder_init();
-    decoder_init();
-    crc_init();
-    openssl_init();
-
-    PyObject* m = PyModule_Create(&sabyenc3_definition);
-    PyModule_AddStringConstant(m, "__version__", SABYENC_VERSION);
-    PyModule_AddStringConstant(m, "simd", simd_detected());
-
-    // Add status of linking OpenSSL function
-    PyObject *openssl_linked_object = openssl_linked() ? Py_True : Py_False;
-    Py_INCREF(openssl_linked_object);
-    PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
-
-    return m;
-}
-
 
 /* Function definitions */
 
@@ -147,7 +54,7 @@ static inline char* my_memstr(const void* haystack, size_t haystackLen, const ch
 }
 
 
-PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
+PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     // The input/output PyObjects
     (void)self;
     PyObject *retval = NULL;
@@ -169,7 +76,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
 
     // Verify it's a bytearray
     if (!PyByteArray_Check(Py_bytesarray_obj)) {
-        PyErr_SetString(PyExc_TypeError, "Expected bytearray");        
+        PyErr_SetString(PyExc_TypeError, "Expected bytearray");
         return NULL;
     }
 
@@ -215,7 +122,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
 
     // Extract filename
     cur_char = start_loc;
-    for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO && cur_char < end_loc; cur_char++);
+    for (; *cur_char != YENC_LF && *cur_char != YENC_CR && *cur_char != YENC_ZERO && cur_char < end_loc; cur_char++);
     Py_output_filename = PyUnicode_DecodeLatin1(start_loc, cur_char - start_loc, NULL);
 
     // Check for =ypart, so we know where to start with decoding
@@ -223,7 +130,7 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
     if (start_loc) {
         // Move to end of this line
         cur_char = start_loc;
-        for (; *cur_char != SABYENC_LF && *cur_char != SABYENC_CR && *cur_char != SABYENC_ZERO && cur_char < end_loc; cur_char++);
+        for (; *cur_char != YENC_LF && *cur_char != YENC_CR && *cur_char != YENC_ZERO && cur_char < end_loc; cur_char++);
     }
     start_loc = cur_char;
 
@@ -232,8 +139,8 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
         =yend size=384000 part=41 pcrc32=084e170f
     */
     // Make sure we don't go past the end of the buffer
-    if (end_loc - MAX_TAIL_BYTES > cur_char) {
-        cur_char = end_loc - MAX_TAIL_BYTES;
+    if (end_loc - YENC_MAX_TAIL_BYTES > cur_char) {
+        cur_char = end_loc - YENC_MAX_TAIL_BYTES;
     }
     cur_char = my_memstr(cur_char, end_loc - cur_char, "\r\n=yend", 0);
     if (!cur_char) {
@@ -290,7 +197,7 @@ finish:
     // Terminate buffer and adjust the Python-size of the bytes-object
     PyBuffer_Release(&Py_buffer_obj);
     PyByteArray_Resize(Py_bytesarray_obj, output_len);
-    
+
     return retval;
 }
 
@@ -309,7 +216,7 @@ static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
     return ret + 2 * ((len*2) / line_size);
 }
 
-PyObject* encode(PyObject* self, PyObject* Py_input_string)
+PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
 {
     (void)self;
     PyObject *Py_output_string;
@@ -330,7 +237,7 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
     // Initialize buffers and CRC's
     input_len = PyBytes_Size(Py_input_string);
     input_buffer = (char *)PyBytes_AsString(Py_input_string);
-    output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, SABYENC_LINESIZE));
+    output_buffer = (char *)malloc(YENC_MAX_SIZE(input_len, YENC_LINESIZE));
     if(!output_buffer)
         return PyErr_NoMemory();
 
@@ -339,7 +246,7 @@ PyObject* encode(PyObject* self, PyObject* Py_input_string)
 
     // Encode result
     int column = 0;
-    output_len = do_encode(SABYENC_LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
+    output_len = do_encode(YENC_LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
     crc = do_crc32(input_buffer, input_len, 0);
 
     // Restore GIL so we can build Python strings

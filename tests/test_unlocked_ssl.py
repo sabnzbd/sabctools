@@ -252,7 +252,7 @@ def unlocked_ssl_recv_into_wrapper(sock: ssl.SSLSocket, data: bytes, data_view: 
     data_position = 0
     while True:
         try:
-            data_position += sabyenc3.unlocked_ssl_recv_into(sock, data_view[data_position:])
+            data_position += sabctools.unlocked_ssl_recv_into(sock, data_view[data_position:])
         except ssl.SSLWantReadError:
             pass
         if data_position > 0:
@@ -266,12 +266,12 @@ def buffer():
 
 
 def test_openssl_linked():
-    assert sabyenc3.openssl_linked is True
+    assert sabctools.openssl_linked is True
 
 
 def test_unlocked_ssl_recv_into_not_a_socket_fails(buffer):
     with pytest.raises(TypeError, match=r"argument 1 must be SSLSocket"):
-        sabyenc3.unlocked_ssl_recv_into("this is not a socket", buffer)
+        sabctools.unlocked_ssl_recv_into("this is not a socket", buffer)
 
 
 def test_unlocked_ssl_recv_into_not_a_buffer_fails(client):
@@ -297,7 +297,7 @@ def test_unlocked_ssl_recv_into_bulk_response(client):
 
     while size > 0:
         try:
-            count = sabyenc3.unlocked_ssl_recv_into(client, buffer)
+            count = sabctools.unlocked_ssl_recv_into(client, buffer)
         except ssl.SSLWantReadError:
             select.select([client], [], [])
             # Give the sender some more time to complete sending.
