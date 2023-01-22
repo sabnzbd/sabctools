@@ -649,9 +649,6 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
         goto finish;
     }
 
-    // Lift the GIL
-    Py_BEGIN_ALLOW_THREADS;
-
     /*
      ANALYZE HEADER
      Always in the same format, e.g.:
@@ -664,7 +661,6 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
     // Start of header
     start_loc = my_memstr(cur_char, end_loc - cur_char, "=ybegin", 1);
     if (!start_loc) {
-        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Invalid yEnc header");
         retval = NULL;
         goto finish;
@@ -673,7 +669,6 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
     // Find start of the filename
     start_loc = my_memstr(start_loc, end_loc - start_loc, " name=", 1);
     if (!start_loc) {
-        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
         retval = NULL;
         goto finish;
@@ -703,7 +698,6 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
     }
     cur_char = my_memstr(cur_char, end_loc - cur_char, "\r\n=yend", 0);
     if (!cur_char) {
-        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Invalid yEnc footer");
         retval = NULL;
         goto finish;
@@ -724,11 +718,13 @@ PyObject* decode_buffer(PyObject* self, PyObject* Py_bytesarray_obj) {
         crc_yenc = strtoul(crc_pos, NULL, 16);
     } else {
         // CRC32 not found - article is invalid
-        Py_BLOCK_THREADS;
         PyErr_SetString(PyExc_ValueError, "Invalid CRC in footer");
         retval = NULL;
         goto finish;
     }
+
+    // Lift the GIL
+    Py_BEGIN_ALLOW_THREADS;
 
     // send to decoder
     YencDecoderState state = YDEC_STATE_CRLF;
