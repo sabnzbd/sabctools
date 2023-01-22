@@ -24,7 +24,7 @@ import pickle
 from typing import Tuple, Optional
 
 import chardet
-import sabyenc3
+import sabctools
 
 
 def correct_unknown_encoding(str_or_bytes_in):
@@ -65,8 +65,8 @@ def read_pickle(filename):
     return bytearray(b"".join(data_chunks))
 
 
-def sabyenc3_wrapper(data: bytearray) -> Tuple[bytearray, str, Optional[int]]:
-    filename, crc_correct = sabyenc3.decode_buffer(data)
+def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, Optional[int]]:
+    filename, crc_correct = sabctools.yenc_decode(data)
     return data, correct_unknown_encoding(filename), crc_correct
 
 

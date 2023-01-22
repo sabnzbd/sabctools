@@ -1,5 +1,5 @@
 import pytest
-import sabyenc3
+import sabctools
 
 
 @pytest.mark.parametrize(
@@ -16,7 +16,7 @@ import sabyenc3
     ],
 )
 def test_crc32_combine_expected(crc1, crc2, len2, expected):
-    assert sabyenc3.crc32_combine(crc1, crc2, len2) == expected
+    assert sabctools.crc32_combine(crc1, crc2, len2) == expected
 
 
 @pytest.mark.parametrize(
@@ -31,7 +31,7 @@ def test_crc32_combine_expected(crc1, crc2, len2, expected):
     ],
 )
 def test_crc32_multiply_expected(crc1, crc2, expected):
-    assert sabyenc3.crc32_multiply(crc1, crc2) == expected
+    assert sabctools.crc32_multiply(crc1, crc2) == expected
 
 
 @pytest.mark.parametrize(
@@ -44,7 +44,7 @@ def test_crc32_multiply_expected(crc1, crc2, expected):
     ],
 )
 def test_crc32_zero_unpad_expected(crc1, zeroes, expected):
-    assert sabyenc3.crc32_zero_unpad(crc1, zeroes) == expected
+    assert sabctools.crc32_zero_unpad(crc1, zeroes) == expected
 
 
 @pytest.mark.parametrize(
@@ -60,7 +60,7 @@ def test_crc32_zero_unpad_expected(crc1, zeroes, expected):
     ],
 )
 def test_crc32_xpown_expected(n, expected):
-    assert sabyenc3.crc32_xpown(n) == expected
+    assert sabctools.crc32_xpown(n) == expected
 
 
 @pytest.mark.parametrize(
@@ -73,4 +73,4 @@ def test_crc32_xpown_expected(n, expected):
     ],
 )
 def test_crc32_xpow8n_expected(n, expected):
-    assert sabyenc3.crc32_xpow8n(n) == expected
+    assert sabctools.crc32_xpow8n(n) == expected

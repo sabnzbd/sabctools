@@ -1,36 +1,55 @@
-SABYenc 3 - yEnc decoding of usenet data using SIMD routines
-===============================
 
-Modification of the original [yenc](https://pypi.org/project/yenc/) module for use within SABnzbd.
-The module was extended to do header parsing and full yEnc decoding from a Python
-list of chunks, the way in which data is retrieved from Usenet.
-This is particularly beneficial when SSL is enabled, which limits the size of each chunk to 16K. Parsing these chunks in python is much more costly.
-Additionally, this module releases Python's GIL during decoding, greatly increasing performance of the overall download process.
+SABCTools - C implementations of functions for use within SABnzbd  
+===============================  
+  
+This module implements three main sets of C implementations that are used within SABnzbd:   
+* yEnc decoding and encoding using SIMD routines  
+* CRC32 calculations  
+* Non-blocking SSL-socket reading  
 
-Further improved by using [yencode](https://github.com/animetosho/node-yencode) from animetosho, which utilizes x86/ARM SIMD optimised routines if such CPU features are available.
+Of course, they can also be used in any other application.
 
-Installing
-===============================
-As simple as running:
-```
-pip install sabyenc3 --upgrade
-```
-When you want to compile from sources, you can run in the `sabyenc` directory:
-```
-pip install .
-```
+## yEnc decoding and encoding using SIMD routines  
+  
+yEnc decoding and encoding performed by using [yencode](https://github.com/animetosho/node-yencode) from animetosho,   
+which utilizes x86/ARM SIMD optimised routines if such CPU features are available.  
+  
+## CRC32 calculations
+We used the `crcutil` library for very fast CRC calculations.
 
-SIMD detection
-===============================
-To see which SIMD set was detected on your system, run:
-```
-python -c "import sabyenc3; print(sabyenc3.simd);"
-```
+## Non-blocking SSL-socket reading  
+When Python reads data from a non-blocking SSL socket, it is limited to receiving 16K data at once. This module implements a patched version that can read as much data is available at once.
+For more details, see the [cpython pull request](https://github.com/python/cpython/pull/31492).
+  
+# Installing  
+  
+As simple as running:  
+```  
+pip install sabctools --upgrade  
+```  
+When you want to compile from sources, you can run in the `sabctools` directory:  
+```  
+pip install .  
+```  
 
-Testing
-===============================
-For testing we use `pytest` (install via `pip install -r tests/requirements.txt`) and test can simply be executed by browsing to the `sabyenc` directory and running:
-```
-pytest
-```
-Note that tests can fail if `git` modified the line endings of data files when checking out the repository!
+## SIMD detection  
+
+To see which SIMD set was detected on your system, run:  
+```  
+python -c "import sabctools; print(sabctools.simd);"  
+```  
+  
+## OpenSSL detection  
+
+To see if we could link to OpenSSL library on your system, run:  
+```  
+python -c "import sabctools; print(sabctools.openssl_linked);"  
+```  
+
+# Testing  
+  
+For testing we use `pytest` (install via `pip install -r tests/requirements.txt`) and test can simply be executed by browsing to the `sabctools` directory and running:  
+```  
+pytest  
+```  
+Note that tests can fail if `git` modified the line endings of data files when checking out the repository!  

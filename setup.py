@@ -1,25 +1,19 @@
 #!/usr/bin/python3 -OO
-# -*- coding: utf-8 -*-
-# ============================================================================
+# Copyright 2007-2022 The SABnzbd-Team <team@sabnzbd.org>
 #
-# Copyright (C) 2003, 2011 Alessandro Duca <alessandro.duca@gmail.com>
-# Modified in 2016 by Safihre <safihre@sabnzbd.org> for use within SABnzbd
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
 #
-# This library is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Lesser General Public
-# License as published by the Free Software Foundation; either
-# version 2.1 of the License, or (at your option) any later version.
-#
-# This library is distributed in the hope that it will be useful,
+# This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Lesser General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-# =============================================================================
-#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import os
 import sys
@@ -76,7 +70,7 @@ def autoconf_check(
     return True
 
 
-class SAByEncBuild(build_ext):
+class SABCToolsBuild(build_ext):
     def build_extension(self, ext: Extension):
         # Try to determine the architecture to build for
         machine = platform.machine().lower()
@@ -286,6 +280,12 @@ class SAByEncBuild(build_ext):
             },
             {
                 "sources": [
+                    "src/yenc.cc",
+                ],
+                "gcc_flags": ["-Wno-unused-parameter"],
+            },
+            {
+                "sources": [
                     "src/unlocked_ssl.cc",
                 ],
                 "gcc_flags": ["-Wno-unused-parameter", "-Wno-missing-field-initializers"],
@@ -328,10 +328,10 @@ class SAByEncBuild(build_ext):
 
         # attach to Extension
         ext.extra_link_args = ldflags + compiled_objects
-        ext.depends = ["src/sabyenc3.h", "src/unlocked_ssl.h"] + compiled_objects
+        ext.depends = ["src/sabctools.h"] + compiled_objects
 
         # proceed with regular Extension build
-        super(SAByEncBuild, self).build_extension(ext)
+        super(SABCToolsBuild, self).build_extension(ext)
 
 
 # Load description
@@ -339,24 +339,24 @@ with open("README.md", "r") as file_long_description:
     long_description = file_long_description.read()
 
 # Parse the version from the C sources
-with open("src/sabyenc3.h", "r") as sabyenc_h:
-    version = re.findall('#define SABYENC_VERSION +"([0-9xA-Z_.]+)"?', sabyenc_h.read())[0]
+with open("src/sabctools.h", "r") as sabctools_h:
+    version = re.findall('#define SABCTOOLS_VERSION +"([0-9xA-Z_.]+)"?', sabctools_h.read())[0]
 
 setup(
-    name="sabyenc3",
+    name="sabctools",
     version=version,
     author="Safihre",
     author_email="safihre@sabnzbd.org",
-    url="https://github.com/sabnzbd/sabyenc/",
+    url="https://github.com/sabnzbd/sabctools/",
     license="LGPLv3",
-    package_dir={"sabyenc3": "src"},
+    package_dir={"sabctools": "src"},
     ext_modules=[
         Extension(
-            "sabyenc3",
-            ["src/sabyenc3.cc"],
+            "sabctools",
+            ["src/sabctools.cc"],
         )
     ],
-    cmdclass={"build_ext": SAByEncBuild},
+    cmdclass={"build_ext": SABCToolsBuild},
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3 :: Only",
@@ -368,7 +368,7 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Communications :: Usenet News",
     ],
-    description="yEnc decoding of usenet data using SIMD routines",
+    description="C implementations of functions for use within SABnzbd",
     long_description=long_description,
     long_description_content_type="text/markdown",
 )
