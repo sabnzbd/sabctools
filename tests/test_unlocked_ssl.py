@@ -168,13 +168,13 @@ class EchoServer(threading.Thread):
 
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             self.certfile = tmp.name
-            with open(self.certfile, 'w') as f:
+            with open(self.certfile, "w") as f:
                 f.write(cert)
                 f.close()
 
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             self.keyfile = tmp.name
-            with open(self.keyfile, 'w') as f:
+            with open(self.keyfile, "w") as f:
                 f.write(key)
                 f.close()
 
@@ -291,7 +291,7 @@ def test_unlocked_ssl_recv_into_bulk_response(client):
     size = 131072
     buffer = bytearray(size)
 
-    client.sendall(b'\xFF' * size)
+    client.sendall(b"\xFF" * size)
 
     select.select([client], [], [])
 
@@ -319,7 +319,7 @@ def test_unlocked_ssl_recv_into_blocking_socket_fails(client, buffer):
 
 def test_unlocked_ssl_recv_into_full_buffer_fails(client, buffer):
     with pytest.raises(ValueError, match="No space left in buffer"):
-        unlocked_ssl_recv_into_wrapper(client, b"TEST", buffer[len(buffer):])
+        unlocked_ssl_recv_into_wrapper(client, b"TEST", buffer[len(buffer) :])
 
 
 def test_unlocked_ssl_recv_into_ref_counts_unchanged(client, buffer):

@@ -56,9 +56,6 @@ for _ in range(5):
         decoded_data_new, output_filename, crc_correct = sabyenc3.decode_usenet_chunks(list_chunks[i])
     time1_new_disp = 1000 * (time.process_time() - time1_new)
 
-
-
-
     print("%15s  took  %4d ms" % ("yEnc C Current", time1_new_disp))
     print("%15s  took  %4d ms" % ("yEnc C Buffer", time2_new_disp))
     print("---")

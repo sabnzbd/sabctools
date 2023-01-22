@@ -1,3 +1,4 @@
+import sys
 import pytest
 import glob
 from tests.testsupport import *
@@ -54,6 +55,31 @@ def test_bad_size():
     with pytest.raises(ValueError) as excinfo:
         sabyenc3.decode_buffer(bytearray())
     assert "Invalid data length" in str(excinfo.value)
+
+
+def test_ref_counts():
+    """Note that sys.getrefcount itself adds another reference!"""
+    # Test regular case
+    data_plain = read_plain_yenc_file("test_regular.txt")
+    data_out, filename, crc_correct = sabyenc3_wrapper(data_plain)
+    # data_plain and data_out point to the same data!
+    assert sys.getrefcount(data_plain) == 3
+    assert sys.getrefcount(data_out) == 3
+    assert sys.getrefcount(filename) == 2
+    assert sys.getrefcount(crc_correct) == 2
+
+    # Test simple error case
+    fake_inp = bytearray(b"1234")
+    assert sys.getrefcount(fake_inp) == 2
+    with pytest.raises(ValueError):
+        sabyenc3.decode_buffer(fake_inp)
+    assert sys.getrefcount(fake_inp) == 2
+
+    # Test further processing
+    data_plain = read_plain_yenc_file("test_bad_crc_end.txt")
+    with pytest.raises(ValueError):
+        sabyenc3_wrapper(data_plain)
+    assert sys.getrefcount(data_plain) == 2
 
 
 def test_bad_filename_pickle():
