@@ -36,18 +36,7 @@
 /* The =yend line cannot be crazy long*/
 #define MAX_TAIL_BYTES      256
 
-/* Customized types */
-typedef unsigned long long uLong;
-typedef unsigned int uInt;
-typedef int Bool;
-
-/* Windows doesn't have strtoll */
-#if defined(_MSC_VER)
-#define strtoll _strtoi64
-#endif
-
 /* Functions */
-PyObject* decode_usenet_chunks(PyObject *, PyObject*);
 PyObject* decode_buffer(PyObject *, PyObject*);
 PyObject* encode(PyObject *, PyObject*);
 PyMODINIT_FUNC PyInit_sabyenc3(void);
