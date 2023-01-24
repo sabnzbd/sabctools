@@ -74,7 +74,7 @@ jobs:
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: '__token__'
-          TWINE_PASSWORD: ${{ secrets.PYPI_SABYENC_API_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_KEY }}
         if: env.TWINE_PASSWORD && startsWith(github.ref, 'refs/tags/')
         run: |
           pip install twine
