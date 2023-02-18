@@ -123,7 +123,13 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     // Extract filename
     cur_char = start_loc;
     for (; *cur_char != YENC_LF && *cur_char != YENC_CR && *cur_char != YENC_ZERO && cur_char < end_loc; cur_char++);
-    Py_output_filename = PyUnicode_DecodeLatin1(start_loc, cur_char - start_loc, NULL);
+    Py_output_filename = PyUnicode_DecodeUTF8(start_loc, cur_char - start_loc, NULL);
+
+    // In case it's invalid UTF8, we try the latin1 fallback
+    if (!Py_output_filename) {
+        PyErr_Clear();
+        Py_output_filename = PyUnicode_DecodeLatin1(start_loc, cur_char - start_loc, NULL);
+    }
 
     // Check for =ypart, so we know where to start with decoding
     start_loc = my_memstr(cur_char, end_loc - cur_char, "=ypart ", 1);
