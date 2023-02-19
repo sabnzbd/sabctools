@@ -25,6 +25,7 @@ jobs:
           pip install . -v
           python -c "import sabctools; print('Version:', sabctools.__version__);"
           python -c "import sabctools; print('SIMD:', sabctools.simd);"
+          python -c "import sabctools; print('OpenSSL linked:', sabctools.openssl_linked);"
           pytest
 
   build_wheels:
@@ -39,7 +40,7 @@ jobs:
           - os: macos-latest
           - os: ubuntu-latest
             linux_arch: x86_64
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             linux_arch: aarch64
 
     steps:
@@ -47,7 +48,7 @@ jobs:
       - uses: actions/setup-python@v4
         name: Install Python
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - name: Set up QEMU
         if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
         uses: docker/setup-qemu-action@v2
