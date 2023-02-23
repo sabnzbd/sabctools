@@ -94,7 +94,7 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     openssl_init();
 
     PyObject* m = PyModule_Create(&sabctools_definition);
-    PyModule_AddStringConstant(m, "__version__", SABCTOOLS_VERSION);
+    PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);
     PyModule_AddStringConstant(m, "simd", simd_detected());
 
     // Add status of linking OpenSSL function

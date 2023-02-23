@@ -349,10 +349,12 @@ setup(
     author_email="safihre@sabnzbd.org",
     url="https://github.com/sabnzbd/sabctools/",
     license="LGPLv3",
+    packages=["sabctools"],
     package_dir={"sabctools": "src"},
+    package_data={"sabctools": ["py.typed", "sabctools.pyi"]},
     ext_modules=[
         Extension(
-            "sabctools",
+            "sabctools.sabctools",
             ["src/sabctools.cc"],
         )
     ],
