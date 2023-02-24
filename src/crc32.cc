@@ -23,9 +23,9 @@ extern crcutil_interface::CRC *crc;
 
 PyObject* crc32_combine(PyObject *self, PyObject *args) {
     crcutil_interface::UINT64 crc1, crc2;
-    Py_ssize_t length;
+    unsigned long long length;
 
-    if(!PyArg_ParseTuple(args, "KKn:crc32_combine", &crc1, &crc2, &length)) {
+    if(!PyArg_ParseTuple(args, "KKK:crc32_combine", &crc1, &crc2, &length)) {
         return NULL;
     }
 
@@ -48,9 +48,9 @@ PyObject* crc32_multiply(PyObject *self, PyObject *args) {
 
 PyObject* crc32_zero_unpad(PyObject *self, PyObject *args) {
     crcutil_interface::UINT64 crc1;
-    Py_ssize_t length;
+    unsigned long long length;
 
-    if(!PyArg_ParseTuple(args, "Kn:crc32_zero_unpad", &crc1, &length)) {
+    if(!PyArg_ParseTuple(args, "KK:crc32_zero_unpad", &crc1, &length)) {
         return NULL;
     }
 
