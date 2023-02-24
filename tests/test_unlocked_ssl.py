@@ -133,7 +133,8 @@ class EchoServer(threading.Thread):
             self.sslconn.write(bytes)
 
         def close(self):
-            self.sslconn.close()
+            if self.sslconn:
+                self.sslconn.close()
 
         def run(self) -> None:
             self.running = True
