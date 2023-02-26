@@ -24,9 +24,7 @@ def test_special_chars():
     # We only compare the data and the filename
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
-    data_plain = bytearray(
-        b"=ybegin part=1 total=1 line=128 size=6 name=Hi Kingdom \xe4\xbd\xa0\xe5\xa5\xbd\xe4\xb8\x96\xe7\x95\x8c.yenc\r\n=ypart begin=1 end=6\r\nr\x8f\x96\x96\x994\r\n=yend size=6 part=1 pcrc32=31963516 crc32=31963516\r\n"
-    )
+    data_plain = read_plain_yenc_file("test_special_utf8_chars.yenc")
     # We only compare the data and the filename
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
