@@ -65,9 +65,9 @@ def read_pickle(filename):
     return bytearray(b"".join(data_chunks))
 
 
-def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, Optional[int]]:
-    filename, crc_correct = sabctools.yenc_decode(data)
-    return data, correct_unknown_encoding(filename), crc_correct
+def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, Optional[int]]:
+    filename, begin, end, crc_correct = sabctools.yenc_decode(data)
+    return data, correct_unknown_encoding(filename), begin, end, crc_correct
 
 
 def python_yenc(data_plain):
@@ -101,7 +101,15 @@ def python_yenc(data_plain):
     translate_table = bytes.maketrans(from_bytes, to_bytes)
     decoded_data = flat_yenc_data.translate(translate_table)
 
-    return decoded_data, ybegin["name"], binascii.crc32(decoded_data)
+    # Detect begin and ending
+    begin = end = 0
+    if ypart:
+        if begin := ypart.get("begin"):
+            begin = int(begin)
+        if end := ypart.get("end"):
+            end = int(end)
+
+    return decoded_data, ybegin["name"], begin, end, binascii.crc32(decoded_data)
 
 
 def parse_yenc_data(data):
