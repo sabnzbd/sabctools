@@ -1,5 +1,12 @@
 /*
- * Copyright 2007-2023 The SABnzbd-Team <team@sabnzbd.org>
+ * This code was largely copied from cpython's ssl.c:
+ * Copyright 2001-2022 Python Software Foundation
+ * Licensed under the PSF LICENSE AGREEMENT FOR PYTHON 3.11.1,
+ * see https://docs.python.org/3/license.html
+ *
+ * With modifications:
+ * Copyright 2023 The SABnzbd-Team <team@sabnzbd.org>
+ * Licensed under the GNU GPL version 2 or later.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,12 +22,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
-
-/*
-    This code was largely copied from from cpython's ssl.c
-    It is licenced under the PSF Licence Agreement
-    https://docs.python.org/3/license.html
-*/
 
 #include "unlocked_ssl.h"
 
