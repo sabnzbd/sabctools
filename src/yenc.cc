@@ -73,6 +73,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     size_t output_len;
     unsigned long long part_begin = 0;
     unsigned long long part_end = 0;
+    unsigned long long part_size = 0;
     const char* crc_pos;
 
     // Verify it's a bytearray
@@ -144,6 +145,15 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         if (start_loc) {
             part_end = atoll(start_loc);
         }
+
+        // Get the size and sanity check the values
+        part_size = part_end - part_begin + 1;
+        if(part_end > part_begin && part_size > 0 && part_size <= 10*1024*1024) {
+            part_begin = part_begin - 1;
+        } else {
+            part_size = part_end = part_begin = 0;
+        }
+
         // Move to end of this line
         cur_char = start_loc;
         for (; *cur_char != YENC_LF && *cur_char != YENC_CR && *cur_char != YENC_ZERO && cur_char < end_loc; cur_char++);
@@ -205,7 +215,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     }
 
     // Build output
-    retval = Py_BuildValue("(S, K, K, N)", Py_output_filename, part_begin, part_end, Py_output_crc);
+    retval = Py_BuildValue("(S, K, K, N)", Py_output_filename, part_begin, part_size, Py_output_crc);
 
 finish:
     Py_XDECREF(Py_output_filename);

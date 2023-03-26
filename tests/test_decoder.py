@@ -13,10 +13,10 @@ def test_regular():
 
 def test_partial():
     data_plain = read_plain_yenc_file("test_partial.yenc")
-    decoded_data, filename, begin, end, crc_correct = sabctools_yenc_wrapper(data_plain)
+    decoded_data, filename, begin, size, crc_correct = sabctools_yenc_wrapper(data_plain)
     assert filename == "90E2Sdvsmds0801dvsmds90E.part06.rar"
-    assert begin == 15360001
-    assert end == 15744000
+    assert begin == 15360000
+    assert size == 384000
     assert crc_correct is None
     assert len(decoded_data) == 549
 
