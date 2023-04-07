@@ -20,6 +20,7 @@
 #include "yenc.h"
 #include "unlocked_ssl.h"
 #include "crc32.h"
+#include "sparse.h"
 
 /* Function and exception declarations */
 PyMODINIT_FUNC PyInit_sabctools(void);
@@ -73,6 +74,12 @@ static PyMethodDef sabctools_methods[] = {
         crc32_xpow8n,
         METH_O,
         "crc32_xpow8n(n)"
+    },
+    {
+        "sparse",
+        sparse,
+        METH_VARARGS,
+        "sparse(handle, length)"
     },
     {NULL, NULL, 0, NULL}
 };
