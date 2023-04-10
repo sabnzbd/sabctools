@@ -83,7 +83,6 @@ PyObject *sparse(PyObject *self, PyObject *args)
 
     if (!(Py_file_truncate = PyObject_CallMethod(Py_file, "truncate", "(L)", length)))
     {
-        PyErr_SetString(PyExc_SystemError, "Error calling truncate function.");
         goto error;
     }
 #endif
