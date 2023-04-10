@@ -18,8 +18,6 @@
 
 #include "sparse.h"
 
-#define MAX_FILE_SIZE 17592185978880 // 16TiB
-
 PyObject *Py_msvcrt_module = NULL;
 PyObject *get_osfhandle_string = NULL;
 
@@ -43,12 +41,6 @@ PyObject *sparse(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "OL:sparse", &Py_file, &length))
     {
         return NULL;
-    }
-
-    if (length > MAX_FILE_SIZE)
-    {
-        PyErr_SetString(PyExc_ValueError, "Requested length is invalid.");
-        goto error;
     }
 
 #if defined(_WIN32) || defined(__CYGWIN__)
