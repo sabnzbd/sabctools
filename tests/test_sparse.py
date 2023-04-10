@@ -9,20 +9,20 @@ from tests.testsupport import *
 
 
 def test_sparse():
-    with tempfile.NamedTemporaryFile(delete=False) as file:
-        try:
-            sabctools.sparse(file, 100)
-            file.close()
-
-            assert os.path.getsize(file.name) == 100
-            assert is_sparse(file) is True
-        finally:
-            os.unlink(file.name)
+    file = tempfile.NamedTemporaryFile(delete=False)
+    try:
+        sabctools.sparse(file, 100)
+        assert os.path.getsize(file.name) == 100
+        assert is_sparse(file) is True
+    finally:
+        os.unlink(file.name)
 
 
 def is_sparse(file: IO) -> bool:
-    """Is the whole file a hole"""
+    """Is the file sparse?
+    On Windows this closes the file"""
     if sys.platform == "win32":
+        file.close()
         return b"This file is set as sparse" in subprocess.run(
             ["fsutil", "sparse", "queryflag", file.name],
             capture_output=True
