@@ -15,6 +15,7 @@ def test_sparse():
         assert os.path.getsize(file.name) == 100
         assert is_sparse(file) is True
     finally:
+        file.close()
         os.unlink(file.name)
 
 
