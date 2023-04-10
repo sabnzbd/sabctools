@@ -36,7 +36,7 @@ PyObject *sparse(PyObject *self, PyObject *args)
         return NULL;
     }
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__CYGWIN__)
     // Get the windows file handle and set file attributes to sparse
 
     if (!(Py_file_fileno_function = PyObject_GetAttrString(Py_file, "fileno")))
