@@ -19,14 +19,12 @@
 #include "sparse.h"
 
 PyObject *Py_msvcrt_module = NULL;
-PyObject *fileno_string = NULL;
 PyObject *get_osfhandle_string = NULL;
 
 void sparse_init()
 {
 #if defined(_WIN32) || defined(__CYGWIN__)
     Py_msvcrt_module = PyImport_ImportModule("msvcrt");
-    fileno_string = PyUnicode_FromString("fileno");
     get_osfhandle_string = PyUnicode_FromString("get_osfhandle");
 #endif
 }
@@ -54,7 +52,7 @@ PyObject *sparse(PyObject *self, PyObject *args)
         goto error;
     }
 
-    if (!(Py_file_fileno = PyObject_CallMethodObjArgs(Py_file, fileno_string, NULL)))
+    if (!(Py_file_fileno = PyObject_CallMethod(Py_file, "fileno", NULL)))
     {
         PyErr_SetString(PyExc_SystemError, "Error calling fileno function.");
         goto error;
