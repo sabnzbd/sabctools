@@ -99,6 +99,7 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     decoder_init();
     crc_init();
     openssl_init();
+    sparse_init();
 
     PyObject* m = PyModule_Create(&sabctools_definition);
     PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);

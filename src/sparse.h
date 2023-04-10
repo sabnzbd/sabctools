@@ -25,6 +25,7 @@
 #include <Windows.h>
 #endif
 
-PyObject* sparse(PyObject *, PyObject*);
+void sparse_init();
+PyObject *sparse(PyObject *, PyObject *);
 
 #endif //SABCTOOLS_SPARSE_H

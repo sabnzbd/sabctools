@@ -18,18 +18,27 @@
 
 #include "sparse.h"
 
+PyObject *Py_msvcrt_module = NULL;
+PyObject *fileno_string = NULL;
+PyObject *get_osfhandle_string = NULL;
+
+void sparse_init()
+{
+#if defined(_WIN32) || defined(__CYGWIN__)
+    Py_msvcrt_module = PyImport_ImportModule("msvcrt");
+    fileno_string = PyUnicode_FromString("fileno");
+    get_osfhandle_string = PyUnicode_FromString("get_osfhandle");
+#endif
+}
+
 PyObject *sparse(PyObject *self, PyObject *args)
 {
     PyObject *Py_file;
-    PyObject *Py_file_fileno_function = NULL;
-    PyObject *Py_file_fileno = NULL;
-    PyObject *Py_msvcrt_module = NULL;
-    PyObject *Py_get_osfhandle_function = NULL;
-    PyObject *Py_get_osfhandle_args = NULL;
-    PyObject *Py_file_handle = NULL;
-    PyObject *Py_file_truncate_function = NULL;
-    PyObject *Py_file_truncate = NULL;
     long long length;
+
+    PyObject *Py_file_fileno = NULL;
+    PyObject *Py_file_handle = NULL;
+    PyObject *Py_file_truncate = NULL;
 
     if (!PyArg_ParseTuple(args, "OL:sparse", &Py_file, &length))
     {
@@ -39,31 +48,19 @@ PyObject *sparse(PyObject *self, PyObject *args)
 #if defined(_WIN32) || defined(__CYGWIN__)
     // Get the windows file handle and set file attributes to sparse
 
-    if (!(Py_file_fileno_function = PyObject_GetAttrString(Py_file, "fileno")))
+    if (Py_msvcrt_module == NULL)
     {
-        PyErr_SetString(PyExc_TypeError, "Object does not have a fileno function.");
+        PyErr_SetString(PyExc_SystemError, "msvcrt module not loaded.");
         goto error;
     }
 
-    if (!(Py_file_fileno = PyObject_CallObject(Py_file_fileno_function, NULL)))
+    if (!(Py_file_fileno = PyObject_CallMethodObjArgs(Py_file, fileno_string, NULL)))
     {
         PyErr_SetString(PyExc_SystemError, "Error calling fileno function.");
         goto error;
     }
 
-    if (!(Py_msvcrt_module = PyImport_ImportModule("msvcrt")))
-    {
-        goto error;
-    }
-
-    if (!(Py_get_osfhandle_function = PyObject_GetAttrString(Py_msvcrt_module, "get_osfhandle")))
-    {
-        PyErr_SetString(PyExc_SystemError, "Failed to get get_osfhandle function.");
-        goto error;
-    }
-
-    Py_get_osfhandle_args = Py_BuildValue("(O)", Py_file_fileno);
-    if (!(Py_file_handle = PyObject_CallObject(Py_get_osfhandle_function, Py_get_osfhandle_args)))
+    if (!(Py_file_handle = PyObject_CallMethodObjArgs(Py_msvcrt_module, get_osfhandle_string, Py_file_fileno, NULL)))
     {
         PyErr_SetString(PyExc_SystemError, "Failed calling get_osfhandle function.");
         goto error;
@@ -81,13 +78,7 @@ PyObject *sparse(PyObject *self, PyObject *args)
 #else
     // Call file.truncate(length)
 
-    if (!(Py_file_truncate_function = PyObject_GetAttrString(Py_file, "truncate")))
-    {
-        PyErr_SetString(PyExc_TypeError, "Object does not have a truncate function.");
-        goto error;
-    }
-
-    if (!(Py_file_truncate = PyObject_CallObject(Py_file_truncate_function, Py_BuildValue("(L)", length))))
+    if (!(Py_file_truncate = PyObject_CallMethod(Py_file, "truncate", "(L)", length)))
     {
         PyErr_SetString(PyExc_SystemError, "Error calling truncate function.");
         goto error;
@@ -95,24 +86,14 @@ PyObject *sparse(PyObject *self, PyObject *args)
 #endif
 
 done:
-    Py_XDECREF(Py_file_fileno_function);
     Py_XDECREF(Py_file_fileno);
-    Py_XDECREF(Py_msvcrt_module);
-    Py_XDECREF(Py_get_osfhandle_function);
-    Py_XDECREF(Py_get_osfhandle_args);
     Py_XDECREF(Py_file_handle);
-    Py_XDECREF(Py_file_truncate_function);
     Py_XDECREF(Py_file_truncate);
     Py_RETURN_NONE;
 
 error:
-    Py_XDECREF(Py_file_fileno_function);
     Py_XDECREF(Py_file_fileno);
-    Py_XDECREF(Py_msvcrt_module);
-    Py_XDECREF(Py_get_osfhandle_function);
-    Py_XDECREF(Py_get_osfhandle_args);
     Py_XDECREF(Py_file_handle);
-    Py_XDECREF(Py_file_truncate_function);
     Py_XDECREF(Py_file_truncate);
     return NULL;
 }
