@@ -29,15 +29,4 @@ def is_sparse(file: IO) -> bool:
             capture_output=True
         ).stdout
 
-    # Starts with a hole
-    if file.seek(0, os.SEEK_HOLE) != 0:
-        return False
-
-    # An empty sparse file should have no data
-    try:
-        file.seek(0, os.SEEK_DATA)
-    except OSError as e:
-        if e.errno == errno.ENXIO:
-            return True
-
-    return False
+    return os.stat(file.name).st_blocks * 512 < os.path.getsize(file.name)
