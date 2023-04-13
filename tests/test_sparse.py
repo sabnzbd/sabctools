@@ -1,8 +1,8 @@
-import errno
 import os
 import subprocess
 import sys
 import tempfile
+import pytest
 from typing import IO
 
 from tests.testsupport import *
@@ -18,6 +18,19 @@ def test_sparse():
         file.close()
         os.unlink(file.name)
 
+@pytest.mark.parametrize(
+    "length,position",
+    [
+        (1024, 0),
+        (1024, 512),
+        (1024, 4096),
+    ],
+)
+def test_sparse_position_expected(length, position):
+    with tempfile.TemporaryFile() as file:
+        file.seek(position)
+        sabctools.sparse(file, length)
+        assert file.tell() == position
 
 def is_sparse(file: IO) -> bool:
     """Is the file sparse?
