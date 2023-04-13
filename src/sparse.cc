@@ -68,15 +68,16 @@ PyObject *sparse(PyObject *self, PyObject *args)
 
     // Creating a sparse file may fail but that's OK
     DWORD bytesReturned;
-    DeviceIoControl(handle, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesReturned, nullptr);
-
-    // Increase the file length without writing any data
-    LARGE_INTEGER li_size;
-    li_size.QuadPart = length;
-    if (!SetFilePointerEx(handle, li_size, nullptr, FILE_END) || !SetEndOfFile(handle))
+    if (DeviceIoControl(handle, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesReturned, nullptr))
     {
-        PyErr_SetFromWindowsErr(0);
-        goto error;
+        // Increase the file length without writing any data
+        LARGE_INTEGER li_size;
+        li_size.QuadPart = length;
+        if (!SetFilePointerEx(handle, li_size, nullptr, FILE_END) || !SetEndOfFile(handle))
+        {
+            PyErr_SetFromWindowsErr(0);
+            goto error;
+        }
     }
 #else
     // Call file.truncate(length)
