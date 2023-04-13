@@ -70,10 +70,11 @@ PyObject *sparse(PyObject *self, PyObject *args)
     DWORD bytesReturned;
     if (DeviceIoControl(handle, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesReturned, nullptr))
     {
-        // Increase the file length without writing any data
+        // Increase the file length without writing any data and seek back to the original position
         LARGE_INTEGER li_size;
         li_size.QuadPart = length;
-        if (!SetFilePointerEx(handle, li_size, nullptr, FILE_END) || !SetEndOfFile(handle))
+        LARGE_INTEGER li_start = {0};
+        if (!SetFilePointerEx(handle, {0}, &li_start, FILE_CURRENT) || !SetFilePointerEx(handle, li_size, nullptr, FILE_END) || !SetEndOfFile(handle) || !SetFilePointerEx(handle, li_start, nullptr, FILE_BEGIN))
         {
             PyErr_SetFromWindowsErr(0);
             goto error;
