@@ -148,7 +148,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
 
         // Get the size and sanity check the values
         part_size = part_end - part_begin + 1;
-        if(part_end > part_begin && part_size > 0 && part_size <= 10*1024*1024) {
+        if(part_end > part_begin && part_size > 0 && part_size <= YENC_MAX_PART_SIZE) {
             part_begin = part_begin - 1;
         } else {
             part_size = part_end = part_begin = 0;

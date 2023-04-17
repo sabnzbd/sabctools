@@ -32,8 +32,11 @@
 #define YENC_CR          0x0d
 #define YENC_LF          0x0a
 
-/* The =yend line cannot be crazy long*/
+/* The =yend line cannot be crazy long */
 #define YENC_MAX_TAIL_BYTES 256
+
+/* Prevent strange yEnc sizes */
+#define YENC_MAX_PART_SIZE 10*1024*1024
 
 /* Functions */
 PyObject* yenc_decode(PyObject *, PyObject*);
