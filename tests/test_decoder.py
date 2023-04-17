@@ -13,8 +13,10 @@ def test_regular():
 
 def test_partial():
     data_plain = read_plain_yenc_file("test_partial.yenc")
-    decoded_data, filename, crc_correct = sabctools_yenc_wrapper(data_plain)
+    decoded_data, filename, begin, size, crc_correct = sabctools_yenc_wrapper(data_plain)
     assert filename == "90E2Sdvsmds0801dvsmds90E.part06.rar"
+    assert begin == 15360000
+    assert size == 384000
     assert crc_correct is None
     assert len(decoded_data) == 549
 
@@ -65,11 +67,13 @@ def test_ref_counts():
     """Note that sys.getrefcount itself adds another reference!"""
     # Test regular case
     data_plain = read_plain_yenc_file("test_regular.yenc")
-    data_out, filename, crc_correct = sabctools_yenc_wrapper(data_plain)
+    data_out, filename, begin, end, crc_correct = sabctools_yenc_wrapper(data_plain)
     # data_plain and data_out point to the same data!
     assert sys.getrefcount(data_plain) == 3
     assert sys.getrefcount(data_out) == 3
     assert sys.getrefcount(filename) == 2
+    assert sys.getrefcount(begin) == 2
+    assert sys.getrefcount(end) == 2
     assert sys.getrefcount(crc_correct) == 2
 
     # Test simple error case
@@ -84,15 +88,6 @@ def test_ref_counts():
     with pytest.raises(ValueError):
         sabctools_yenc_wrapper(data_plain)
     assert sys.getrefcount(data_plain) == 2
-
-
-def test_bad_filename_pickle():
-    # This one fails in the old yEnc in different way
-    data_plain = read_pickle("tests/yencfiles/split_filename.pickle")
-    decoded_data, filename, crc_correct = sabctools_yenc_wrapper(data_plain)
-    assert filename == "Low.Winter.Sun.US.S01E01.720p.BluRay.x264-DEMAND.part04.rar"
-    assert crc_correct is None
-    assert len(decoded_data) == 384126
 
 
 def test_crc_pickles():

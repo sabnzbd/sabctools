@@ -61,7 +61,6 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     Py_buffer Py_buffer_obj;
     PyObject *Py_output_filename = NULL;
     PyObject *Py_output_crc = NULL;
-    int data_length;
 
     // Used buffers
     char *cur_char = NULL;
@@ -72,6 +71,9 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     uint32_t crc_yenc = 0;
     size_t yenc_data_length;
     size_t output_len;
+    unsigned long long part_begin = 0;
+    unsigned long long part_end = 0;
+    unsigned long long part_size = 0;
     const char* crc_pos;
 
     // Verify it's a bytearray
@@ -131,9 +133,27 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         Py_output_filename = PyUnicode_DecodeLatin1(start_loc, cur_char - start_loc, NULL);
     }
 
-    // Check for =ypart, so we know where to start with decoding
+    // Check for =ypart in order to get begin/end
     start_loc = my_memstr(cur_char, end_loc - cur_char, "=ypart ", 1);
     if (start_loc) {
+        // Should be right after the "=part"
+        start_loc = my_memstr(start_loc, end_loc - start_loc, "begin=", 1);
+        if (start_loc) {
+            part_begin = atoll(start_loc);
+        }
+        start_loc = my_memstr(start_loc, end_loc - start_loc, "end=", 1);
+        if (start_loc) {
+            part_end = atoll(start_loc);
+        }
+
+        // Get the size and sanity check the values
+        part_size = part_end - part_begin + 1;
+        if(part_end > part_begin && part_size > 0 && part_size <= 10*1024*1024) {
+            part_begin = part_begin - 1;
+        } else {
+            part_size = part_end = part_begin = 0;
+        }
+
         // Move to end of this line
         cur_char = start_loc;
         for (; *cur_char != YENC_LF && *cur_char != YENC_CR && *cur_char != YENC_ZERO && cur_char < end_loc; cur_char++);
@@ -195,7 +215,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     }
 
     // Build output
-    retval = Py_BuildValue("(S, N)", Py_output_filename, Py_output_crc);
+    retval = Py_BuildValue("(S, K, K, N)", Py_output_filename, part_begin, part_size, Py_output_crc);
 
 finish:
     Py_XDECREF(Py_output_filename);
