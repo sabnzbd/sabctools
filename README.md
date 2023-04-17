@@ -6,11 +6,11 @@ This module implements three main sets of C implementations that are used within
 * yEnc decoding and encoding using SIMD routines  
 * CRC32 calculations  
 * Non-blocking SSL-socket reading  
+* Marking files as sparse
 
 Of course, they can also be used in any other application.
 
-## yEnc decoding and encoding using SIMD routines  
-  
+## yEnc decoding and encoding using SIMD routines
 yEnc decoding and encoding performed by using [yencode](https://github.com/animetosho/node-yencode) from animetosho,   
 which utilizes x86/ARM SIMD optimised routines if such CPU features are available.  
   
@@ -20,6 +20,10 @@ We used the `crcutil` library for very fast CRC calculations.
 ## Non-blocking SSL-socket reading  
 When Python reads data from a non-blocking SSL socket, it is limited to receiving 16K data at once. This module implements a patched version that can read as much data is available at once.
 For more details, see the [cpython pull request](https://github.com/python/cpython/pull/31492).
+
+## Marking files as sparse
+Uses Windows specific system calls to mark files as sparse and set the desired size.
+On other platforms the same is achieved by calling `truncate`.
   
 # Installing  
   
