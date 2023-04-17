@@ -298,6 +298,12 @@ class SABCToolsBuild(build_ext):
                 "gcc_flags": ["-Wno-unused-parameter"],
                 "include_dirs": ["src/crcutil-1.0/code", "src/crcutil-1.0/examples"],
             },
+            {
+                "sources": [
+                    "src/sparse.cc",
+                ],
+                "gcc_flags": ["-Wno-unused-parameter"],
+            },
         ]:
             args = {
                 "sources": source_files["sources"],

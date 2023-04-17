@@ -16,12 +16,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+#ifndef SABCTOOLS_SPARSE_H
+#define SABCTOOLS_SPARSE_H
+
 #include <Python.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <string.h>
 
-/* Version information */
-#define SABCTOOLS_VERSION "7.0.0"
+#if defined(_WIN32) || defined(__CYGWIN__)
+#include <Windows.h>
+#endif
 
-PyMODINIT_FUNC PyInit_sabctools(void);
+void sparse_init();
+PyObject *sparse(PyObject *, PyObject *);
+
+#endif //SABCTOOLS_SPARSE_H
