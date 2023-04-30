@@ -4,13 +4,18 @@ on: [push, pull_request]
 
 jobs:
   ci:
-    name: Tests ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    name: Tests ${{ matrix.os }} ${{ matrix.python-architecture }} - Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
         python-version: [ "3.8", "3.9", "3.10", "3.11" ]
+        python-architecture: [ "x64" ]
+        include:
+          - os: windows-latest
+            python-architecture: "x86"
+            python-version: "3.8"
 
     steps:
       - uses: actions/checkout@v3
@@ -18,6 +23,7 @@ jobs:
         name: Install Python
         with:
           python-version: ${{ matrix.python-version }}
+          architecture:  ${{ matrix.python-architecture }}
       - name: Build module and run pytest
         run: |
           pip install wheel setuptools
