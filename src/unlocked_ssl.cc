@@ -25,9 +25,9 @@
 
 #include "unlocked_ssl.h"
 
-static int (SABCTOOLS_DLL_CALL *SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
-static int (SABCTOOLS_DLL_CALL *SSL_get_error)(void*, int) = NULL;
-static int (SABCTOOLS_DLL_CALL *SSL_get_shutdown)(void*) = NULL;
+static int (*SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
+static int (*SSL_get_error)(void*, int) = NULL;
+static int (*SSL_get_shutdown)(void*) = NULL;
 static PyObject *SSLWantReadError = NULL;
 static PyObject *SSLSocketType = NULL;
 
