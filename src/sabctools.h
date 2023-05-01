@@ -22,6 +22,6 @@
 #include <string.h>
 
 /* Version information */
-#define SABCTOOLS_VERSION "7.0.1"
+#define SABCTOOLS_VERSION "7.0.2"
 
 PyMODINIT_FUNC PyInit_sabctools(void);
