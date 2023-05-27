@@ -71,6 +71,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     uint32_t crc_yenc = 0;
     size_t yenc_data_length;
     size_t output_len;
+    unsigned long long file_size = 0;
     unsigned long long part_begin = 0;
     unsigned long long part_end = 0;
     unsigned long long part_size = 0;
@@ -112,6 +113,12 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         PyErr_SetString(PyExc_ValueError, "Invalid yEnc header");
         retval = NULL;
         goto finish;
+    }
+    
+    // Get the size of the reconstructed file
+    start_loc = my_memstr(start_loc, end_loc - start_loc, "size=", 1);
+    if (start_loc) {
+        file_size = atoll(start_loc);
     }
 
     // Find start of the filename
@@ -215,7 +222,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     }
 
     // Build output
-    retval = Py_BuildValue("(S, K, K, N)", Py_output_filename, part_begin, part_size, Py_output_crc);
+    retval = Py_BuildValue("(S, K, K, K, N)", Py_output_filename, file_size, part_begin, part_size, Py_output_crc);
 
 finish:
     Py_XDECREF(Py_output_filename);
