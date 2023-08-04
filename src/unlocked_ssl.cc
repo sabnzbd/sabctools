@@ -5,7 +5,7 @@
  * see https://docs.python.org/3/license.html
  *
  * With modifications:
- * Copyright 2023 The SABnzbd-Team <team@sabnzbd.org>
+ * Copyright 2023 The SABnzbd-Team (sabnzbd.org)
  * Licensed under the GNU GPL version 2 or later.
  *
  * This program is free software; you can redistribute it and/or
