@@ -52,6 +52,11 @@ def test_no_filename():
     assert "Could not find yEnc filename" in str(excinfo.value)
 
 
+def test_padded_crc():
+    data_plain = read_plain_yenc_file("crc_2023.yenc")
+    assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
+
+
 def test_end_after_filename():
     data_plain = read_plain_yenc_file("test_end_after_filename.yenc")
     with pytest.raises(ValueError):
