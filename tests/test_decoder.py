@@ -53,7 +53,7 @@ def test_no_filename():
 
 
 def test_padded_crc():
-    data_plain = read_plain_yenc_file("crc_2023.yenc")
+    data_plain = read_plain_yenc_file("test_padded_crc.yenc")
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
