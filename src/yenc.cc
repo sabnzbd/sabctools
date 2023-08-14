@@ -194,7 +194,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
 
     // Parse CRC32
     if (crc_pos && (end_loc - crc_pos) >= 8) {
-        crc_yenc = strtoul(crc_pos, NULL, 16);
+        crc_yenc = strtoull(crc_pos, NULL, 16);
     } else {
         // CRC32 not found - article is invalid
         PyErr_SetString(PyExc_ValueError, "Invalid CRC in footer");
