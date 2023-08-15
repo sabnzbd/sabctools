@@ -194,6 +194,8 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
 
     // Parse CRC32
     if (crc_pos && (end_loc - crc_pos) >= 8) {
+        // Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
+        // This is necessary become some posts have malformed hashes
         crc_yenc = strtoull(crc_pos, NULL, 16);
     } else {
         // CRC32 not found - article is invalid
