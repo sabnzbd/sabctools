@@ -120,12 +120,12 @@ void openssl_init() {
     *(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
     *(void**)&SSL_get_shutdown = dlsym(openssl_handle, "SSL_get_shutdown");
 
-    error:
+error:
     if (!openssl_linked() && openssl_handle) dlclose(openssl_handle);
     Py_XDECREF(_ssl_module_path);
 #endif
 
-    cleanup:
+cleanup:
     Py_XDECREF(ssl_module);
     Py_XDECREF(_ssl_module);
     if (!openssl_linked()) {
@@ -223,11 +223,11 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
         goto error;
     }
 
-    done:
+done:
     Py_XDECREF(sock);
     return PyLong_FromSize_t(count);
 
-    error:
+error:
     Py_XDECREF(sock);
     return NULL;
 }
@@ -271,7 +271,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
 
     retval = unlocked_ssl_recv_into_impl((PySSLSocket*)Py_ssl_socket, len, &Py_buffer);
 
-    error:
+error:
     PyBuffer_Release(&Py_buffer);
     Py_XDECREF(Py_ssl_socket);
     Py_XDECREF(blocking);

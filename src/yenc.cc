@@ -45,6 +45,7 @@ static void* my_memmem(const void* haystack, size_t haystackLen, const void* nee
     }
     return p;
 }
+
 static inline char* my_memstr(const void* haystack, size_t haystackLen, const char* str, int pointToEnd) {
     size_t len = strlen(str);
     char* p = (char*)my_memmem(haystack, haystackLen, str, len);
@@ -52,7 +53,6 @@ static inline char* my_memstr(const void* haystack, size_t haystackLen, const ch
         return p + len;
     return p;
 }
-
 
 PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     // The input/output PyObjects
