@@ -89,7 +89,6 @@ PyObject *sparse(PyObject *self, PyObject *args)
     }
 #endif
 
-done:
     Py_XDECREF(Py_file_fileno);
     Py_XDECREF(Py_file_handle);
     Py_XDECREF(Py_file_truncate);
