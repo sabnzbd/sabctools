@@ -54,15 +54,17 @@ static inline char* my_memstr(const void* haystack, size_t haystackLen, const ch
     return p;
 }
 
-PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
+PyObject* yenc_decode(PyObject* self, PyObject* args) {
     // The input/output PyObjects
     (void)self;
+    PyObject *Py_bytesarray_obj;
     PyObject *retval = NULL;
     Py_buffer Py_buffer_obj;
     PyObject *Py_output_filename = NULL;
     PyObject *Py_output_crc = NULL;
 
     // Used buffers
+    size_t data_end = 0;;
     char *cur_char = NULL;
     char *start_loc = NULL;
     char *end_loc = NULL;
@@ -77,9 +79,8 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     unsigned long long part_size = 0;
     const char* crc_pos;
 
-    // Verify it's a bytearray
-    if (!PyByteArray_Check(Py_bytesarray_obj)) {
-        PyErr_SetString(PyExc_TypeError, "Expected bytearray");
+     // Parse input
+    if (!PyArg_ParseTuple(args, "Yn:yenc_decode", &Py_bytesarray_obj, &data_end)) {
         return NULL;
     }
 
@@ -88,11 +89,11 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     }
 
     dest_loc = cur_char = (char*)Py_buffer_obj.buf;
-    end_loc = dest_loc + Py_buffer_obj.len;
-    output_len = Py_buffer_obj.len;
+    end_loc = dest_loc + data_end;
+    output_len = data_end;
 
     // Check for valid size
-    if (Py_buffer_obj.len <= 0) {
+    if (Py_buffer_obj.len <= 0 || data_end <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length");
         retval = NULL;
         goto finish;
@@ -114,7 +115,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         retval = NULL;
         goto finish;
     }
-    
+
     // Get the size of the reconstructed file
     start_loc = my_memstr(start_loc, end_loc - start_loc, "size=", 1);
     if (start_loc) {

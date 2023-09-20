@@ -63,9 +63,19 @@ def test_end_after_filename():
         sabctools_yenc_wrapper(data_plain)
 
 
+def test_bad_input():
+    with pytest.raises(TypeError) as excinfo:
+        sabctools.yenc_decode(b"not a bytearray", 10)
+    assert "must be bytearray" in str(excinfo.value)
+
+
 def test_bad_size():
     with pytest.raises(ValueError) as excinfo:
-        sabctools.yenc_decode(bytearray())
+        sabctools.yenc_decode(bytearray(), 10)
+    assert "Invalid data length" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        sabctools.yenc_decode(bytearray(10), 0)
     assert "Invalid data length" in str(excinfo.value)
 
 
@@ -86,7 +96,7 @@ def test_ref_counts():
     fake_inp = bytearray(b"1234")
     assert sys.getrefcount(fake_inp) == 2
     with pytest.raises(ValueError):
-        sabctools.yenc_decode(fake_inp)
+        sabctools.yenc_decode(fake_inp, len(fake_inp))
     assert sys.getrefcount(fake_inp) == 2
 
     # Test further processing
