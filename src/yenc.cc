@@ -54,11 +54,12 @@ static inline char* my_memstr(const void* haystack, size_t haystackLen, const ch
     return p;
 }
 
-PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
+PyObject* yenc_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     // The input/output PyObjects
     (void)self;
     PyObject *retval = NULL;
-    Py_buffer Py_buffer_obj;
+    Py_buffer *Py_buffer_obj;
+    PyObject *Py_output_bytearray = NULL;
     PyObject *Py_output_filename = NULL;
     PyObject *Py_output_crc = NULL;
 
@@ -78,25 +79,22 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
     const char* crc_pos;
 
     // Verify it's a bytearray
-    if (!PyByteArray_Check(Py_bytesarray_obj)) {
-        PyErr_SetString(PyExc_TypeError, "Expected bytearray");
+    if (!PyMemoryView_Check(Py_memoryview_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expected memoryview");
         return NULL;
     }
 
-    if (PyObject_GetBuffer(Py_bytesarray_obj, &Py_buffer_obj, PyBUF_CONTIG) != 0) {
-        return NULL;
-    }
-
-    dest_loc = cur_char = (char*)Py_buffer_obj.buf;
-    end_loc = dest_loc + Py_buffer_obj.len;
-    output_len = Py_buffer_obj.len;
-
-    // Check for valid size
-    if (Py_buffer_obj.len <= 0) {
+    // Get buffer and check for valid size
+    Py_buffer_obj = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
+    if (Py_buffer_obj->len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length");
         retval = NULL;
         goto finish;
     }
+
+    cur_char = (char*)Py_buffer_obj->buf;
+    end_loc = cur_char + Py_buffer_obj->len;
+    output_len = Py_buffer_obj->len;
 
     /*
      ANALYZE HEADER
@@ -114,7 +112,7 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         retval = NULL;
         goto finish;
     }
-    
+
     // Get the size of the reconstructed file
     start_loc = my_memstr(start_loc, end_loc - start_loc, "size=", 1);
     if (start_loc) {
@@ -204,6 +202,10 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         goto finish;
     }
 
+    // Create our destination bytearray
+    Py_output_bytearray = PyByteArray_FromStringAndSize(NULL, Py_buffer_obj->len);
+    dest_loc = PyByteArray_AsString(Py_output_bytearray);
+
     // Lift the GIL
     Py_BEGIN_ALLOW_THREADS;
 
@@ -223,16 +225,17 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_bytesarray_obj) {
         Py_output_crc = PyLong_FromUnsignedLong(crc);
     }
 
+    // Adjust the Python-size of the bytesarray-object
+    // This will only do a real resize if the data shrunk by half, so never in our case!
+    // Resizing a bytes object always does a real resize, so more costly
+    PyByteArray_Resize(Py_output_bytearray, output_len);
+
     // Build output
-    retval = Py_BuildValue("(S, K, K, K, N)", Py_output_filename, file_size, part_begin, part_size, Py_output_crc);
+    retval = Py_BuildValue("(O, O, K, K, K, N)", Py_output_bytearray, Py_output_filename, file_size, part_begin, part_size, Py_output_crc);
 
 finish:
+    Py_XDECREF(Py_output_bytearray);
     Py_XDECREF(Py_output_filename);
-
-    // Terminate buffer and adjust the Python-size of the bytes-object
-    PyBuffer_Release(&Py_buffer_obj);
-    PyByteArray_Resize(Py_bytesarray_obj, output_len);
-
     return retval;
 }
 
