@@ -24,6 +24,10 @@ For more details, see the [cpython pull request](https://github.com/python/cpyth
 ## Marking files as sparse
 Uses Windows specific system calls to mark files as sparse and set the desired size.
 On other platforms the same is achieved by calling `truncate`.
+
+## Utility functions
+Use `sabctools.bytearray_malloc(size)` to get an `bytearray` that is uninitialized (not set to `0`'s). 
+This is much faster than the built-in `bytearray(size)` because the data inside the new `bytearray` will be whatever is present in the memory block.
   
 # Installing  
   
