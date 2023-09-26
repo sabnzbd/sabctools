@@ -84,10 +84,10 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         return NULL;
     }
 
-    // Get buffer and check for valid size
+    // Get buffer and check it is a valid size and type
     Py_buffer_obj = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
-    if (Py_buffer_obj->len <= 0) {
-        PyErr_SetString(PyExc_ValueError, "Invalid data length");
+    if (!PyBuffer_IsContiguous(Py_buffer_obj, 'C') || Py_buffer_obj->len <= 0) {
+        PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
         retval = NULL;
         goto finish;
     }
@@ -203,7 +203,12 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     }
 
     // Create our destination bytearray
-    Py_output_bytearray = PyByteArray_FromStringAndSize(NULL, Py_buffer_obj->len);
+    Py_output_bytearray = PyByteArray_FromStringAndSize(NULL, yenc_data_length);
+    if(!Py_output_bytearray) {
+        PyErr_SetNone(PyExc_MemoryError);
+        retval = NULL;
+        goto finish;
+    }
     dest_loc = PyByteArray_AsString(Py_output_bytearray);
 
     // Lift the GIL
