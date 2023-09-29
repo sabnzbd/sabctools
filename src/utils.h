@@ -16,12 +16,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+#ifndef SABCTOOLS_UTILS_H
+#define SABCTOOLS_UTILS_H
+
 #include <Python.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <string.h>
 
-/* Version information */
-#define SABCTOOLS_VERSION "8.0.0"
+PyObject* bytearray_malloc(PyObject *, PyObject*);
 
-PyMODINIT_FUNC PyInit_sabctools(void);
+#endif //SABCTOOLS_UTILS_H

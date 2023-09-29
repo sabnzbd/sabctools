@@ -16,12 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <Python.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <string.h>
+#include "utils.h"
 
-/* Version information */
-#define SABCTOOLS_VERSION "8.0.0"
-
-PyMODINIT_FUNC PyInit_sabctools(void);
+PyObject* bytearray_malloc(PyObject* self, PyObject* Py_input_size) {
+    return PyByteArray_FromStringAndSize(NULL, PyLong_AsSsize_t(Py_input_size));
+}

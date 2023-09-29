@@ -21,6 +21,7 @@
 #include "unlocked_ssl.h"
 #include "crc32.h"
 #include "sparse.h"
+#include "utils.h"
 
 /* Function and exception declarations */
 PyMODINIT_FUNC PyInit_sabctools(void);
@@ -80,6 +81,12 @@ static PyMethodDef sabctools_methods[] = {
         sparse,
         METH_VARARGS,
         "sparse(handle, length)"
+    },
+    {
+        "bytearray_malloc",
+        bytearray_malloc,
+        METH_O,
+        "bytearray_malloc(size)"
     },
     {NULL, NULL, 0, NULL}
 };
