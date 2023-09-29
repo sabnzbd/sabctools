@@ -11,6 +11,11 @@ def test_regular():
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
+def test_bytes_compat():
+    data_plain = read_plain_yenc_file("test_regular.yenc")
+    assert python_yenc(data_plain) == sabctools.yenc_decode(memoryview(bytes(data_plain)))
+
+
 def test_partial():
     data_plain = read_plain_yenc_file("test_partial.yenc")
     decoded_data, filename, filesize, begin, size, crc_correct = sabctools_yenc_wrapper(data_plain)
@@ -63,9 +68,9 @@ def test_end_after_filename():
         sabctools_yenc_wrapper(data_plain)
 
 
-def test_bad_size():
+def test_empty():
     with pytest.raises(ValueError) as excinfo:
-        sabctools.yenc_decode(bytearray())
+        sabctools.yenc_decode(memoryview(bytearray(b"")))
     assert "Invalid data length" in str(excinfo.value)
 
 
@@ -74,16 +79,16 @@ def test_ref_counts():
     # Test regular case
     data_plain = read_plain_yenc_file("test_regular.yenc")
     data_out, filename, filesize, begin, end, crc_correct = sabctools_yenc_wrapper(data_plain)
-    # data_plain and data_out point to the same data!
-    assert sys.getrefcount(data_plain) == 3
-    assert sys.getrefcount(data_out) == 3
+
+    assert sys.getrefcount(data_plain) == 2
+    assert sys.getrefcount(data_out) == 2
     assert sys.getrefcount(filename) == 2
     assert sys.getrefcount(begin) == 2
     assert sys.getrefcount(end) == 2
     assert sys.getrefcount(crc_correct) == 2
 
     # Test simple error case
-    fake_inp = bytearray(b"1234")
+    fake_inp = memoryview(bytearray(b"1234"))
     assert sys.getrefcount(fake_inp) == 2
     with pytest.raises(ValueError):
         sabctools.yenc_decode(fake_inp)

@@ -304,6 +304,12 @@ class SABCToolsBuild(build_ext):
                 ],
                 "gcc_flags": ["-Wno-unused-parameter"],
             },
+            {
+                "sources": [
+                    "src/utils.cc",
+                ],
+                "gcc_flags": ["-Wno-unused-parameter"],
+            },
         ]:
             args = {
                 "sources": source_files["sources"],
