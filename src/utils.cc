@@ -19,5 +19,9 @@
 #include "utils.h"
 
 PyObject* bytearray_malloc(PyObject* self, PyObject* Py_input_size) {
+    if(!PyLong_Check(Py_input_size)) {
+        PyErr_SetString(PyExc_TypeError, "Expected type 'int'.");
+        return NULL;
+    }
     return PyByteArray_FromStringAndSize(NULL, PyLong_AsSsize_t(Py_input_size));
 }
