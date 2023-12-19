@@ -60,8 +60,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
         with:
           platforms: all
-      - name: Build source distribution
-        run: python setup.py sdist
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16.2
         env:
@@ -69,11 +68,21 @@ jobs:
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: universal2
           CIBW_BUILD_VERBOSITY: 1
-      - uses: actions/upload-artifact@v3
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
         with:
-          path: |
-            ./wheelhouse/*.whl
-            ./dist/*.tar.gz
+          path: ./wheelhouse/*.whl
+          name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
+      # The action/upload-artifact only allows unique filenames for whole run
+      - name: Build source distribution
+        if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
+        run: python setup.py sdist
+      - name: Upload source distribution artifact
+        uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
+        with:
+          path: ./dist/*.tar.gz
+          name: Source distribution
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: '__token__'
