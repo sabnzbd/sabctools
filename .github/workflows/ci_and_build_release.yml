@@ -75,7 +75,6 @@ jobs:
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
       # The action/upload-artifact only allows unique filenames for whole run
       - name: Build source distribution
-        if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
         run: python setup.py sdist
       - name: Upload source distribution artifact
         uses: actions/upload-artifact@v4
