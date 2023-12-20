@@ -218,8 +218,9 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
         if (err.ssl == SSL_ERROR_WANT_READ) {
             PyErr_SetString(SSLWantReadError, "Need more data");
         } else {
-            // Raise general error, since we don't care
-            PyErr_SetString(PyExc_ValueError, "Failed to read data");
+            // Raise general error, as all errors that are left indicate fatal errors
+            // The calling code will have to establish a new connection
+            PyErr_SetString(PyExc_ConnectionAbortedError, "Failed to read data");
         }
         goto error;
     }
