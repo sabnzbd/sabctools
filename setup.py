@@ -84,8 +84,12 @@ class SABCToolsBuild(build_ext):
         # Determine compiler flags
         gcc_arm_neon_flags = []
         gcc_arm_crc_flags = []
+        gcc_arm_crc_pmull_flags = []
         gcc_vpclmulqdq_flags = []
         gcc_vbmi2_flags = []
+        gcc_avx10_flags = []
+        gcc_rvv_flags = []
+        gcc_rvzbkc_flags = []
         gcc_macros = []
         if self.compiler.compiler_type == "msvc":
             # LTCG not enabled due to issues seen with code generation where
@@ -132,9 +136,11 @@ class SABCToolsBuild(build_ext):
                     IS_AARCH64 = False
                 if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc"):
                     gcc_arm_crc_flags.append("-march=armv8-a+crc")
+                    gcc_arm_crc_pmull_flags.append("-march=armv8-a+crc+crypto")
                     # Resolve problems on armv7, see issue #56
                     if not IS_AARCH64:
                         gcc_arm_crc_flags.append("-fno-lto")
+                        gcc_arm_crc_pmull_flags.append("-fno-lto")
                 if not IS_AARCH64 and autoconf_check(self.compiler, flag_check="-mfpu=neon"):
                     gcc_arm_neon_flags.append("-mfpu=neon")
                     # Resolve problems on armv7, see issue #56
@@ -164,6 +170,16 @@ class SABCToolsBuild(build_ext):
                     "-mbmi2",
                     "-mlzcnt",
                 ]
+
+            if IS_X86 and autoconf_check(self.compiler, flag_check="-mno-evex512"):
+                gcc_avx10_flags = ["-mno-evex512"]
+
+            if machine.startswith("riscv"):
+                arch_flag = "-march=rv" + ("32" if machine.startswith("riscv32") else "64") + "gc"
+                if autoconf_check(self.compiler, flag_check=arch_flag+"v"):
+                    gcc_rvv_flags = [arch_flag+"v"]
+                if autoconf_check(self.compiler, flag_check=arch_flag+"_zbkc"):
+                    gcc_rvzbkc_flags = [arch_flag+"_zbkc"]
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
@@ -240,13 +256,13 @@ class SABCToolsBuild(build_ext):
             {
                 "sources": ["src/yencode/encoder_vbmi2.cc"],
                 "depends": srcdeps_enc_common + ["encoder_avx_base.h"],
-                "gcc_x86_flags": gcc_vbmi2_flags,
+                "gcc_x86_flags": gcc_vbmi2_flags + gcc_avx10_flags,
                 "msvc_x86_flags": ["/arch:AVX512"],
             },
             {
                 "sources": ["src/yencode/decoder_vbmi2.cc"],
                 "depends": srcdeps_dec_common + ["decoder_avx2_base.h"],
-                "gcc_x86_flags": gcc_vbmi2_flags,
+                "gcc_x86_flags": gcc_vbmi2_flags + gcc_avx10_flags,
                 "msvc_x86_flags": ["/arch:AVX512"],
             },
             {
@@ -263,6 +279,21 @@ class SABCToolsBuild(build_ext):
                 "sources": ["src/yencode/crc_arm.cc"],
                 "depends": srcdeps_crc_common,
                 "gcc_arm_flags": gcc_arm_crc_flags,
+            },
+            {
+                "sources": ["src/yencode/crc_arm_pmull.cc"],
+                "depends": srcdeps_crc_common,
+                "gcc_arm_flags": gcc_arm_crc_pmull_flags,
+            },
+            {
+                "sources": ["src/yencode/encoder_rvv.cc", "src/yencode/decoder_rvv.cc"],
+                "depends": srcdeps_enc_common + srcdeps_dec_common,
+                "gcc_rv_flags": gcc_rvv_flags,
+            },
+            {
+                "sources": ["src/yencode/crc_riscv.cc"],
+                "depends": srcdeps_crc_common,
+                "gcc_rv_flags": gcc_rvzbkc_flags,
             },
             {
                 "sources": [
