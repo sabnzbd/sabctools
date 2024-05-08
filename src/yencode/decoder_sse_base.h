@@ -25,15 +25,17 @@
 # define KOR16(a, b) ((a) | (b))
 #endif
 
-#pragma pack(16)
-typedef struct {
-	unsigned char BitsSetTable256inv[256];
-	/*align16*/ struct { char bytes[16]; } compact[32768];
-	/*align8*/ uint64_t eqAdd[256];
-	/*align16*/ int8_t unshufMask[32*16];
-} SSELookups;
-static SSELookups* HEDLEY_RESTRICT lookups;
-#pragma pack()
+namespace RapidYenc {
+	#pragma pack(16)
+	typedef struct {
+		unsigned char BitsSetTable256inv[256];
+		/*align16*/ struct { char bytes[16]; } compact[32768];
+		/*align8*/ uint64_t eqAdd[256];
+		/*align16*/ int8_t unshufMask[32*16];
+	} SSELookups;
+	#pragma pack()
+}
+static RapidYenc::SSELookups* HEDLEY_RESTRICT lookups;
 
 
 static HEDLEY_ALWAYS_INLINE __m128i force_align_read_128(const void* p) {
@@ -45,7 +47,9 @@ static HEDLEY_ALWAYS_INLINE __m128i force_align_read_128(const void* p) {
 #endif
 }
 
-void decoder_sse_init(SSELookups* HEDLEY_RESTRICT& lookups); // defined in decoder_sse2.cc
+namespace RapidYenc {
+	void decoder_sse_init(SSELookups* HEDLEY_RESTRICT& lookups); // defined in decoder_sse2.cc
+}
 
 
 // for LZCNT/BSR
@@ -89,6 +93,8 @@ static HEDLEY_ALWAYS_INLINE __m128i sse2_compact_vect(uint32_t mask, __m128i dat
 	}
 	return data;
 }
+
+namespace RapidYenc {
 
 template<bool isRaw, bool searchEnd, enum YEncDecIsaLevel use_isa>
 HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* src, long& len, unsigned char*& p, unsigned char& _escFirst, uint16_t& _nextMask) {
@@ -689,4 +695,5 @@ HEDLEY_ALWAYS_INLINE void do_decode_sse(const uint8_t* src, long& len, unsigned 
 	}
 	_escFirst = (unsigned char)escFirst;
 }
+} // namespace
 #endif
