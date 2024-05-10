@@ -215,9 +215,9 @@ PyObject* yenc_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Py_BEGIN_ALLOW_THREADS;
 
     // send to decoder
-    YencDecoderState state = YDEC_STATE_CRLF;
-    output_len = do_decode(1, (unsigned char*) start_loc, (unsigned char*) dest_loc, yenc_data_length, &state);
-    crc = do_crc32(dest_loc, output_len, crc);
+    RapidYenc::YencDecoderState state = RapidYenc::YDEC_STATE_CRLF;
+    output_len = RapidYenc::decode(1, start_loc, dest_loc, yenc_data_length, &state);
+    crc = RapidYenc::crc32(dest_loc, output_len, crc);
 
     // Return GIL to perform Python modifications
     Py_END_ALLOW_THREADS;
@@ -289,8 +289,8 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
 
     // Encode result
     int column = 0;
-    output_len = do_encode(YENC_LINESIZE, &column, (unsigned char*)input_buffer, (unsigned char*)output_buffer, input_len, 1);
-    crc = do_crc32(input_buffer, input_len, 0);
+    output_len = RapidYenc::encode(YENC_LINESIZE, &column, input_buffer, output_buffer, input_len, 1);
+    crc = RapidYenc::crc32(input_buffer, input_len, 0);
 
     // Restore GIL so we can build Python strings
     Py_END_ALLOW_THREADS;
