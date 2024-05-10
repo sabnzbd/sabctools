@@ -1,6 +1,6 @@
 // taken from zlib-ng / Intel's zlib patch, modified to remove zlib dependencies
 /*
- * Compute the CRC32 using a parallelized folding approach with the PCLMULQDQ
+ * Compute the CRC32 using a parallelized folding approach with the PCLMULQDQ 
  * instruction.
  *
  * A white paper describing this algorithm can be found at:
@@ -18,7 +18,7 @@
  */
 
 #include "crc_common.h"
-
+ 
 #if (defined(__PCLMUL__) && defined(__SSSE3__) && defined(__SSE4_1__)) || (defined(_MSC_VER) && _MSC_VER >= 1600 && defined(PLATFORM_X86) && !defined(__clang__))
 #include <inttypes.h>
 #include <immintrin.h>
@@ -36,7 +36,7 @@
 # define fold_xor _mm_xor_si128
 #else
 static __m128i fold_xor(__m128i a, __m128i b) {
-    return _mm_castps_si128(_mm_xor_ps(_mm_castsi128_ps(a), _mm_castsi128_ps(b)));
+	return _mm_castps_si128(_mm_xor_ps(_mm_castsi128_ps(a), _mm_castsi128_ps(b)));
 }
 #endif
 
@@ -140,21 +140,11 @@ static uint32_t crc_fold(const unsigned char *src, long len, uint32_t initial) {
     unsigned long algn_diff;
     __m128i xmm_t0, xmm_t1, xmm_t2, xmm_t3;
 
-    // TODO: consider calculating this via a LUT instead (probably faster)
-    // info from https://www.reddit.com/r/ReverseEngineering/comments/2zwhl3/mystery_constant_0x9db42487_in_intels_crc32ieee/
-    // firstly, calculate: xmm_crc0 = (intial * 0x487b9c8a) mod 0x104c11db7, where 0x487b9c8a = inverse(1<<512) mod 0x104c11db7
-    xmm_t0 = _mm_cvtsi32_si128(~initial);
-
-    xmm_t0 = _mm_clmulepi64_si128(xmm_t0, _mm_set_epi32(0, 0, 0xa273bc24, 0), 0);  // reverse(0x487b9c8a)<<1 == 0xa273bc24
-    xmm_t2 = _mm_set_epi32( // polynomial reduction factors
-      1, 0xdb710640, // G* = 0x04c11db7
-      0, 0xf7011641  // Q+ = 0x04d101df  (+1 to save an additional xor operation)
-    );
-    xmm_t1 = _mm_clmulepi64_si128(xmm_t0, xmm_t2, 0);
-    xmm_t1 = _mm_clmulepi64_si128(xmm_t1, xmm_t2, 0x10);
-
-    __m128i xmm_crc0 = _mm_srli_si128(_mm_xor_si128(xmm_t0, xmm_t1), 8);
-
+    // since the initial value will immediately be multiplied by around 2^512, we need to roll it backwards
+    // this is done by dividing the initial value by 2^480
+    // the constant used here is reverse(2^-480)<<1 == 0xdfded7ec
+    __m128i xmm_crc0 = _mm_clmulepi64_si128(_mm_cvtsi32_si128(~initial), _mm_cvtsi32_si128(0xdfded7ec), 0);
+    
     __m128i xmm_crc1 = _mm_setzero_si128();
     __m128i xmm_crc2 = _mm_setzero_si128();
     __m128i xmm_crc3 = _mm_setzero_si128();
@@ -362,17 +352,162 @@ done:
 }
 
 static uint32_t do_crc32_incremental_clmul(const void* data, size_t length, uint32_t init) {
-    return crc_fold((const unsigned char*)data, (long)length, init);
+	return crc_fold((const unsigned char*)data, (long)length, init);
 }
 
-void crc_clmul_set_funcs(crc_func* _do_crc32_incremental) {
-    *_do_crc32_incremental = &do_crc32_incremental_clmul;
+
+static HEDLEY_ALWAYS_INLINE __m128i crc32_reduce(__m128i prod) {
+	// do Barrett reduction back into 32-bit field
+	const __m128i reduction_const = _mm_load_si128((__m128i*)crc_k + 2);
+	__m128i t = _mm_clmulepi64_si128(prod, reduction_const, 0);
+	t = _mm_clmulepi64_si128(t, reduction_const, 0x10);
+	t = _mm_xor_si128(t, prod);
+	return t;
+}
+
+static uint32_t crc32_multiply_clmul(uint32_t a, uint32_t b) {
+	// do the actual multiply
+	__m128i prod = _mm_clmulepi64_si128(_mm_cvtsi32_si128(a), _mm_cvtsi32_si128(b), 0);
+	
+	// prepare product for reduction
+	prod = _mm_add_epi64(prod, prod); // bit alignment fix, due to CRC32 being bit-reversal
+	prod = _mm_slli_si128(prod, 4);   // straddle low/high halves across 64-bit boundary - this provides automatic truncation during reduction
+	
+	prod = crc32_reduce(prod);
+	return _mm_extract_epi32(prod, 2);
+}
+
+#if defined(__GNUC__) || defined(_MSC_VER)
+static HEDLEY_ALWAYS_INLINE __m128i reverse_bits_epi8(__m128i src) {
+#if defined(__GFNI__) && defined(YENC_BUILD_NATIVE) && YENC_BUILD_NATIVE!=0
+    return _mm_gf2p8affine_epi64_epi8(src, _mm_set_epi32(
+      0x80402010, 0x08040201,
+      0x80402010, 0x08040201
+    ), 0);
+/*
+#elif defined(ENABLE_AVX512)
+    // !! this only processes the bottom 32 bits !!
+    src = _mm_maskz_mov_epi32(1, src);
+    src = _mm_ternarylogic_epi32(src, _mm_slli_epi64(src, 28), _mm_set1_epi8(0xf), 0xa8); // (a|b)&c
+    src = _mm_shuffle_epi8(_mm_set_epi8(
+      -16, 112, -80, 48, -48, 80, -112, 16, -32, 96, -96, 32, -64, 64, -128, 0
+    ), src);
+    return _mm_maskz_or_epi32(1, src, _mm_srli_epi64(src, 36));
+*/
+#else
+    __m128i xmm_t0 = _mm_and_si128(src, _mm_set1_epi8(0x0f));
+    __m128i xmm_t1 = _mm_and_si128(_mm_srli_epi16(src, 4), _mm_set1_epi8(0x0f));
+    xmm_t0 = _mm_shuffle_epi8(_mm_set_epi8(
+      -16, 112, -80, 48, -48, 80, -112, 16, -32, 96, -96, 32, -64, 64, -128, 0
+      //0xf0, 0x70, 0xb0, 0x30, 0xd0, 0x50, 0x90, 0x10, 0xe0, 0x60, 0xa0, 0x20, 0xc0, 0x40, 0x80, 0
+    ), xmm_t0);
+    xmm_t1 = _mm_shuffle_epi8(_mm_set_epi8(
+      15, 7, 11, 3, 13, 5, 9, 1, 14, 6, 10, 2, 12, 4, 8, 0
+    ), xmm_t1);
+    return _mm_or_si128(xmm_t0, xmm_t1);
+#endif
+}
+
+#ifdef _MSC_VER
+// because MSVC doesn't use BSWAP unless you specifically tell it to...
+# include <stdlib.h>
+# define BSWAP32 _byteswap_ulong
+#else
+# define BSWAP32(n) ((((n)&0xff)<<24) | (((n)&0xff00)<<8) | (((n)&0xff0000)>>8) | (((n)&0xff000000)>>24))
+#endif
+
+
+
+static const uint32_t crc_power_rev[32] = { // bit-reversed crc_power
+	0x00000002, 0x00000004, 0x00000010, 0x00000100, 0x00010000, 0x04c11db7, 0x490d678d, 0xe8a45605,
+	0x75be46b7, 0xe6228b11, 0x567fddeb, 0x88fe2237, 0x0e857e71, 0x7001e426, 0x075de2b2, 0xf12a7f90,
+	0xf0b4a1c1, 0x58f46c0c, 0xc3395ade, 0x96837f8c, 0x544037f9, 0x23b7b136, 0xb2e16ba8, 0x725e7bfa,
+	0xec709b5d, 0xf77a7274, 0x2845d572, 0x034e2515, 0x79695942, 0x540cb128, 0x0b65d023, 0x3c344723
+};
+
+static HEDLEY_ALWAYS_INLINE __m128i crc32_shift_clmul_mulred(unsigned pos, __m128i prod) {
+	// this multiplies a 64-bit `prod` with a 32-bit CRC power
+	// compared with crc32_multiply_clmul, this only reduces the result to 64-bit, saving a multiply
+	__m128i coeff = _mm_cvtsi32_si128(crc_power_rev[pos]);
+	
+	const __m128i fold_const = _mm_set_epi32(0, 0x490d678d, 0, 0xf200aa66);
+	prod = _mm_clmulepi64_si128(prod, coeff, 0);
+	__m128i hi = _mm_clmulepi64_si128(prod, fold_const, 0x11);
+	return _mm_xor_si128(hi, prod);
+}
+
+static uint32_t crc32_shift_clmul(uint32_t crc1, uint32_t n) {
+	if(!n) return crc1;
+	
+	__m128i result = _mm_cvtsi32_si128(BSWAP32(crc1));
+	result = reverse_bits_epi8(result);
+	
+	// handle n < 32 with a shift
+	result = _mm_sll_epi64(result, _mm_cvtsi32_si128(n & 31));
+	n &= ~31;
+	
+	__m128i t;
+	if(n) {
+		// use a second accumulator to leverage some IPC from slow CLMUL
+		__m128i result2 = _mm_cvtsi32_si128(crc_power_rev[ctz32(n)]);
+		n &= n-1;
+		
+		if(n) {
+			// first multiply doesn't need reduction
+			result2 = _mm_clmulepi64_si128(result2, _mm_cvtsi32_si128(crc_power_rev[ctz32(n)]), 0);
+			n &= n-1;
+			
+			while(n) {
+				result = crc32_shift_clmul_mulred(ctz32(n), result);
+				n &= n-1;
+				
+				if(n) {
+					result2 = crc32_shift_clmul_mulred(ctz32(n), result2);
+					n &= n-1;
+				}
+			}
+		}
+		
+		const __m128i fold_const = _mm_set_epi32(0, 0x490d678d, 0, 0xf200aa66);
+		
+		// merge two results
+		result = _mm_clmulepi64_si128(result, result2, 0);
+		
+		// do 128b reduction
+		t = _mm_unpackhi_epi32(result, _mm_setzero_si128());
+		// fold [127:96] -> [63:0]
+		__m128i hi = _mm_clmulepi64_si128(t, fold_const, 1);
+		// fold [95:64] -> [63:0]
+		__m128i lo = _mm_clmulepi64_si128(t, fold_const, 0x10);
+#ifdef ENABLE_AVX512
+		result = _mm_ternarylogic_epi32(result, hi, lo, 0x96);
+#else
+		result = _mm_xor_si128(result, hi);
+		result = _mm_xor_si128(result, lo);
+#endif
+	}
+	
+	// do Barrett reduction back into 32-bit field
+	const __m128i reduction_const = _mm_set_epi32(0, 0x04c11db7, 1, 0x04d101df);
+	t = _mm_clmulepi64_si128(_mm_blend_epi16(_mm_setzero_si128(), result, 0x3c), reduction_const, 0);
+	t = _mm_clmulepi64_si128(t, reduction_const, 0x11);
+	result = _mm_xor_si128(t, result);
+	
+	result = reverse_bits_epi8(result);
+	return BSWAP32(_mm_cvtsi128_si32(result));
+}
+#endif
+
+
+void RapidYenc::crc_clmul_set_funcs() {
+	_do_crc32_incremental = &do_crc32_incremental_clmul;
+	_crc32_multiply = &crc32_multiply_clmul;
+#if defined(__GNUC__) || defined(_MSC_VER)
+	_crc32_shift = &crc32_shift_clmul;
+#endif
+	_crc32_isa = ISA_LEVEL_PCLMUL;
 }
 #else
-
-void crc_clmul_set_funcs(crc_func *_do_crc32_incremental) {
-    (void) _do_crc32_incremental;
-}
-
+void RapidYenc::crc_clmul_set_funcs() {}
 #endif
 

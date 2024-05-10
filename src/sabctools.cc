@@ -99,12 +99,46 @@ static struct PyModuleDef sabctools_definition = {
     sabctools_methods
 };
 
+static const char* simd_detected(void) {
+    int level = RapidYenc::decode_isa_level();
+#ifdef PLATFORM_X86
+    if(level >= ISA_LEVEL_VBMI2)
+        return "AVX512VL+VBMI2";
+    if(level >= ISA_LEVEL_AVX3)
+        return "AVX512VL";
+    if(level >= ISA_LEVEL_AVX2)
+        return "AVX2";
+    if(level >= ISA_LEVEL_AVX)
+        return "AVX";
+    if(level >= ISA_LEVEL_SSE4_POPCNT)
+        return "SSE4.1+POPCNT";
+    if(level >= ISA_LEVEL_SSE41)
+        return "SSE4.1";
+    if(level >= ISA_LEVEL_SSSE3)
+        return "SSSE3";
+    if(level >= (ISA_LEVEL_SSE2 | ISA_FEATURE_POPCNT | ISA_FEATURE_LZCNT))
+        return "SSE2+ABM";
+    return "SSE2";
+#endif
+#ifdef PLATFORM_ARM
+    if(level >= ISA_LEVEL_NEON) {
+        return "NEON";
+    }
+#endif
+#ifdef __riscv
+    if(level >= ISA_LEVEL_RVV) {
+        return "RVV";
+    }
+#endif
+    return "";
+}
+
 PyMODINIT_FUNC PyInit_sabctools(void) {
     // Initialize and add version / SIMD information
     Py_Initialize();
-    encoder_init();
-    decoder_init();
-    crc_init();
+    RapidYenc::encoder_init();
+    RapidYenc::decoder_init();
+    RapidYenc::crc32_init();
     openssl_init();
     sparse_init();
 
