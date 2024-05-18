@@ -34,10 +34,6 @@
 	#define PLATFORM_ARM 1
 #endif
 
-#if defined(UNSUPPORTED_PLATFORM_ARM)
-#undef PLATFORM_ARM
-#endif
-
 #include <stdlib.h>
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 	// MSVC doesn't support C11 aligned_alloc: https://stackoverflow.com/a/62963007
