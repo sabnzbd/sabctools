@@ -288,12 +288,12 @@ class SABCToolsBuild(build_ext):
             {
                 "sources": ["src/yencode/encoder_rvv.cc", "src/yencode/decoder_rvv.cc"],
                 "depends": srcdeps_enc_common + srcdeps_dec_common,
-                "gcc_rv_flags": gcc_rvv_flags,
+                "gcc_flags": gcc_rvv_flags,
             },
             {
                 "sources": ["src/yencode/crc_riscv.cc"],
                 "depends": srcdeps_crc_common,
-                "gcc_rv_flags": gcc_rvzbkc_flags,
+                "gcc_flags": gcc_rvzbkc_flags,
             },
             {
                 "sources": [
