@@ -124,13 +124,6 @@ class SABCToolsBuild(build_ext):
             # Verify specific flags for ARM chips
             # macOS M1 do not need any flags, they support everything
             if IS_ARM and not IS_MACOS:
-                if not autoconf_check(self.compiler, include_check="sys/auxv.h"):
-                    # We only tested this for GCC, might still be valid on MS-ARM compiler (see #38)
-                    if autoconf_check(self.compiler, define_check="__GNUC__"):
-                        log.info("==> On GGC and sys/auxv.h not available, setting UNSUPPORTED_PLATFORM_ARM=1")
-                        ext.define_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
-                        gcc_macros.append(("UNSUPPORTED_PLATFORM_ARM", "1"))
-                        IS_ARM = False
                 if not autoconf_check(self.compiler, define_check="__aarch64__"):
                     log.info("==> __aarch64__ not available, disabling 64bit extensions")
                     IS_AARCH64 = False
@@ -288,12 +281,12 @@ class SABCToolsBuild(build_ext):
             {
                 "sources": ["src/yencode/encoder_rvv.cc", "src/yencode/decoder_rvv.cc"],
                 "depends": srcdeps_enc_common + srcdeps_dec_common,
-                "gcc_rv_flags": gcc_rvv_flags,
+                "gcc_flags": gcc_rvv_flags,
             },
             {
                 "sources": ["src/yencode/crc_riscv.cc"],
                 "depends": srcdeps_crc_common,
-                "gcc_rv_flags": gcc_rvzbkc_flags,
+                "gcc_flags": gcc_rvzbkc_flags,
             },
             {
                 "sources": [
