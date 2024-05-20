@@ -122,14 +122,15 @@ class SABCToolsBuild(build_ext):
                 log.info("==> C++11 flag not available")
 
             # Verify specific flags for ARM chips
-            # macOS M1 do not need any flags, they support everything
+            # macOS ARM does not need any flags, they support everything
             if IS_ARM and not IS_MACOS:
                 if not autoconf_check(self.compiler, define_check="__aarch64__"):
                     log.info("==> __aarch64__ not available, disabling 64bit extensions")
                     IS_AARCH64 = False
+                if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc+crypto"):
+                    gcc_arm_crc_pmull_flags.append("-march=armv8-a+crc+crypto")
                 if autoconf_check(self.compiler, flag_check="-march=armv8-a+crc"):
                     gcc_arm_crc_flags.append("-march=armv8-a+crc")
-                    gcc_arm_crc_pmull_flags.append("-march=armv8-a+crc+crypto")
                     # Resolve problems on armv7, see issue #56
                     if not IS_AARCH64:
                         gcc_arm_crc_flags.append("-fno-lto")
