@@ -99,11 +99,13 @@ void openssl_init() {
     if(!SSLWantReadError) goto cleanup;
 
 #if defined(_WIN32) || defined(__CYGWIN__)
+#ifdef _M_ARM64
+    HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-3-arm64.dll"));
+#else
     HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-3.dll"));
-    if(!windows_openssl_handle) {
-        windows_openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
-        if(!windows_openssl_handle) goto cleanup;
-    }
+    if(!windows_openssl_handle) windows_openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+#endif
+    if(!windows_openssl_handle) goto cleanup;
 
     *(void**)&SSL_read_ex = GetProcAddress(windows_openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = GetProcAddress(windows_openssl_handle, "SSL_get_error");
