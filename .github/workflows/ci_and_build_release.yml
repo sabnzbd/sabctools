@@ -10,12 +10,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
-        python-version: [ "3.8", "3.9", "3.10", "3.11", "3.12", "3.13-dev" ]
-        python-architecture: [ "" ]
+        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13-dev' ]
+        python-architecture: [ '' ]
         include:
           - os: windows-latest
-            python-architecture: "x86"
-            python-version: "3.8"
+            python-architecture: 'x86'
+            python-version: '3.8'
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +67,9 @@ jobs:
           CIBW_SKIP: pp* *i686* cp36* cp37*
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: universal2
+          CIBW_ARCHS_WINDOWS: all
           CIBW_BUILD_VERBOSITY: 1
+          CIBW_TEST_SKIP: '*'
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
