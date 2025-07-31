@@ -84,8 +84,6 @@ void openssl_init() {
     PyObject *ssl_module = NULL;
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
-    const char *_ssl_module_path_str = NULL;
-    const char default_ssl_path[] = "libssl.so";
     void* openssl_handle = NULL;
 
     ssl_module = PyImport_ImportModule("ssl");
@@ -118,12 +116,9 @@ void openssl_init() {
     if (PyObject_HasAttrString(_ssl_module, "__file__")) {
         _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
         if(!_ssl_module_path) goto error;
-        _ssl_module_path_str = PyUnicode_AsUTF8(_ssl_module_path);
-    } else {
-        _ssl_module_path_str = default_ssl_path;
+        openssl_handle = dlopen(PyUnicode_AsUTF8(_ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
     }
 
-    openssl_handle = dlopen(_ssl_module_path_str, RTLD_LAZY | RTLD_NOLOAD);
     if(!openssl_handle) goto error;
 
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
@@ -132,7 +127,7 @@ void openssl_init() {
 
 error:
     if (!openssl_linked() && openssl_handle) dlclose(openssl_handle);
-    if(!_ssl_module_path) Py_XDECREF(_ssl_module_path);
+    Py_XDECREF(_ssl_module_path);
 #endif
 
 cleanup:
