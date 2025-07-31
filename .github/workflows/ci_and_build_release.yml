@@ -63,8 +63,8 @@ jobs:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
       # The action/upload-artifact only allows unique filenames for whole run
+      # Need to build it on every arch otherwise twine fails
       - name: Build source distribution
-        if: runner.os == 'macOS'
         run: |
           pip install wheel setuptools
           python setup.py sdist
