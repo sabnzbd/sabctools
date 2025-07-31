@@ -67,9 +67,9 @@ jobs:
           CIBW_SKIP: pp* *i686* cp36* cp37*
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: universal2
-          CIBW_ARCHS_WINDOWS: all
-          CIBW_BUILD_VERBOSITY: 1
+          CIBW_ARCHS_WINDOWS: AMD64 ARM64
           CIBW_TEST_SKIP: '*'
+          # CIBW_BUILD_VERBOSITY: 1
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
