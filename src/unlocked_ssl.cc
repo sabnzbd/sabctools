@@ -113,10 +113,12 @@ void openssl_init() {
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 
-    _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
-    if(!_ssl_module_path) goto error;
+    if (PyObject_HasAttrString(_ssl_module, "__file__")) {
+        _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
+        if(!_ssl_module_path) goto error;
+        openssl_handle = dlopen(PyUnicode_AsUTF8(_ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
+    }
 
-    openssl_handle = dlopen(PyUnicode_AsUTF8(_ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
     if(!openssl_handle) goto error;
 
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
