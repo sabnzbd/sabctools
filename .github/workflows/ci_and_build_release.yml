@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
-        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13' ]
+        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14-dev' ]
 
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-python@v5
         name: Install Python
         with:
-          python-version: '3.13'
+          python-version: "3.13"
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.1.3
         env:
