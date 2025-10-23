@@ -35,6 +35,12 @@ static PyMethodDef sabctools_methods[] = {
         "yenc_decode(raw_data)"
     },
     {
+        "yenc_decode_stream",
+        (PyCFunction)yenc_decode_stream,
+        METH_VARARGS | METH_KEYWORDS,
+        "yenc_decode_stream(data, decoder_state=None)"
+    },
+    {
         "yenc_encode",
         yenc_encode,
         METH_O,

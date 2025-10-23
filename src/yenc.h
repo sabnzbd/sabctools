@@ -40,6 +40,7 @@
 
 /* Functions */
 PyObject* yenc_decode(PyObject *, PyObject*);
+PyObject* yenc_decode_stream(PyObject *, PyObject*, PyObject*);
 PyObject* yenc_encode(PyObject *, PyObject*);
 
 #endif //SABCTOOLS_YENC_H
