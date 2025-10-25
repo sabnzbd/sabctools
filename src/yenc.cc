@@ -365,7 +365,9 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* args, PyObject* kwargs) {
     
     PyBuffer_Release(&input_buffer);
 
-    return Py_BuildValue("(p, K)", instance->done, buf_len);
+    auto done = instance->done ? Py_True : Py_False;
+    Py_INCREF(done);
+    return Py_BuildValue("(O, O)", done, PyLong_FromUnsignedLongLong(buf_len));
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {

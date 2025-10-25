@@ -105,7 +105,6 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
         extract_int(remaining, " total=", instance->total);
 
         std::string::size_type pos = 0;
-        std::string::size_type epos = 0;
 	    if ((pos = remaining.find(" name=")) != std::string::npos) {
             std::string_view name = std::string_view(remaining.data() + 6 + pos, remaining.length() - 6 - pos);
             // Not sure \r\n is necessary lines already have them stripped
