@@ -151,6 +151,13 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     Py_INCREF(openssl_linked_object);
     PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
 
+    if (PyType_Ready(&DecoderDescription) < 0)
+    {
+        return nullptr;
+    }
+
+    PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject*>(&DecoderDescription));
+
     return m;
 }
 

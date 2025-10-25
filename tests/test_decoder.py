@@ -1,3 +1,4 @@
+import io
 import sys
 import pytest
 import glob
@@ -116,3 +117,44 @@ def test_small_file_pickles():
     for fname in all_pickles:
         data_plain = read_pickle(fname)
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
+
+def test_streaming():
+    decoder = sabctools.Decoder()
+
+    BUFFER_SIZE = 4096
+    buffer = bytearray(BUFFER_SIZE)
+    buffer_view = memoryview(buffer)
+    buffer_remaining = 0  # unprocessed contents of the buffer
+
+    expected = [
+        { "crc": "e83e50e7", "file_name": "Applideck Revenue 980788779079648.z12" },
+        { "crc": "31963516", "file_name": "Hi Kingdom 你好世界.txt" }  # doesn't end with .\r\n
+    ]
+    responses = 0
+
+    # Read in chunks like a network
+    f = io.BytesIO(read_plain_yenc_file("test_regular_2.yenc") + read_plain_yenc_file("test_special_utf8_chars.yenc") + b".\r\n")
+    while True:
+        buffer_slice = buffer_view
+        read_bytes = f.readinto(buffer_slice[buffer_remaining:])
+        if read_bytes == 0 and buffer_remaining == 0:
+            print("Not done but no more data...")
+            break
+
+        # Need to expose a way to see the status code, can do buffer_view[:3] if decode hasn't been called yet
+        # Because we need to handle non 2xx responses the decoder could handle that itself
+        
+        buffer_slice = buffer_slice[:read_bytes+buffer_remaining]
+        done, buffer_remaining = decoder.decode(buffer_slice)
+
+        if done:
+            assert expected[responses]["crc"] == hex(decoder.crc_expected)[2:]
+            assert expected[responses]["crc"] == hex(decoder.crc)[2:]
+            assert expected[responses]["file_name"] == decoder.file_name
+            responses += 1
+            if responses == len(expected):
+                break
+            decoder = sabctools.Decoder()
+
+    assert responses == 2
+                

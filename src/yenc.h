@@ -20,6 +20,12 @@
 #define SABCTOOLS_YENC_H
 
 #include <Python.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <string_view>
+#include <iostream>
+#include <charconv>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -41,5 +47,161 @@
 /* Functions */
 PyObject* yenc_decode(PyObject *, PyObject*);
 PyObject* yenc_encode(PyObject *, PyObject*);
+PyObject* Decoder_Decode(PyObject *, PyObject*, PyObject*);
+
+template <typename T>
+static inline bool extract_int(std::string_view line, const char* needle, T& dest) {
+    std::string::size_type pos = 0;
+    std::string::size_type epos = 0;
+    if ((pos = line.find(needle)) != std::string::npos) {
+        if ((epos = std::string_view(line.data() + strlen(needle) + pos).find_last_not_of("0123456789")) != std::string::npos) {
+            auto [ptr, ec] = std::from_chars(line.data() + strlen(needle) + pos, line.data() + strlen(needle) + pos + epos, dest);
+            return ec == std::errc();
+        }
+    }
+    return false;
+}
+
+enum EncodingFormat {
+    UNKNOWN,
+    YENC,
+    UU
+};
+
+typedef struct {
+    PyObject_HEAD
+    PyObject* data; // decoded data
+    EncodingFormat format;
+    RapidYenc::YencDecoderState state;
+    PyObject* file_name;
+    uint64_t file_size;
+    uint64_t part;
+    uint64_t part_begin;
+    uint64_t part_size;
+    uint64_t total;
+    uint32_t crc;
+    uint32_t crc_expected;
+
+	bool done; // seen \r\n.\r\n
+	bool body; // in yenc data
+} Decoder;
+
+static inline void detect_format(Decoder* instance, std::string_view line) {    
+	if (line.rfind("=ybegin ", 0) == 0)
+	{
+		instance->format = YENC;
+        return;
+	}
+
+	instance->format = UNKNOWN;
+}
+
+static inline void process_yenc_header(Decoder* instance, std::string_view line) {
+	if (line.rfind("=ybegin ", 0) != std::string::npos)
+	{
+        std::string_view remaining = std::string_view(line.data() + 7, line.length() - 7);
+        extract_int(remaining, " size=", instance->file_size);
+        extract_int(remaining, " part=", instance->part);
+        extract_int(remaining, " total=", instance->total);
+
+        std::string::size_type pos = 0;
+        std::string::size_type epos = 0;
+	    if ((pos = remaining.find(" name=")) != std::string::npos) {
+            std::string_view name = std::string_view(remaining.data() + 6 + pos, remaining.length() - 6 - pos);
+            // Not sure \r\n is necessary lines already have them stripped
+            if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
+                instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
+                if (!instance->file_name) {
+                    PyErr_Clear();
+                    instance->file_name = PyUnicode_DecodeLatin1(name.data(), pos + 1, NULL);
+                }                
+            }
+	    }
+	} else if (line.rfind("=ypart ", 0) != std::string::npos) {
+        instance->body = true;
+
+        std::string_view remaining = std::string_view(line.data() + 6, line.length() - 6);
+        extract_int(remaining, " begin=", instance->part_begin);
+        if (extract_int(remaining, " end=", instance->part_size) && instance->part_size >= instance->part_begin - 1) {
+            instance->part_size -= instance->part_begin - 1;
+        }
+	} else if (line.rfind("=yend ", 0) != std::string::npos) {
+        std::string::size_type pos = 0;
+        std::string_view crc32;
+	    if ((pos = line.find(" pcrc32=", 5)) != std::string::npos) {
+	        crc32 = std::string_view(line.data() + 8 + pos, line.length() - 8 - pos);
+	    } else if ((pos = line.find(" crc32=", 5)) != std::string::npos) {
+	        crc32 = std::string_view(line.data() + 7 + pos, line.length() - 7 - pos);
+	    }
+        if (crc32.length() >= 8) {
+            // Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
+            // This is necessary become some posts have malformed hashes
+            instance->crc_expected = static_cast<uint32_t>(strtoull(crc32.data(), NULL, 16)); // TODO: could use from_chars
+        }
+	}
+}
+
+static PyMethodDef DecoderMethods[] = {
+    {"decode", (PyCFunction)Decoder_Decode, METH_VARARGS | METH_KEYWORDS, ""},
+    {nullptr}
+};
+
+static PyMemberDef DecoderMembers[] = {
+    {"data", Py_T_OBJECT_EX, offsetof(Decoder, data), Py_READONLY, ""},
+    {"format", Py_T_INT, offsetof(Decoder, format), Py_READONLY, ""},
+    {"file_name", Py_T_OBJECT_EX, offsetof(Decoder, file_name), Py_READONLY, ""},
+    {"file_size", Py_T_ULONGLONG, offsetof(Decoder, file_size), Py_READONLY, ""},
+    {"part_begin", Py_T_ULONGLONG, offsetof(Decoder, part_begin), Py_READONLY, ""},
+    {"part_size", Py_T_ULONGLONG, offsetof(Decoder, part_size), Py_READONLY, ""},
+    {"crc", Py_T_UINT, offsetof(Decoder, crc), Py_READONLY, ""},
+    {"crc_expected", Py_T_UINT, offsetof(Decoder, crc_expected), Py_READONLY, ""},
+    {nullptr}
+};
+
+static PyTypeObject DecoderDescription = {
+    PyVarObject_HEAD_INIT(nullptr, 0)
+    .tp_name = "sabctools.Decoder",
+    .tp_basicsize = sizeof(Decoder),
+    .tp_itemsize = 0,
+    .tp_dealloc = [](PyObject* object){
+        // Decoder* instance = reinterpret_cast<Decoder*>(object);
+        // delete pointers
+
+        PyObject_GC_UnTrack(object);
+        Py_TYPE(object)->tp_clear(object);
+        PyObject_GC_Del(object);
+    },
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Decoder",
+    .tp_traverse = [](PyObject* object, visitproc visit, void* arg) -> int {
+        Decoder* instance = reinterpret_cast<Decoder*>(object);
+        Py_VISIT(instance->data);
+        Py_VISIT(instance->file_name);
+        return 0;
+    },
+    .tp_clear = [](PyObject* object) -> int {
+        Decoder* instance = reinterpret_cast<Decoder*>(object);
+
+        instance->data = nullptr;
+        instance->format = UNKNOWN;
+        instance->state = RapidYenc::YDEC_STATE_CRLF;
+        instance->file_name = nullptr;
+        instance->file_size = 0;
+        instance->part = 0;
+        instance->part_begin = 0;
+        instance->part_size = 0;
+        instance->total = 0;
+        instance->crc = 0;
+        instance->crc_expected = 0;
+        instance->done = false;
+        instance->body = false;
+
+        return 0;
+    },
+    .tp_methods = DecoderMethods,
+    .tp_members = DecoderMembers,
+    // .tp_getset = DecoderPropertyMembers,
+    .tp_new = PyType_GenericNew,
+};
 
 #endif //SABCTOOLS_YENC_H

@@ -244,6 +244,130 @@ finish:
     return retval;
 }
 
+PyObject* Decoder_Decode(PyObject* self, PyObject* args, PyObject* kwargs) {
+    Decoder* instance = reinterpret_cast<Decoder*>(self);
+
+    Py_buffer input_buffer;
+
+    static char *kwlist[] = {"data", NULL};
+
+    // Parse arguments
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "w*:yenc_decode_stream", kwlist, &input_buffer)) {
+        return NULL;
+    }
+
+    char* buf = static_cast<char*>(input_buffer.buf);
+    size_t buf_len = input_buffer.len;
+    
+    decode:
+    if (instance->body && instance->format == YENC) {
+        // TODO: add limits to part_size, maybe ensure freespace is greater than size of input buffer?
+        if (!instance->data) {
+            instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size);
+            if (!instance->data) {
+                PyBuffer_Release(&input_buffer);
+                return PyErr_NoMemory();
+            }
+        }
+
+        // TODO: resize bytes if needed
+
+        char *src_ptr = buf;
+        char *dst_ptr = PyByteArray_AsString(instance->data);
+        char *dest_start = dst_ptr;
+
+        // Decode the data
+        Py_BEGIN_ALLOW_THREADS;
+        
+        RapidYenc::YencDecoderEnd end = RapidYenc::decode_end((const void**)&src_ptr, (void**)&dst_ptr, buf_len, &instance->state);
+        size_t nsrc = src_ptr - buf;
+        size_t ndst = dst_ptr - dest_start;
+        instance->crc = RapidYenc::crc32(dest_start, ndst, instance->crc);
+
+        switch (end) {
+            case RapidYenc::YDEC_END_NONE:
+                if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
+                    instance->state = RapidYenc::YDEC_STATE_CRLF;
+                    buf += nsrc - 1;
+                    buf_len -= nsrc - 1;
+                } else {
+                    buf += nsrc;
+                    buf_len -= nsrc;
+                }
+                break;
+            case RapidYenc::YDEC_END_CONTROL:
+                buf += nsrc - 2; // step back to include =y
+                buf_len -= nsrc - 2;
+                instance->body = false;
+                break;
+            case RapidYenc::YDEC_END_ARTICLE:
+                buf += nsrc - 3; // step back to include .\r\n
+                buf_len -= nsrc - 3;
+                instance->body = false;
+                break;
+        }
+
+        Py_END_ALLOW_THREADS;
+    }
+
+    if (!instance->body) {
+        std::string_view s = std::string_view(buf, buf_len);
+        std::string_view line;
+        std::size_t prev = 0, pos = 0;
+        while ((pos = s.find("\r\n", prev)) != std::string::npos) {
+            line = std::string_view(s.data() + prev, pos-prev);
+            prev = pos + 2;
+
+            // Not needed?
+            if (line.length() == 0) {
+                continue;
+            }
+
+            if (line == ".") {
+                instance->done = true;
+                buf += prev;
+                buf_len -= prev;
+                break;
+            }
+
+            if (instance->format == UNKNOWN) {
+                detect_format(instance, line);
+            }
+
+            if (instance->format == YENC) {
+                process_yenc_header(instance, line);
+                if (instance->body) {
+                    buf += prev;
+                    buf_len -= prev;
+                    goto decode; // TODO: get rid of this goto
+                } else if (!instance->done) {
+                    buf += prev;
+                    buf_len -= prev;
+                    break;
+                }
+            } else if (instance->format == UU) {
+                // Not implemented
+            }
+        }
+    }
+
+    // Is there any unprocessed data remaining?
+    if (buf_len > 0) {
+        // TODO: is avoiding the memcpy but needing to search worth it? it will mostly only happen between responses
+        // if (std::string_view(buf, buf_len).find("\r\n") != std::string::npos) {
+        //     // tell caller there is at least a line that can be processed, return a memoryview and avoid moving to start
+        // } else {
+        //     // move remaining data to start of buffer
+        // }
+        // Copy remaining buffer to the start, caller might need to read more first
+        memcpy(input_buffer.buf, buf, buf_len);
+    }
+    
+    PyBuffer_Release(&input_buffer);
+
+    return Py_BuildValue("(p, K)", instance->done, buf_len);
+}
+
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
     size_t ret = len * 2    /* all characters escaped */
         + 2 /* allocation for offset and that a newline may occur early */

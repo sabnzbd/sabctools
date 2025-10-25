@@ -110,16 +110,11 @@ class SABCToolsBuild(build_ext):
                 "-fPIC",
                 "-fwrapv",
             ]
-            # gcc before 4.3 did not support the "-std=c++11" flag
-            # gcc before 4.7 called it "-std=c++0x"
-            if autoconf_check(self.compiler, flag_check="-std=c++11"):
-                cflags.append("-std=c++11")
-                ext.extra_compile_args.append("-std=c++11")
-            elif autoconf_check(self.compiler, flag_check="-std=c++0x"):
-                cflags.append("-std=c++0x")
-                ext.extra_compile_args.append("-std=c++0x")
+            if autoconf_check(self.compiler, flag_check="-std=c++17"):
+                cflags.append("-std=c++17")
+                ext.extra_compile_args.append("-std=c++17")
             else:
-                log.info("==> C++11 flag not available")
+                log.info("==> C++17 flag not available")
 
             # Verify specific flags for ARM chips
             # macOS ARM does not need any flags, they support everything
