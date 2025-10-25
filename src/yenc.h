@@ -20,6 +20,8 @@
 #define SABCTOOLS_YENC_H
 
 #include <Python.h>
+#include "structmember.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -146,14 +148,14 @@ static PyMethodDef DecoderMethods[] = {
 };
 
 static PyMemberDef DecoderMembers[] = {
-    {"data", Py_T_OBJECT_EX, offsetof(Decoder, data), Py_READONLY, ""},
-    {"format", Py_T_INT, offsetof(Decoder, format), Py_READONLY, ""},
-    {"file_name", Py_T_OBJECT_EX, offsetof(Decoder, file_name), Py_READONLY, ""},
-    {"file_size", Py_T_ULONGLONG, offsetof(Decoder, file_size), Py_READONLY, ""},
-    {"part_begin", Py_T_ULONGLONG, offsetof(Decoder, part_begin), Py_READONLY, ""},
-    {"part_size", Py_T_ULONGLONG, offsetof(Decoder, part_size), Py_READONLY, ""},
-    {"crc", Py_T_UINT, offsetof(Decoder, crc), Py_READONLY, ""},
-    {"crc_expected", Py_T_UINT, offsetof(Decoder, crc_expected), Py_READONLY, ""},
+    {"data", T_OBJECT_EX, offsetof(Decoder, data), READONLY, ""},
+    {"format", T_INT, offsetof(Decoder, format), READONLY, ""},
+    {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
+    {"file_size", T_ULONGLONG, offsetof(Decoder, file_size), READONLY, ""},
+    {"part_begin", T_ULONGLONG, offsetof(Decoder, part_begin), READONLY, ""},
+    {"part_size", T_ULONGLONG, offsetof(Decoder, part_size), READONLY, ""},
+    {"crc", T_UINT, offsetof(Decoder, crc), READONLY, ""},
+    {"crc_expected", T_UINT, offsetof(Decoder, crc_expected), READONLY, ""},
     {nullptr}
 };
 
