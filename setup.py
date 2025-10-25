@@ -95,8 +95,8 @@ class SABCToolsBuild(build_ext):
             # LTCG not enabled due to issues seen with code generation where
             # different ISA extensions are selected for specific files
             ldflags = ["/OPT:REF", "/OPT:ICF"]
-            cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi", "/std:c++20"]
-            ext.extra_compile_args.append("/std:c++20")
+            cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi", "/std:c++17"]
+            ext.extra_compile_args.append("/std:c++17")
         else:
             # TODO: consider -flto - may require some extra testing
             ldflags = ["-ldl"]  # for dlopen
