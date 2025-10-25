@@ -46,8 +46,6 @@ PyObject *sparse(PyObject *self, PyObject *args)
 #if defined(_WIN32) || defined(__CYGWIN__)
     // Get the windows file handle and set file attributes to sparse
 
-    HANDLE handle = NULL;
-
     if (Py_msvcrt_module == NULL)
     {
         PyErr_SetString(PyExc_SystemError, "msvcrt module not loaded.");
@@ -66,7 +64,7 @@ PyObject *sparse(PyObject *self, PyObject *args)
         goto error;
     }
 
-    handle = reinterpret_cast<HANDLE>(PyLong_AsLongLong(Py_file_handle));
+    HANDLE handle = reinterpret_cast<HANDLE>(PyLong_AsLongLong(Py_file_handle));
 
     // Creating a sparse file may fail but that's OK
     DWORD bytesReturned;
