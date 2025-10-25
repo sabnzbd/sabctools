@@ -85,6 +85,9 @@ void openssl_init() {
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
     void* openssl_handle = NULL;
+    #if defined(_WIN32) || defined(__CYGWIN__)
+    HMODULE windows_openssl_handle = NULL;
+    #endif
 
     ssl_module = PyImport_ImportModule("ssl");
     if(!ssl_module) goto cleanup;
@@ -100,9 +103,9 @@ void openssl_init() {
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #ifdef _M_ARM64
-    HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-3-arm64.dll"));
+    windows_openssl_handle = GetModuleHandle(TEXT("libssl-3-arm64.dll"));
 #else
-    HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-3.dll"));
+    windows_openssl_handle = GetModuleHandle(TEXT("libssl-3.dll"));
     if(!windows_openssl_handle) windows_openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
 #endif
     if(!windows_openssl_handle) goto cleanup;

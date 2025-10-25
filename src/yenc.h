@@ -47,7 +47,7 @@
 /* Functions */
 PyObject* yenc_decode(PyObject *, PyObject*);
 PyObject* yenc_encode(PyObject *, PyObject*);
-PyObject* Decoder_Decode(PyObject *, PyObject*, PyObject*);
+PyObject* Decoder_Decode(PyObject *, PyObject*);
 
 template <typename T>
 static inline bool extract_int(std::string_view line, const char* needle, T& dest) {
@@ -141,7 +141,7 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
 }
 
 static PyMethodDef DecoderMethods[] = {
-    {"decode", (PyCFunction)Decoder_Decode, METH_VARARGS | METH_KEYWORDS, ""},
+    {"decode", (PyCFunction)Decoder_Decode, METH_O, ""},
     {nullptr}
 };
 
@@ -159,26 +159,40 @@ static PyMemberDef DecoderMembers[] = {
 
 static PyTypeObject DecoderDescription = {
     PyVarObject_HEAD_INIT(nullptr, 0)
-    .tp_name = "sabctools.Decoder",
-    .tp_basicsize = sizeof(Decoder),
-    .tp_itemsize = 0,
-    .tp_dealloc = [](PyObject* object){
+    "sabctools.Decoder", // tp_name
+    sizeof(Decoder), // tp_basicsize
+    0, // tp_itemsize
+    [](PyObject* object){
         // Decoder* instance = reinterpret_cast<Decoder*>(object);
         // delete pointers
 
         PyObject_GC_UnTrack(object);
         Py_TYPE(object)->tp_clear(object);
         PyObject_GC_Del(object);
-    },
-    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,
-    .tp_doc = "Decoder",
-    .tp_traverse = [](PyObject* object, visitproc visit, void* arg) -> int {
+    }, // tp_dealloc
+    0,                              // tp_vectorcall_offset
+    0,                              // tp_getattr
+    0,                              // tp_setattr
+    0,                              // tp_as_async
+    0,                              // tp_repr
+    0,                              // tp_as_number
+    0,                              // tp_as_sequence
+    0,                              // tp_as_mapping
+    0,                              // tp_hash
+    0,                              // tp_call
+    0,                              // tp_str
+    0,                              // tp_getattro
+    0,                              // tp_setattro
+    0,                              // tp_as_buffer
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC, // tp_flags
+    PyDoc_STR("Decoder"), // tp_doc
+    [](PyObject* object, visitproc visit, void* arg) -> int {
         Decoder* instance = reinterpret_cast<Decoder*>(object);
         Py_VISIT(instance->data);
         Py_VISIT(instance->file_name);
         return 0;
-    },
-    .tp_clear = [](PyObject* object) -> int {
+    }, // tp_traverse
+    [](PyObject* object) -> int {
         Decoder* instance = reinterpret_cast<Decoder*>(object);
 
         instance->data = nullptr;
@@ -196,11 +210,22 @@ static PyTypeObject DecoderDescription = {
         instance->body = false;
 
         return 0;
-    },
-    .tp_methods = DecoderMethods,
-    .tp_members = DecoderMembers,
-    // .tp_getset = DecoderPropertyMembers,
-    .tp_new = PyType_GenericNew,
+    }, // tp_clear
+    0,                              // tp_richcompare
+    0,                              // tp_weaklistoffset
+    0,                              // tp_iter
+    0,                              // tp_iternext
+    DecoderMethods,                 // tp_methods
+    DecoderMembers,                 // tp_members
+    0,                              // tp_getset
+    0,                              // tp_base
+    0,                              // tp_dict
+    0,                              // tp_descr_get
+    0,                              // tp_descr_set
+    0,                              // tp_dictoffset
+    0,                              // tp_init
+    PyType_GenericAlloc,            // tp_alloc
+    PyType_GenericNew,              // tp_new
 };
 
 #endif //SABCTOOLS_YENC_H

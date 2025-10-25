@@ -244,20 +244,26 @@ finish:
     return retval;
 }
 
-PyObject* Decoder_Decode(PyObject* self, PyObject* args, PyObject* kwargs) {
+PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
-    Py_buffer input_buffer;
+    Py_buffer* input_buffer;
 
-    static char *kwlist[] = {"data", NULL};
-
-    // Parse arguments
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "w*:yenc_decode_stream", kwlist, &input_buffer)) {
+    // Verify it's a bytearray
+    if (!PyMemoryView_Check(Py_memoryview_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expected memoryview");
         return NULL;
     }
 
-    char* buf = static_cast<char*>(input_buffer.buf);
-    size_t buf_len = input_buffer.len;
+    // Get buffer and check it is a valid size and type
+    input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
+    if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
+        PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
+        return NULL;
+    }
+
+    char* buf = static_cast<char*>(input_buffer->buf);
+    size_t buf_len = input_buffer->len;
     
     decode:
     if (instance->body && instance->format == YENC) {
@@ -265,7 +271,6 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* args, PyObject* kwargs) {
         if (!instance->data) {
             instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size);
             if (!instance->data) {
-                PyBuffer_Release(&input_buffer);
                 return PyErr_NoMemory();
             }
         }
@@ -360,11 +365,9 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* args, PyObject* kwargs) {
         //     // move remaining data to start of buffer
         // }
         // Copy remaining buffer to the start, caller might need to read more first
-        memcpy(input_buffer.buf, buf, buf_len);
+        memcpy(input_buffer->buf, buf, buf_len);
     }
     
-    PyBuffer_Release(&input_buffer);
-
     auto done = instance->done ? Py_True : Py_False;
     Py_INCREF(done);
     return Py_BuildValue("(O, O)", done, PyLong_FromUnsignedLongLong(buf_len));
