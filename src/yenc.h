@@ -123,9 +123,11 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
         instance->body = true;
 
         std::string_view remaining = std::string_view(line.data() + 6, line.length() - 6);
-        extract_int(remaining, " begin=", instance->part_begin);
-        if (extract_int(remaining, " end=", instance->part_size) && instance->part_size >= instance->part_begin - 1) {
-            instance->part_size -= instance->part_begin - 1;
+        if (extract_int(remaining, " begin=", instance->part_begin) && instance->part_begin > 0) {
+            instance->part_begin--;
+        }
+        if (extract_int(remaining, " end=", instance->part_size) && instance->part_size >= instance->part_begin) {
+            instance->part_size -= instance->part_begin;
         }
 	} else if (line.rfind("=yend ", 0) != std::string::npos) {
         std::string::size_type pos = 0;
