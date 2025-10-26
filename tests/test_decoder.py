@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys
 import pytest
 import glob
@@ -105,14 +106,14 @@ def test_ref_counts():
 
 
 def test_crc_yencs():
-    all_crc_fails = glob.glob("crc_*.yenc", root_dir="tests/yencfiles")
+    all_crc_fails = glob.glob("tests/yencfiles/crc_*.yenc")
     for fname in all_crc_fails:
-        data_plain = read_plain_yenc_file(fname)
+        data_plain = read_plain_yenc_file(Path(fname).name)
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
 def test_small_file_yencs():
-    all_small_files = glob.glob("small_file*.yenc", root_dir="tests/yencfiles")
+    all_small_files = glob.glob("tests/yencfiles/small_file*.yenc")
     for fname in all_small_files:
-        data_plain = read_plain_yenc_file(fname)
+        data_plain = read_plain_yenc_file(Path(fname).name)
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
