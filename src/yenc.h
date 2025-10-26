@@ -29,6 +29,9 @@
 #include <iostream>
 #include <charconv>
 #include <optional>
+#include <algorithm>
+#include <iomanip>
+#include <string>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -74,15 +77,15 @@ enum EncodingFormat {
 typedef struct {
     PyObject_HEAD
     PyObject* data; // decoded data
-    uint64_t data_position; // number of bytes decoded
+    Py_ssize_t data_position; // number of bytes decoded
     EncodingFormat format;
     RapidYenc::YencDecoderState state;
     PyObject* file_name;
-    uint64_t file_size;
-    uint64_t part;
-    uint64_t part_begin;
-    uint64_t part_size;
-    uint64_t total;
+    Py_ssize_t file_size;
+    Py_ssize_t part;
+    Py_ssize_t part_begin;
+    Py_ssize_t part_size;
+    Py_ssize_t total;
     uint32_t crc;
     std::optional<uint32_t> crc_expected;
 

@@ -250,7 +250,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     PyObject *retval = NULL;
     Py_buffer input_buffer;
     char* buf = NULL;
-    size_t buf_len = 0;
+    Py_ssize_t buf_len = 0;
 
     // Get buffer and check it is a valid size and type
     if (PyObject_GetBuffer(Py_memoryview_obj, &input_buffer, PyBUF_WRITABLE | PyBUF_CONTIG) == -1 || input_buffer.len <= 0) {
@@ -265,14 +265,23 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     if (instance->body && instance->format == YENC && buf_len > 0) {
         // TODO: add limits to part_size, maybe ensure freespace is greater than size of input buffer?
         if (!instance->data) {
-            instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size > 0 ? instance->part_size : instance->file_size);
+            // Get the size and sanity check the values
+            Py_ssize_t expected_size = std::min(
+                Py_ssize_t(YENC_MAX_PART_SIZE),
+                std::max(
+                    instance->part_size > 0 ? instance->part_size : instance->file_size, // only multi-part have a part size
+                    buf_len // for safety ensure we allocate at least enough to process the whole buffer
+                )
+            );
+            instance->data = PyByteArray_FromStringAndSize(NULL, expected_size);
             if (!instance->data) {
                 retval = PyErr_NoMemory();
                 goto finish;
             }
+        } else if (instance->data_position + buf_len > PyBytes_GET_SIZE(instance->data)) {
+            // For safety resize to size of buffer
+            PyByteArray_Resize(instance->data, instance->data_position + buf_len);
         }
-
-        // TODO: resize bytes if needed
 
         char *src_ptr = buf;
         char *dst_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
@@ -370,7 +379,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
 
     if (instance->done)
     {
-        if (instance->data_position != instance->part_size) {
+        if (instance->data && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
             // Adjust the Python-size of the bytesarray-object
             // This will only do a real resize if the data shrunk by half, so never in our case!
             // Resizing a bytes object always does a real resize, so more costly
