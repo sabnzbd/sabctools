@@ -278,7 +278,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
         // TODO: resize bytes if needed
 
         char *src_ptr = buf;
-        char *dst_ptr = PyByteArray_AsString(instance->data);
+        char *dst_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
         char *dest_start = dst_ptr;
 
         // Decode the data
@@ -287,6 +287,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
         RapidYenc::YencDecoderEnd end = RapidYenc::decode_end((const void**)&src_ptr, (void**)&dst_ptr, buf_len, &instance->state);
         size_t nsrc = src_ptr - buf;
         size_t ndst = dst_ptr - dest_start;
+        instance->data_position += ndst;
         instance->crc = RapidYenc::crc32(dest_start, ndst, instance->crc);
 
         switch (end) {

@@ -73,6 +73,7 @@ enum EncodingFormat {
 typedef struct {
     PyObject_HEAD
     PyObject* data; // decoded data
+    uint64_t data_position; // number of bytes decoded
     EncodingFormat format;
     RapidYenc::YencDecoderState state;
     PyObject* file_name;
@@ -198,6 +199,7 @@ static PyTypeObject DecoderDescription = {
         Decoder* instance = reinterpret_cast<Decoder*>(object);
 
         instance->data = nullptr;
+        instance->data_position = 0;
         instance->format = UNKNOWN;
         instance->state = RapidYenc::YDEC_STATE_CRLF;
         instance->file_name = nullptr;
