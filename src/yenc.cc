@@ -248,25 +248,18 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
     PyObject *retval = NULL;
-    Py_buffer* input_buffer;
+    Py_buffer input_buffer;
     char* buf = NULL;
     size_t buf_len = 0;
 
-    // Verify it's a bytearray
-    if (!PyMemoryView_Check(Py_memoryview_obj)) {
-        PyErr_SetString(PyExc_TypeError, "Expected memoryview");
-        return NULL;
-    }
-
     // Get buffer and check it is a valid size and type
-    input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
-    if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
+    if (PyObject_GetBuffer(Py_memoryview_obj, &input_buffer, PyBUF_WRITABLE | PyBUF_CONTIG) == -1 || input_buffer.len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
         goto finish;
     }
 
-    buf = static_cast<char*>(input_buffer->buf);
-    buf_len = input_buffer->len;
+    buf = static_cast<char*>(input_buffer.buf);
+    buf_len = input_buffer.len;
     
     decode:
     if (instance->body && instance->format == YENC && buf_len > 0) {
@@ -372,7 +365,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
         //     // move remaining data to start of buffer
         // }
         // Copy remaining buffer to the start, caller might need to read more first
-        memcpy(input_buffer->buf, buf, buf_len);
+        memcpy(input_buffer.buf, buf, buf_len);
     }
 
     if (instance->done)
@@ -401,7 +394,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     retval = Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, PyLong_FromUnsignedLongLong(buf_len));
 
 finish:
-    Py_XDECREF(input_buffer);
+    PyBuffer_Release(&input_buffer);
     return retval;
 }
 
