@@ -119,42 +119,47 @@ def test_small_file_pickles():
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 def test_streaming():
-    decoder = sabctools.Decoder()
-
     BUFFER_SIZE = 4096
     buffer = bytearray(BUFFER_SIZE)
     buffer_view = memoryview(buffer)
-    buffer_remaining = 0  # unprocessed contents of the buffer
+    remaining_view = None  # unprocessed contents of the buffer
+    buffer_remaining = 0
 
-    expected = [
-        { "crc": "e83e50e7", "file_name": "Applideck Revenue 980788779079648.z12" },
-        { "crc": "31963516", "file_name": "Hi Kingdom 你好世界.txt" }  # doesn't end with .\r\n
+    yenc_files = [
+        "test_regular_2.yenc",
+        "test_special_utf8_chars.yenc"  # doesn't end with .\r\n
     ]
-    responses = 0
+    responses = []
 
     # Read in chunks like a network
-    f = io.BytesIO(read_plain_yenc_file("test_regular_2.yenc") + read_plain_yenc_file("test_special_utf8_chars.yenc") + b".\r\n")
-    while True:
-        buffer_slice = buffer_view
-        read_bytes = f.readinto(buffer_slice[buffer_remaining:])
-        if read_bytes == 0 and buffer_remaining == 0:
-            print("Not done but no more data...")
+    f = io.BytesIO(b"".join(map(lambda x: read_plain_yenc_file(x), yenc_files)) + b".\r\n")
+
+    decoder = sabctools.Decoder()
+
+    while len(responses) != len(yenc_files):
+        if remaining_view is not None:
+            # Are there unprocessed bytes that we need to try first?
+            done, remaining_view = decoder.decode(remaining_view)
+            if done:
+                buffer_remaining = 0
+                responses.append(decoder)
+                continue
+            elif remaining_view is not None:
+                # Unprocessable; copy to start of buffer and read more
+                # Rare if the buffer is large enough to hold then end of a response and the next yenc headers
+                buffer_view[:len(remaining_view)] = remaining_view
+                buffer_remaining = len(remaining_view)
+
+        if (read_bytes := f.readinto(buffer_view[buffer_remaining:])) == 0:
             break
 
-        # Need to expose a way to see the status code, can do buffer_view[:3] if decode hasn't been called yet
-        # Because we need to handle non 2xx responses the decoder could handle that itself
-        
-        buffer_slice = buffer_slice[:read_bytes+buffer_remaining]
-        done, buffer_remaining = decoder.decode(buffer_slice)
-
+        done, remaining_view = decoder.decode(buffer_view[:read_bytes+buffer_remaining])
         if done:
-            assert int(expected[responses]["crc"], 16) == decoder.crc_expected
-            assert int(expected[responses]["crc"], 16) == decoder.crc
-            assert expected[responses]["file_name"] == decoder.file_name
-            responses += 1
-            if responses == len(expected):
-                break
+            responses.append(decoder)
             decoder = sabctools.Decoder()
 
-    assert responses == 2
+    assert len(responses) == len(yenc_files)
+
+    for i, dec in enumerate(responses):
+        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (dec.data, correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
                 

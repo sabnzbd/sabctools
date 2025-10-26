@@ -248,23 +248,31 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
     PyObject *retval = NULL;
-    Py_buffer input_buffer;
+    Py_buffer* input_buffer;
     char* buf = NULL;
     Py_ssize_t buf_len = 0;
+    PyObject* unprocessed_memoryview = Py_None;
 
     if (instance->done) {
         PyErr_SetString(PyExc_ValueError, "Already finished decoding");
         goto finish;
     }
 
+    // Verify it's a bytearray
+    if (!PyMemoryView_Check(Py_memoryview_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Expected memoryview");
+        return NULL;
+    }
+
     // Get buffer and check it is a valid size and type
-    if (PyObject_GetBuffer(Py_memoryview_obj, &input_buffer, PyBUF_WRITABLE | PyBUF_CONTIG) == -1 || input_buffer.len <= 0) {
+    input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
+    if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
         goto finish;
     }
 
-    buf = static_cast<char*>(input_buffer.buf);
-    buf_len = input_buffer.len;
+    buf = static_cast<char*>(input_buffer->buf);
+    buf_len = input_buffer->len;
     
     decode:
     if (instance->body && instance->format == YENC && buf_len > 0) {
@@ -357,7 +365,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
                     buf += prev;
                     buf_len -= prev;                     
                     if (buf_len > 0) {
-                        goto decode; // TODO: get rid of this goto
+                        goto decode;
                     } else {
                         break;
                     }
@@ -368,18 +376,6 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
                 // Not implemented
             }
         }
-    }
-
-    // Is there any unprocessed data remaining?
-    if (buf_len > 0) {
-        // TODO: is avoiding the memcpy but needing to search worth it? it will mostly only happen between responses
-        // if (std::string_view(buf, buf_len).find("\r\n") != std::string::npos) {
-        //     // tell caller there is at least a line that can be processed, return a memoryview and avoid moving to start
-        // } else {
-        //     // move remaining data to start of buffer
-        // }
-        // Copy remaining buffer to the start, caller might need to read more first
-        memcpy(input_buffer.buf, buf, buf_len);
     }
 
     if (instance->done)
@@ -404,11 +400,24 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
         }
     }    
 
+    if (buf_len > 0) {
+        Py_buffer subbuf = *input_buffer; // shallow copy
+        subbuf.buf = (char*)input_buffer->buf + input_buffer->len - buf_len;
+        subbuf.len = buf_len;
+
+        // Adjust shape - should always be true
+        if (subbuf.ndim == 1 && subbuf.shape) {
+            subbuf.shape[0] = buf_len;
+        }
+
+        unprocessed_memoryview = PyMemoryView_FromBuffer(&subbuf);
+    } else {
+        Py_INCREF(unprocessed_memoryview);
+    }
     Py_INCREF(instance->done ? Py_True : Py_False);
-    retval = Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, PyLong_FromUnsignedLongLong(buf_len));
+    retval = Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, unprocessed_memoryview);
 
 finish:
-    if (input_buffer.buf) PyBuffer_Release(&input_buffer);
     return retval;
 }
 
