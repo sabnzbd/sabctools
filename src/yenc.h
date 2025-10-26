@@ -83,7 +83,7 @@ typedef struct {
     uint64_t part_size;
     uint64_t total;
     uint32_t crc;
-    uint32_t crc_expected;
+    std::optional<uint32_t> crc_expected;
 
 	bool done; // seen \r\n.\r\n
 	bool body; // in yenc data
@@ -144,20 +144,47 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
 }
 
 static PyMethodDef DecoderMethods[] = {
-    {"decode", (PyCFunction)Decoder_Decode, METH_O, ""},
+    {"decode", Decoder_Decode, METH_O, ""},
     {nullptr}
 };
 
 static PyMemberDef DecoderMembers[] = {
-    {"data", T_OBJECT_EX, offsetof(Decoder, data), READONLY, ""},
-    {"format", T_INT, offsetof(Decoder, format), READONLY, ""},
-    {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
+    {"data", T_OBJECT, offsetof(Decoder, data), READONLY, ""},
+    {"file_name", T_OBJECT, offsetof(Decoder, file_name), READONLY, ""},
     {"file_size", T_ULONGLONG, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_ULONGLONG, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_ULONGLONG, offsetof(Decoder, part_size), READONLY, ""},
-    {"crc", T_UINT, offsetof(Decoder, crc), READONLY, ""},
-    {"crc_expected", T_UINT, offsetof(Decoder, crc_expected), READONLY, ""},
     {nullptr}
+};
+
+static PyGetSetDef DecoderGetsSets[] = {
+    {
+        "crc",
+        [](PyObject* self, void *closure) -> PyObject* {
+            Decoder* instance = reinterpret_cast<Decoder*>(self);
+            if (!instance->crc_expected.has_value() || instance->crc != instance->crc_expected.value()) {
+                Py_RETURN_NONE;
+            }
+            return PyLong_FromLong(instance->crc);
+        },
+        NULL,
+        NULL,
+        NULL
+    },
+    {
+        "crc_expected",
+        [](PyObject* self, void *closure) -> PyObject* {
+            Decoder* instance = reinterpret_cast<Decoder*>(self);
+            if (!instance->crc_expected.has_value()) {
+                Py_RETURN_NONE;
+            }
+            return PyLong_FromLong(instance->crc_expected.value());
+        },
+        NULL,
+        NULL,
+        NULL
+    },
+    {NULL}
 };
 
 static PyTypeObject DecoderDescription = {
@@ -209,7 +236,7 @@ static PyTypeObject DecoderDescription = {
         instance->part_size = 0;
         instance->total = 0;
         instance->crc = 0;
-        instance->crc_expected = 0;
+        instance->crc_expected = std::nullopt;
         instance->done = false;
         instance->body = false;
 
@@ -221,7 +248,7 @@ static PyTypeObject DecoderDescription = {
     0,                              // tp_iternext
     DecoderMethods,                 // tp_methods
     DecoderMembers,                 // tp_members
-    0,                              // tp_getset
+    DecoderGetsSets,                // tp_getset
     0,                              // tp_base
     0,                              // tp_dict
     0,                              // tp_descr_get

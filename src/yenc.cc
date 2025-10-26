@@ -247,7 +247,10 @@ finish:
 PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
+    PyObject *retval = NULL;
     Py_buffer* input_buffer;
+    char* buf = NULL;
+    size_t buf_len = 0;
 
     // Verify it's a bytearray
     if (!PyMemoryView_Check(Py_memoryview_obj)) {
@@ -259,11 +262,11 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
     if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
-        return NULL;
+        goto finish;
     }
 
-    char* buf = static_cast<char*>(input_buffer->buf);
-    size_t buf_len = input_buffer->len;
+    buf = static_cast<char*>(input_buffer->buf);
+    buf_len = input_buffer->len;
     
     decode:
     if (instance->body && instance->format == YENC) {
@@ -271,7 +274,8 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
         if (!instance->data) {
             instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size);
             if (!instance->data) {
-                return PyErr_NoMemory();
+                retval = PyErr_NoMemory();
+                goto finish;
             }
         }
 
@@ -344,12 +348,14 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
                 process_yenc_header(instance, line);
                 if (instance->body) {
                     buf += prev;
-                    buf_len -= prev;
-                    goto decode; // TODO: get rid of this goto
-                } else if (!instance->done) {
-                    buf += prev;
-                    buf_len -= prev;
-                    break;
+                    buf_len -= prev;                     
+                    if (buf_len > 0) {
+                        goto decode; // TODO: get rid of this goto
+                    } else {
+                        break;
+                    }
+                } else {
+                    continue;
                 }
             } else if (instance->format == UU) {
                 // Not implemented
@@ -368,10 +374,35 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
         // Copy remaining buffer to the start, caller might need to read more first
         memcpy(input_buffer->buf, buf, buf_len);
     }
-    
-    auto done = instance->done ? Py_True : Py_False;
-    Py_INCREF(done);
-    return Py_BuildValue("(O, O)", done, PyLong_FromUnsignedLongLong(buf_len));
+
+    if (instance->done)
+    {
+        if (instance->data_position != instance->part_size) {
+            // Adjust the Python-size of the bytesarray-object
+            // This will only do a real resize if the data shrunk by half, so never in our case!
+            // Resizing a bytes object always does a real resize, so more costly
+            PyByteArray_Resize(instance->data, instance->data_position);
+        }
+
+        if (instance->file_name == nullptr)
+        {            
+            PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
+            goto finish;
+        }
+
+        if (!instance->crc_expected.has_value()) {
+            // CRC32 not found - article is invalid
+            PyErr_SetString(PyExc_ValueError, "Invalid CRC in footer");
+            goto finish;
+        }
+    }    
+
+    Py_INCREF(instance->done ? Py_True : Py_False);
+    retval = Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, PyLong_FromUnsignedLongLong(buf_len));
+
+finish:
+    Py_XDECREF(input_buffer);
+    return retval;
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
