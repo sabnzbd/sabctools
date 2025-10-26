@@ -104,15 +104,15 @@ def test_ref_counts():
     assert sys.getrefcount(data_plain) == expected_refcount
 
 
-def test_crc_pickles():
-    all_crc_fails = glob.glob("tests/yencfiles/crc_*")
+def test_crc_yencs():
+    all_crc_fails = glob.glob("crc_*.yenc", root_dir="tests/yencfiles")
     for fname in all_crc_fails:
-        data_plain = read_pickle(fname)
+        data_plain = read_plain_yenc_file(fname)
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
-def test_small_file_pickles():
-    all_pickles = glob.glob("tests/yencfiles/small_file*")
-    for fname in all_pickles:
-        data_plain = read_pickle(fname)
+def test_small_file_yencs():
+    all_small_files = glob.glob("small_file*.yenc", root_dir="tests/yencfiles")
+    for fname in all_small_files:
+        data_plain = read_plain_yenc_file(fname)
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
