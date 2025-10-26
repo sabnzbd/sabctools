@@ -265,7 +265,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     if (instance->body && instance->format == YENC && buf_len > 0) {
         // TODO: add limits to part_size, maybe ensure freespace is greater than size of input buffer?
         if (!instance->data) {
-            instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size);
+            instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size > 0 ? instance->part_size : instance->file_size);
             if (!instance->data) {
                 retval = PyErr_NoMemory();
                 goto finish;
