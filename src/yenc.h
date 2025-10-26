@@ -28,6 +28,7 @@
 #include <string_view>
 #include <iostream>
 #include <charconv>
+#include <optional>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
