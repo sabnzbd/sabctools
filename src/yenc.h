@@ -104,7 +104,11 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
 	{
         std::string_view remaining = std::string_view(line.data() + 7, line.length() - 7);
         extract_int(remaining, " size=", instance->file_size);
-        extract_int(remaining, " part=", instance->part);
+        if (!extract_int(remaining, " part=", instance->part)) {
+            // Not multi-part
+            instance->body = true;
+            instance->part_size = instance->file_size;
+        }
         extract_int(remaining, " total=", instance->total);
 
         std::string::size_type pos = 0;
