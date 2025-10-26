@@ -148,8 +148,8 @@ def test_streaming():
         done, buffer_remaining = decoder.decode(buffer_slice)
 
         if done:
-            assert expected[responses]["crc"] == hex(decoder.crc_expected)[2:]
-            assert expected[responses]["crc"] == hex(decoder.crc)[2:]
+            assert int(expected[responses]["crc"], 16) == decoder.crc_expected
+            assert int(expected[responses]["crc"], 16) == decoder.crc
             assert expected[responses]["file_name"] == decoder.file_name
             responses += 1
             if responses == len(expected):

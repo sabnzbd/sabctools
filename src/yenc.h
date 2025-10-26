@@ -172,7 +172,7 @@ static PyGetSetDef DecoderGetsSets[] = {
             if (!instance->crc_expected.has_value() || instance->crc != instance->crc_expected.value()) {
                 Py_RETURN_NONE;
             }
-            return PyLong_FromLong(instance->crc);
+            return PyLong_FromUnsignedLong(instance->crc);
         },
         NULL,
         NULL,
@@ -185,7 +185,7 @@ static PyGetSetDef DecoderGetsSets[] = {
             if (!instance->crc_expected.has_value()) {
                 Py_RETURN_NONE;
             }
-            return PyLong_FromLong(instance->crc_expected.value());
+            return PyLong_FromUnsignedLong(instance->crc_expected.value());
         },
         NULL,
         NULL,
