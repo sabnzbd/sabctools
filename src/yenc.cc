@@ -269,7 +269,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     buf_len = input_buffer->len;
     
     decode:
-    if (instance->body && instance->format == YENC) {
+    if (instance->body && instance->format == YENC && buf_len > 0) {
         // TODO: add limits to part_size, maybe ensure freespace is greater than size of input buffer?
         if (!instance->data) {
             instance->data = PyByteArray_FromStringAndSize(NULL, instance->part_size);
