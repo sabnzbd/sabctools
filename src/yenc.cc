@@ -252,6 +252,11 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     char* buf = NULL;
     Py_ssize_t buf_len = 0;
 
+    if (instance->done) {
+        PyErr_SetString(PyExc_ValueError, "Already finished decoding");
+        goto finish;
+    }
+
     // Get buffer and check it is a valid size and type
     if (PyObject_GetBuffer(Py_memoryview_obj, &input_buffer, PyBUF_WRITABLE | PyBUF_CONTIG) == -1 || input_buffer.len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
@@ -403,7 +408,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     retval = Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, PyLong_FromUnsignedLongLong(buf_len));
 
 finish:
-    PyBuffer_Release(&input_buffer);
+    if (input_buffer.buf) PyBuffer_Release(&input_buffer);
     return retval;
 }
 
