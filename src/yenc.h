@@ -119,11 +119,12 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
             std::string_view name = std::string_view(remaining.data() + 6 + pos, remaining.length() - 6 - pos);
             // Not sure \r\n is necessary lines already have them stripped
             if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
+                Py_DECREF(instance->file_name);
                 instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
                 if (!instance->file_name) {
                     PyErr_Clear();
                     instance->file_name = PyUnicode_DecodeLatin1(name.data(), pos + 1, NULL);
-                }                
+                }
             }
 	    }
 	} else if (line.rfind("=ypart ", 0) != std::string::npos) {
@@ -152,14 +153,61 @@ static inline void process_yenc_header(Decoder* instance, std::string_view line)
 	}
 }
 
+static void Decoder_dealloc(Decoder* self)
+{
+    Py_XDECREF(self->data);
+    Py_XDECREF(self->file_name);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
+{
+    Decoder* self = (Decoder*)type->tp_alloc(type, 0);
+    if (!self) return NULL;
+
+    self->data = Py_None; Py_INCREF(Py_None);
+    self->file_name = Py_None; Py_INCREF(Py_None);
+
+    // Not strickly required because the are the zero values
+    self->format = UNKNOWN;
+    self->state = RapidYenc::YDEC_STATE_CRLF;
+
+    return (PyObject*)self;
+}
+
+static PyObject* Decoder_repr(Decoder* self)
+{
+    return PyUnicode_FromFormat(
+        "<Decoder done=%s, file_name=%R, length=%zd>",
+        self->done ? "True" : "False",
+        self->file_name ? self->file_name : Py_None,
+        self->data_position);
+}
+
+static PyObject* Decoder_get_crc(Decoder* self, void *closure)
+{
+    if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
+        Py_RETURN_NONE;
+    }
+    return PyLong_FromUnsignedLong(self->crc);
+}
+
+static PyObject* Decoder_get_crc_expected(Decoder* self, void *closure)
+{
+    if (!self->crc_expected.has_value()) {
+        Py_RETURN_NONE;
+    }
+    return PyLong_FromUnsignedLong(self->crc_expected.value());
+}
+
 static PyMethodDef DecoderMethods[] = {
     {"decode", Decoder_Decode, METH_O, ""},
     {nullptr}
 };
 
 static PyMemberDef DecoderMembers[] = {
-    {"data", T_OBJECT, offsetof(Decoder, data), READONLY, ""},
-    {"file_name", T_OBJECT, offsetof(Decoder, file_name), READONLY, ""},
+    {"data", T_OBJECT_EX, offsetof(Decoder, data), READONLY, ""},
+    {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
     {"file_size", T_ULONGLONG, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_ULONGLONG, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_ULONGLONG, offsetof(Decoder, part_size), READONLY, ""},
@@ -167,53 +215,22 @@ static PyMemberDef DecoderMembers[] = {
 };
 
 static PyGetSetDef DecoderGetsSets[] = {
-    {
-        "crc",
-        [](PyObject* self, void *closure) -> PyObject* {
-            Decoder* instance = reinterpret_cast<Decoder*>(self);
-            if (!instance->crc_expected.has_value() || instance->crc != instance->crc_expected.value()) {
-                Py_RETURN_NONE;
-            }
-            return PyLong_FromUnsignedLong(instance->crc);
-        },
-        NULL,
-        NULL,
-        NULL
-    },
-    {
-        "crc_expected",
-        [](PyObject* self, void *closure) -> PyObject* {
-            Decoder* instance = reinterpret_cast<Decoder*>(self);
-            if (!instance->crc_expected.has_value()) {
-                Py_RETURN_NONE;
-            }
-            return PyLong_FromUnsignedLong(instance->crc_expected.value());
-        },
-        NULL,
-        NULL,
-        NULL
-    },
+    {"crc", (getter)Decoder_get_crc, NULL, NULL, NULL},
+    {"crc_expected", (getter)Decoder_get_crc_expected, NULL, NULL, NULL},
     {NULL}
 };
 
-static PyTypeObject DecoderDescription = {
+static PyTypeObject DecoderType = {
     PyVarObject_HEAD_INIT(nullptr, 0)
-    "sabctools.Decoder", // tp_name
-    sizeof(Decoder), // tp_basicsize
-    0, // tp_itemsize
-    [](PyObject* object){
-        // Decoder* instance = reinterpret_cast<Decoder*>(object);
-        // delete pointers
-
-        PyObject_GC_UnTrack(object);
-        Py_TYPE(object)->tp_clear(object);
-        PyObject_GC_Del(object);
-    }, // tp_dealloc
+    "sabctools.Decoder",            // tp_name
+    sizeof(Decoder),                // tp_basicsize
+    0,                              // tp_itemsize
+    (destructor)Decoder_dealloc,    // tp_dealloc
     0,                              // tp_vectorcall_offset
     0,                              // tp_getattr
     0,                              // tp_setattr
     0,                              // tp_as_async
-    0,                              // tp_repr
+    (reprfunc)Decoder_repr,         // tp_repr
     0,                              // tp_as_number
     0,                              // tp_as_sequence
     0,                              // tp_as_mapping
@@ -223,34 +240,10 @@ static PyTypeObject DecoderDescription = {
     0,                              // tp_getattro
     0,                              // tp_setattro
     0,                              // tp_as_buffer
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC, // tp_flags
-    PyDoc_STR("Decoder"), // tp_doc
-    [](PyObject* object, visitproc visit, void* arg) -> int {
-        Decoder* instance = reinterpret_cast<Decoder*>(object);
-        Py_VISIT(instance->data);
-        Py_VISIT(instance->file_name);
-        return 0;
-    }, // tp_traverse
-    [](PyObject* object) -> int {
-        Decoder* instance = reinterpret_cast<Decoder*>(object);
-
-        instance->data = nullptr;
-        instance->data_position = 0;
-        instance->format = UNKNOWN;
-        instance->state = RapidYenc::YDEC_STATE_CRLF;
-        instance->file_name = nullptr;
-        instance->file_size = 0;
-        instance->part = 0;
-        instance->part_begin = 0;
-        instance->part_size = 0;
-        instance->total = 0;
-        instance->crc = 0;
-        instance->crc_expected = std::nullopt;
-        instance->done = false;
-        instance->body = false;
-
-        return 0;
-    }, // tp_clear
+    Py_TPFLAGS_DEFAULT,             // tp_flags
+    PyDoc_STR("Decoder"),           // tp_doc
+    0,                              // tp_traverse
+    0,                              // tp_clear
     0,                              // tp_richcompare
     0,                              // tp_weaklistoffset
     0,                              // tp_iter
@@ -265,7 +258,7 @@ static PyTypeObject DecoderDescription = {
     0,                              // tp_dictoffset
     0,                              // tp_init
     PyType_GenericAlloc,            // tp_alloc
-    PyType_GenericNew,              // tp_new
+    (newfunc)Decoder_new,           // tp_new
 };
 
 #endif //SABCTOOLS_YENC_H

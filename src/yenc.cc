@@ -276,8 +276,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
     
     decode:
     if (instance->body && instance->format == YENC && buf_len > 0) {
-        // TODO: add limits to part_size, maybe ensure freespace is greater than size of input buffer?
-        if (!instance->data) {
+        if (instance->data == Py_None) {
             // Get the size and sanity check the values
             Py_ssize_t expected_size = std::min(
                 Py_ssize_t(YENC_MAX_PART_SIZE),
@@ -287,6 +286,7 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
                 )
             );
             instance->data = PyByteArray_FromStringAndSize(NULL, expected_size);
+            Py_DECREF(Py_None);
             if (!instance->data) {
                 retval = PyErr_NoMemory();
                 goto finish;
@@ -380,14 +380,14 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
 
     if (instance->done)
     {
-        if (instance->data && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
+        if (instance->data != Py_None && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
             // Adjust the Python-size of the bytesarray-object
             // This will only do a real resize if the data shrunk by half, so never in our case!
             // Resizing a bytes object always does a real resize, so more costly
             PyByteArray_Resize(instance->data, instance->data_position);
         }
 
-        if (instance->file_name == nullptr)
+        if (instance->file_name == Py_None)
         {            
             PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
             goto finish;
