@@ -59,7 +59,7 @@ jobs:
           CIBW_ARCHS_WINDOWS: AMD64 ARM64
           CIBW_TEST_SKIP: '*'
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
@@ -70,7 +70,7 @@ jobs:
           pip install wheel setuptools
           python setup.py sdist
       - name: Upload source distribution artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: runner.os == 'macOS'
         with:
           path: ./dist/*.tar.gz
