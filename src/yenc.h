@@ -208,9 +208,9 @@ static PyMethodDef DecoderMethods[] = {
 static PyMemberDef DecoderMembers[] = {
     {"data", T_OBJECT_EX, offsetof(Decoder, data), READONLY, ""},
     {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
-    {"file_size", T_ULONGLONG, offsetof(Decoder, file_size), READONLY, ""},
-    {"part_begin", T_ULONGLONG, offsetof(Decoder, part_begin), READONLY, ""},
-    {"part_size", T_ULONGLONG, offsetof(Decoder, part_size), READONLY, ""},
+    {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
+    {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
+    {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
     {nullptr}
 };
 
