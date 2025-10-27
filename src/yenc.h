@@ -168,7 +168,7 @@ static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
     self->data = Py_None; Py_INCREF(Py_None);
     self->file_name = Py_None; Py_INCREF(Py_None);
 
-    // Not strickly required because the are the zero values
+    // Not necessary because the are the zero values
     self->format = UNKNOWN;
     self->state = RapidYenc::YDEC_STATE_CRLF;
 
