@@ -118,6 +118,22 @@ def test_small_file_pickles():
         data_plain = read_pickle(fname)
         assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
+@pytest.mark.parametrize(
+    "code,success",
+    [
+        (223, True),  # stat
+        (430, False),  # article not found
+    ],
+)
+def test_nntp_not_multiline(code: int, success: bool):
+    decoder = sabctools.Decoder()
+    done, remaining_view = decoder.decode(memoryview(bytes(f"{code} 0 <message-id>\r\n", encoding="utf-8")))
+    assert done is True
+    assert remaining_view is None
+    assert decoder.success is success
+    assert decoder.status_code == code
+
+
 def test_streaming():
     BUFFER_SIZE = 4096
     buffer = bytearray(BUFFER_SIZE)
@@ -162,5 +178,5 @@ def test_streaming():
     assert len(responses) == len(yenc_files)
 
     for i, dec in enumerate(responses):
+        assert dec.status_code in (220, 222)
         assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (memoryview(dec), correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
-

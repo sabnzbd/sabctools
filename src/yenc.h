@@ -43,6 +43,9 @@
 #define YENC_ZERO        0x00
 #define YENC_CR          0x0d
 #define YENC_LF          0x0a
+#define NNTP_ARTICLE     220
+#define NNTP_BODY        222
+#define NNTP_STAT        223
 
 /* The =yend line cannot be crazy long */
 #define YENC_MAX_TAIL_BYTES 256
@@ -77,6 +80,7 @@ typedef struct {
     Py_ssize_t total;
     uint32_t crc;
     std::optional<uint32_t> crc_expected;
+    int status_code;
 
 	bool done; // seen \r\n.\r\n
 	bool body; // in yenc data

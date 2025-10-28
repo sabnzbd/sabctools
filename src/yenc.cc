@@ -402,6 +402,15 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
 
 static PyObject* decoder_get_success(Decoder* self, void *closure)
 {
+    // Special case for STAT responses
+    if (self->status_code == NNTP_STAT) {
+        Py_RETURN_TRUE;
+    }
+
+    if (self->status_code != NNTP_BODY && self->status_code != NNTP_ARTICLE) {
+        Py_RETURN_FALSE;
+    }
+
     if (self->file_name == NULL)
     {
         Py_RETURN_FALSE;
@@ -530,6 +539,17 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
             }
 
             if (instance->format == UNKNOWN) {
+                if (!instance->status_code && line.length() >= 3) {
+                    // First line should start with a 3 character response code
+                    if (!extract_int(line, "", instance->status_code) || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE)) {
+                        // Not a multi-line response... we are done
+                        instance->done = true;
+                        buf += prev;
+                        buf_len -= prev;
+                        break;
+                    }
+                }
+
                 decoder_detect_format(instance, line);
             }
 
@@ -537,7 +557,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
                 decoder_process_yenc_header(instance, line);
                 if (instance->body) {
                     buf += prev;
-                    buf_len -= prev;                     
+                    buf_len -= prev;
                     if (buf_len > 0) {
                         goto decode;
                     } else {
@@ -644,8 +664,9 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
 static PyObject* decoder_repr(Decoder* self)
 {
     return PyUnicode_FromFormat(
-        "<Decoder done=%s, file_name=%R, length=%zd>",
+        "<Decoder: done=%s, status_code=%d, file_name=%R, length=%zd>",
         self->done ? "True" : "False",
+        self->status_code,
         decoder_get_file_name(self, NULL),
         self->data_position);
 }
@@ -659,6 +680,7 @@ static PyMemberDef decoder_members[] = {
     {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
+    {"status_code", Py_T_INT, offsetof(Decoder, status_code), READONLY, ""},
     {nullptr}
 };
 
