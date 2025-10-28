@@ -21,13 +21,13 @@
 import binascii
 import re
 import pickle
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 
 import chardet
 import sabctools
 
 
-def correct_unknown_encoding(str_or_bytes_in):
+def correct_unknown_encoding(str_or_bytes_in: Union[str, bytes]) -> str:
     """Files created on Windows but unpacked/repaired on
     linux can result in invalid filenames. Try to fix this
     encoding by going to bytes and then back to unicode again.
@@ -65,9 +65,20 @@ def read_pickle(filename):
     return bytearray(b"".join(data_chunks))
 
 
-def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, int, Optional[int]]:
-    decoded_data, filename, filesize, begin, size, crc_correct = sabctools.yenc_decode(memoryview(data))
-    return decoded_data, correct_unknown_encoding(filename), filesize, begin, size, crc_correct
+def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, int, Optional[int]]:
+    decoder = sabctools.Decoder()
+
+    done, remaining = decoder.decode(memoryview(data if data[-3:] == b".\r\n" else data + b"\r\n.\r\n"))
+    assert done == True
+    assert remaining is None
+
+    if not decoder.success:
+        if not decoder.file_name:
+            raise ValueError("Could not find yEnc filename")
+        if decoder.crc_expected is None:
+            raise ValueError("Invalid CRC in footer")
+
+    return memoryview(decoder), correct_unknown_encoding(decoder.file_name), decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
 
 
 def python_yenc(data_plain):
