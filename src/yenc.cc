@@ -244,7 +244,166 @@ finish:
     return retval;
 }
 
-PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
+template <typename T>
+static inline bool extract_int(std::string_view line, const char* needle, T& dest) {
+    std::string::size_type pos = 0;
+    std::string::size_type epos = 0;
+    if ((pos = line.find(needle)) != std::string::npos) {
+        if ((epos = std::string_view(line.data() + strlen(needle) + pos).find_last_not_of("0123456789")) != std::string::npos) {
+            auto [ptr, ec] = std::from_chars(line.data() + strlen(needle) + pos, line.data() + strlen(needle) + pos + epos, dest);
+            return ec == std::errc();
+        }
+    }
+    return false;
+}
+
+static inline void decoder_detect_format(Decoder* instance, std::string_view line) {
+	if (line.rfind("=ybegin ", 0) == 0)
+	{
+		instance->format = YENC;
+        return;
+	}
+
+	instance->format = UNKNOWN;
+}
+
+static inline void decoder_process_yenc_header(Decoder* instance, std::string_view line) {
+	if (line.rfind("=ybegin ", 0) != std::string::npos)
+	{
+        std::string_view remaining = std::string_view(line.data() + 7, line.length() - 7);
+        extract_int(remaining, " size=", instance->file_size);
+        if (!extract_int(remaining, " part=", instance->part)) {
+            // Not multi-part
+            instance->body = true;
+        }
+        extract_int(remaining, " total=", instance->total);
+
+        std::string::size_type pos = 0;
+	    if ((pos = remaining.find(" name=")) != std::string::npos) {
+            std::string_view name = std::string_view(remaining.data() + 6 + pos, remaining.length() - 6 - pos);
+            // Not sure \r\n is necessary lines already have them stripped
+            if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
+                Py_DECREF(instance->file_name);
+                instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
+                if (!instance->file_name) {
+                    PyErr_Clear();
+                    instance->file_name = PyUnicode_DecodeLatin1(name.data(), pos + 1, NULL);
+                }
+            }
+	    }
+	} else if (line.rfind("=ypart ", 0) != std::string::npos) {
+        instance->body = true;
+
+        std::string_view remaining = std::string_view(line.data() + 6, line.length() - 6);
+        if (extract_int(remaining, " begin=", instance->part_begin) && instance->part_begin > 0) {
+            instance->part_begin--;
+        }
+        if (extract_int(remaining, " end=", instance->part_size) && instance->part_size >= instance->part_begin) {
+            instance->part_size -= instance->part_begin;
+        }
+	} else if (line.rfind("=yend ", 0) != std::string::npos) {
+        std::string::size_type pos = 0;
+        std::string_view crc32;
+	    if ((pos = line.find(" pcrc32=", 5)) != std::string::npos) {
+	        crc32 = std::string_view(line.data() + 8 + pos, line.length() - 8 - pos);
+	    } else if ((pos = line.find(" crc32=", 5)) != std::string::npos) {
+	        crc32 = std::string_view(line.data() + 7 + pos, line.length() - 7 - pos);
+	    }
+        if (crc32.length() >= 8) {
+            // Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
+            // This is necessary become some posts have malformed hashes
+            instance->crc_expected = static_cast<uint32_t>(strtoull(crc32.data(), NULL, 16)); // TODO: could use from_chars
+        }
+	}
+}
+
+static void decoder_dealloc(Decoder* self)
+{
+    Py_XDECREF(self->data);
+    Py_XDECREF(self->file_name);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
+{
+    Decoder *self = (Decoder *)obj;
+
+    if (self->data == Py_None) {
+        PyErr_SetString(PyExc_BufferError, "No data available");
+        return -1;
+    }
+
+    // Remove writeable request if present
+    flags &= ~PyBUF_WRITABLE;
+
+    // Ensure the underlying object supports the buffer protocol
+    if (PyObject_GetBuffer(self->data, view, flags) < 0) {
+        PyErr_SetString(PyExc_BufferError, "Underlying data does not support buffer protocol");
+        return -1;
+    }
+
+    // Explicitly mark buffer as read-only
+    view->readonly = 1;
+
+    return 0;
+}
+
+static void decoder_releasebuffer(PyObject *obj, Py_buffer *view)
+{
+    PyBuffer_Release(view);
+}
+
+static PyBufferProcs decoder_as_buffer = {
+    decoder_getbuffer,
+    decoder_releasebuffer
+};
+
+static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
+{
+    Decoder* self = (Decoder*)type->tp_alloc(type, 0);
+    if (!self) return NULL;
+
+    self->data = Py_None; Py_INCREF(Py_None);
+    self->file_name = Py_None; Py_INCREF(Py_None);
+
+    // Not necessary because the are the zero values
+    self->format = UNKNOWN;
+    self->state = RapidYenc::YDEC_STATE_CRLF;
+
+    return (PyObject*)self;
+}
+
+static PyObject* decoder_repr(Decoder* self)
+{
+    return PyUnicode_FromFormat(
+        "<Decoder done=%s, file_name=%R, length=%zd>",
+        self->done ? "True" : "False",
+        self->file_name ? self->file_name : Py_None,
+        self->data_position);
+}
+
+static PyObject* decoder_get_data(Decoder* self, void* closure)
+{
+    return PyMemoryView_FromObject((PyObject*)self);
+}
+
+static PyObject* decoder_get_crc(Decoder* self, void *closure)
+{
+    if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
+        Py_RETURN_NONE;
+    }
+    return PyLong_FromUnsignedLong(self->crc);
+}
+
+static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
+{
+    if (!self->crc_expected.has_value()) {
+        Py_RETURN_NONE;
+    }
+    return PyLong_FromUnsignedLong(self->crc_expected.value());
+}
+
+PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
     PyObject *retval = NULL;
@@ -356,11 +515,11 @@ PyObject* Decoder_Decode(PyObject* self, PyObject* Py_memoryview_obj) {
             }
 
             if (instance->format == UNKNOWN) {
-                detect_format(instance, line);
+                decoder_detect_format(instance, line);
             }
 
             if (instance->format == YENC) {
-                process_yenc_header(instance, line);
+                decoder_process_yenc_header(instance, line);
                 if (instance->body) {
                     buf += prev;
                     buf_len -= prev;                     
@@ -481,3 +640,64 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
     free(output_buffer);
     return retval;
 }
+
+static PyMethodDef decoder_methods[] = {
+    {"decode", decoder_decode, METH_O, ""},
+    {nullptr}
+};
+
+static PyMemberDef decoder_members[] = {
+    {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
+    {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
+    {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
+    {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
+    {nullptr}
+};
+
+static PyGetSetDef decoder_gets_sets[] = {
+    {"data", (getter)decoder_get_data, NULL, NULL, NULL},
+    {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
+    {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
+    {NULL}
+};
+
+PyTypeObject DecoderType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "sabctools.Decoder",            // tp_name
+    sizeof(Decoder),                // tp_basicsize
+    0,                              // tp_itemsize
+    (destructor)decoder_dealloc,    // tp_dealloc
+    0,                              // tp_vectorcall_offset
+    0,                              // tp_getattr
+    0,                              // tp_setattr
+    0,                              // tp_as_async
+    (reprfunc)decoder_repr,         // tp_repr
+    0,                              // tp_as_number
+    0,                              // tp_as_sequence
+    0,                              // tp_as_mapping
+    0,                              // tp_hash
+    0,                              // tp_call
+    0,                              // tp_str
+    0,                              // tp_getattro
+    0,                              // tp_setattro
+    &decoder_as_buffer,             // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,             // tp_flags
+    PyDoc_STR("Decoder"),           // tp_doc
+    0,                              // tp_traverse
+    0,                              // tp_clear
+    0,                              // tp_richcompare
+    0,                              // tp_weaklistoffset
+    0,                              // tp_iter
+    0,                              // tp_iternext
+    decoder_methods,                // tp_methods
+    decoder_members,                // tp_members
+    decoder_gets_sets,              // tp_getset
+    0,                              // tp_base
+    0,                              // tp_dict
+    0,                              // tp_descr_get
+    0,                              // tp_descr_set
+    0,                              // tp_dictoffset
+    0,                              // tp_init
+    PyType_GenericAlloc,            // tp_alloc
+    (newfunc)decoder_new,           // tp_new
+};
