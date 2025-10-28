@@ -160,6 +160,40 @@ static void Decoder_dealloc(Decoder* self)
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
+static int Decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
+{
+    Decoder *self = (Decoder *)obj;
+
+    if (self->data == Py_None) {
+        PyErr_SetString(PyExc_BufferError, "No data available");
+        return -1;
+    }
+
+    // Remove writeable request if present
+    flags &= ~PyBUF_WRITABLE;
+
+    // Ensure the underlying object supports the buffer protocol
+    if (PyObject_GetBuffer(self->data, view, flags) < 0) {
+        PyErr_SetString(PyExc_BufferError, "Underlying data does not support buffer protocol");
+        return -1;
+    }
+
+    // Explicitly mark buffer as read-only
+    view->readonly = 1;
+
+    return 0;
+}
+
+static void Decoder_releasebuffer(PyObject *obj, Py_buffer *view)
+{
+    PyBuffer_Release(view);
+}
+
+static PyBufferProcs Decoder_as_buffer = {
+    Decoder_getbuffer,
+    Decoder_releasebuffer
+};
+
 static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 {
     Decoder* self = (Decoder*)type->tp_alloc(type, 0);
@@ -184,6 +218,11 @@ static PyObject* Decoder_repr(Decoder* self)
         self->data_position);
 }
 
+static PyObject* Decoder_get_data(Decoder* self, void* closure)
+{
+    return PyMemoryView_FromObject((PyObject*)self);
+}
+
 static PyObject* Decoder_get_crc(Decoder* self, void *closure)
 {
     if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
@@ -206,7 +245,6 @@ static PyMethodDef DecoderMethods[] = {
 };
 
 static PyMemberDef DecoderMembers[] = {
-    {"data", T_OBJECT_EX, offsetof(Decoder, data), READONLY, ""},
     {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
     {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
@@ -215,6 +253,7 @@ static PyMemberDef DecoderMembers[] = {
 };
 
 static PyGetSetDef DecoderGetsSets[] = {
+    {"data", (getter)Decoder_get_data, NULL, NULL, NULL},
     {"crc", (getter)Decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)Decoder_get_crc_expected, NULL, NULL, NULL},
     {NULL}
@@ -239,7 +278,7 @@ static PyTypeObject DecoderType = {
     0,                              // tp_str
     0,                              // tp_getattro
     0,                              // tp_setattro
-    0,                              // tp_as_buffer
+    &Decoder_as_buffer,             // tp_as_buffer
     Py_TPFLAGS_DEFAULT,             // tp_flags
     PyDoc_STR("Decoder"),           // tp_doc
     0,                              // tp_traverse

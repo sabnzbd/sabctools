@@ -143,6 +143,7 @@ def test_streaming():
             if done:
                 buffer_remaining = 0
                 responses.append(decoder)
+                decoder = sabctools.Decoder()
                 continue
             elif remaining_view is not None:
                 # Unprocessable; copy to start of buffer and read more
@@ -161,5 +162,5 @@ def test_streaming():
     assert len(responses) == len(yenc_files)
 
     for i, dec in enumerate(responses):
-        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (dec.data, correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
-                
+        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (memoryview(dec), correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
+
