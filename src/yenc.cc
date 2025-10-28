@@ -328,7 +328,7 @@ static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
 {
     Decoder *self = (Decoder *)obj;
 
-    if (self->data == Py_None) {
+    if (self->data == NULL) {
         PyErr_SetString(PyExc_BufferError, "No data available");
         return -1;
     }
@@ -363,10 +363,9 @@ static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
     Decoder* self = (Decoder*)type->tp_alloc(type, 0);
     if (!self) return NULL;
 
-    self->data = Py_None; Py_INCREF(Py_None);
     self->file_name = Py_None; Py_INCREF(Py_None);
 
-    // Not necessary because the are the zero values
+    // Not necessary because they are the zero values
     self->format = UNKNOWN;
     self->state = RapidYenc::YDEC_STATE_CRLF;
 
@@ -378,7 +377,7 @@ static PyObject* decoder_repr(Decoder* self)
     return PyUnicode_FromFormat(
         "<Decoder done=%s, file_name=%R, length=%zd>",
         self->done ? "True" : "False",
-        self->file_name ? self->file_name : Py_None,
+        self->file_name,
         self->data_position);
 }
 
@@ -403,6 +402,25 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
     return PyLong_FromUnsignedLong(self->crc_expected.value());
 }
 
+static PyObject* decoder_get_success(Decoder* self, void *closure)
+{
+    if (self->file_name == Py_None)
+    {
+        Py_RETURN_FALSE;
+    }
+
+    if (!self->crc_expected.has_value()) {
+        // CRC32 not found - article is invalid
+        Py_RETURN_FALSE;
+    }
+
+    if (self->crc != self->crc_expected.value()) {
+        Py_RETURN_FALSE;
+    }
+
+    Py_RETURN_TRUE;
+}
+
 PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
@@ -414,7 +432,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
 
     if (instance->done) {
         PyErr_SetString(PyExc_ValueError, "Already finished decoding");
-        goto finish;
+        return NULL;
     }
 
     // Verify it's a bytearray
@@ -427,7 +445,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
     if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
-        goto finish;
+        return NULL;
     }
 
     buf = static_cast<char*>(input_buffer->buf);
@@ -435,7 +453,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     
     decode:
     if (instance->body && instance->format == YENC && buf_len > 0) {
-        if (instance->data == Py_None) {
+        if (instance->data == NULL) {
             // Get the size and sanity check the values
             Py_ssize_t expected_size = std::min(
                 Py_ssize_t(YENC_MAX_PART_SIZE),
@@ -445,7 +463,6 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
                 )
             );
             instance->data = PyByteArray_FromStringAndSize(NULL, expected_size);
-            Py_DECREF(Py_None);
             if (!instance->data) {
                 retval = PyErr_NoMemory();
                 goto finish;
@@ -537,27 +554,12 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         }
     }
 
-    if (instance->done)
-    {
-        if (instance->data != Py_None && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
-            // Adjust the Python-size of the bytesarray-object
-            // This will only do a real resize if the data shrunk by half, so never in our case!
-            // Resizing a bytes object always does a real resize, so more costly
-            PyByteArray_Resize(instance->data, instance->data_position);
-        }
-
-        if (instance->file_name == Py_None)
-        {            
-            PyErr_SetString(PyExc_ValueError, "Could not find yEnc filename");
-            goto finish;
-        }
-
-        if (!instance->crc_expected.has_value()) {
-            // CRC32 not found - article is invalid
-            PyErr_SetString(PyExc_ValueError, "Invalid CRC in footer");
-            goto finish;
-        }
-    }    
+    if (instance->done && instance->data != NULL && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
+        // Adjust the Python-size of the bytesarray-object
+        // This will only do a real resize if the data shrunk by half, so never in our case!
+        // Resizing a bytes object always does a real resize, so more costly
+        PyByteArray_Resize(instance->data, instance->data_position);
+    }
 
     if (buf_len > 0) {
         Py_buffer subbuf = *input_buffer; // shallow copy
@@ -658,6 +660,7 @@ static PyGetSetDef decoder_gets_sets[] = {
     {"data", (getter)decoder_get_data, NULL, NULL, NULL},
     {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
+    {"success", (getter)decoder_get_success, NULL, NULL, NULL},
     {NULL}
 };
 
