@@ -17,7 +17,7 @@ def sparse(file: IO, length: int) -> None: ...
 def bytearray_malloc(size: int) -> bytearray: ...
 
 class Decoder:
-    file_name: Optional[str]
+    file_name: str
     file_size: int
     part_begin: int
     part_size: int

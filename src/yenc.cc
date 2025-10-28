@@ -283,7 +283,6 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
             std::string_view name = std::string_view(remaining.data() + 6 + pos, remaining.length() - 6 - pos);
             // Not sure \r\n is necessary lines already have them stripped
             if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
-                Py_DECREF(instance->file_name);
                 instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
                 if (!instance->file_name) {
                     PyErr_Clear();
@@ -363,8 +362,6 @@ static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
     Decoder* self = (Decoder*)type->tp_alloc(type, 0);
     if (!self) return NULL;
 
-    self->file_name = Py_None; Py_INCREF(Py_None);
-
     // Not necessary because they are the zero values
     self->format = UNKNOWN;
     self->state = RapidYenc::YDEC_STATE_CRLF;
@@ -372,19 +369,20 @@ static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
     return (PyObject*)self;
 }
 
-static PyObject* decoder_repr(Decoder* self)
-{
-    return PyUnicode_FromFormat(
-        "<Decoder done=%s, file_name=%R, length=%zd>",
-        self->done ? "True" : "False",
-        self->file_name,
-        self->data_position);
-}
-
 static PyObject* decoder_get_data(Decoder* self, void* closure)
 {
     return PyMemoryView_FromObject((PyObject*)self);
 }
+
+static PyObject* decoder_get_file_name(Decoder* self, void *closure)
+{
+    if (self->file_name == NULL) {
+        return PyUnicode_New(0, 0);
+    }
+    Py_INCREF(self->file_name);
+    return self->file_name;
+}
+
 
 static PyObject* decoder_get_crc(Decoder* self, void *closure)
 {
@@ -404,7 +402,7 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
 
 static PyObject* decoder_get_success(Decoder* self, void *closure)
 {
-    if (self->file_name == Py_None)
+    if (self->file_name == NULL)
     {
         Py_RETURN_FALSE;
     }
@@ -643,13 +641,21 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
     return retval;
 }
 
+static PyObject* decoder_repr(Decoder* self)
+{
+    return PyUnicode_FromFormat(
+        "<Decoder done=%s, file_name=%R, length=%zd>",
+        self->done ? "True" : "False",
+        decoder_get_file_name(self, NULL),
+        self->data_position);
+}
+
 static PyMethodDef decoder_methods[] = {
     {"decode", decoder_decode, METH_O, ""},
     {nullptr}
 };
 
 static PyMemberDef decoder_members[] = {
-    {"file_name", T_OBJECT_EX, offsetof(Decoder, file_name), READONLY, ""},
     {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
@@ -658,6 +664,7 @@ static PyMemberDef decoder_members[] = {
 
 static PyGetSetDef decoder_gets_sets[] = {
     {"data", (getter)decoder_get_data, NULL, NULL, NULL},
+    {"file_name", (getter)decoder_get_file_name, NULL, NULL, NULL},
     {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
     {"success", (getter)decoder_get_success, NULL, NULL, NULL},
