@@ -79,7 +79,7 @@ def test_ref_counts():
     """Note that sys.getrefcount itself adds another reference!"""
     # In Python 3.14+, getrefcount returns 1, in earlier versions it returns 2
     expected_refcount = 1 if sys.version_info >= (3, 14) else 2
-    
+
     # Test regular case
     data_plain = read_plain_yenc_file("test_regular.yenc")
     data_out, filename, filesize, begin, end, crc_correct = sabctools_yenc_wrapper(data_plain)
@@ -105,18 +105,23 @@ def test_ref_counts():
     assert sys.getrefcount(data_plain) == expected_refcount
 
 
-def test_crc_pickles():
-    all_crc_fails = glob.glob("tests/yencfiles/crc_*")
-    for fname in all_crc_fails:
-        data_plain = read_pickle(fname)
-        assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
+@pytest.mark.parametrize(
+    "filename",
+    sorted(glob.glob("tests/yencfiles/crc_*")),
+)
+def test_crc_pickles(filename: str):
+    data_plain = read_pickle(filename)
+    assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
-def test_small_file_pickles():
-    all_pickles = glob.glob("tests/yencfiles/small_file*")
-    for fname in all_pickles:
-        data_plain = read_pickle(fname)
-        assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
+@pytest.mark.parametrize(
+    "filename",
+    sorted(glob.glob("tests/yencfiles/small_file*")),
+)
+def test_small_file_pickles(filename: str):
+    data_plain = read_pickle(filename)
+    assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
+
 
 @pytest.mark.parametrize(
     "code,success",
@@ -180,3 +185,4 @@ def test_streaming():
     for i, dec in enumerate(responses):
         assert dec.status_code in (220, 222)
         assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (memoryview(dec), correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
+
