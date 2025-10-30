@@ -431,7 +431,6 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
 PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
-    PyObject *retval = NULL;
     Py_buffer* input_buffer;
     char* buf = NULL;
     Py_ssize_t buf_len = 0;
@@ -471,8 +470,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
             );
             instance->data = PyByteArray_FromStringAndSize(NULL, expected_size);
             if (!instance->data) {
-                retval = PyErr_NoMemory();
-                goto finish;
+                return PyErr_NoMemory();
             }
         } else if (instance->data_position + buf_len > PyBytes_GET_SIZE(instance->data)) {
             // For safety resize to size of buffer
@@ -595,11 +593,8 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     } else {
         Py_INCREF(unprocessed_memoryview);
     }
-    Py_INCREF(instance->done ? Py_True : Py_False);
-    retval = Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, unprocessed_memoryview);
 
-finish:
-    return retval;
+    return Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, unprocessed_memoryview);
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
