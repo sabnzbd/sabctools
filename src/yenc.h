@@ -81,6 +81,7 @@ typedef struct {
     uint32_t crc;
     std::optional<uint32_t> crc_expected;
     int status_code;
+    unsigned long long bytes_read;
 
 	bool done; // seen \r\n.\r\n
 	bool body; // in yenc data

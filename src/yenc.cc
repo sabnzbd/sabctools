@@ -489,6 +489,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         RapidYenc::YencDecoderEnd end = RapidYenc::decode_end((const void**)&src_ptr, (void**)&dst_ptr, buf_len, &instance->state);
         size_t nsrc = src_ptr - buf;
         size_t ndst = dst_ptr - dest_start;
+        instance->bytes_read += nsrc;
         instance->data_position += ndst;
         instance->crc = RapidYenc::crc32(dest_start, ndst, instance->crc);
 
@@ -525,6 +526,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         while ((pos = s.find("\r\n", prev)) != std::string::npos) {
             line = std::string_view(s.data() + prev, pos-prev);
             prev = pos + 2;
+            instance->bytes_read += prev;
 
             // Not needed?
             if (line.length() == 0) {
@@ -681,6 +683,7 @@ static PyMemberDef decoder_members[] = {
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
     {"status_code", Py_T_INT, offsetof(Decoder, status_code), READONLY, ""},
+    {"bytes_read", Py_T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
     {nullptr}
 };
 
