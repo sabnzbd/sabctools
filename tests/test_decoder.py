@@ -140,11 +140,12 @@ def test_nntp_not_multiline(code: int, success: bool):
 
 
 def test_streaming():
-    BUFFER_SIZE = 4096
+    BUFFER_SIZE = 1024
     buffer = bytearray(BUFFER_SIZE)
     buffer_view = memoryview(buffer)
     remaining_view = None  # unprocessed contents of the buffer
     buffer_remaining = 0
+    has_seen_unprocessable = False
 
     yenc_files = [
         "test_regular_2.yenc",
@@ -171,6 +172,7 @@ def test_streaming():
                 # Rare if the buffer is large enough to hold then end of a response and the next yenc headers
                 buffer_view[:len(remaining_view)] = remaining_view
                 buffer_remaining = len(remaining_view)
+                has_seen_unprocessable = True
 
         if (read_bytes := f.readinto(buffer_view[buffer_remaining:])) == 0:
             break
@@ -181,6 +183,7 @@ def test_streaming():
             decoder = sabctools.Decoder()
 
     assert len(responses) == len(yenc_files)
+    assert has_seen_unprocessable is True
 
     for i, dec in enumerate(responses):
         assert dec.status_code in (220, 222)
