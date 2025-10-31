@@ -523,8 +523,9 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         std::size_t prev = 0, pos = 0;
         while ((pos = s.find("\r\n", prev)) != std::string::npos) {
             line = std::string_view(s.data() + prev, pos-prev);
+            size_t line_length = line.length() + 2;
             prev = pos + 2;
-            instance->bytes_read += prev;
+            instance->bytes_read += line_length;
 
             // Not needed?
             if (line.length() == 0) {
