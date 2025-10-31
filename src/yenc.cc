@@ -474,7 +474,9 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
             }
         } else if (instance->data_position + buf_len > PyBytes_GET_SIZE(instance->data)) {
             // For safety resize to size of buffer
-            PyByteArray_Resize(instance->data, instance->data_position + buf_len);
+            if (PyByteArray_Resize(instance->data, instance->data_position + buf_len) == -1) {
+                return NULL;
+            }
         }
 
         char *src_ptr = buf;
