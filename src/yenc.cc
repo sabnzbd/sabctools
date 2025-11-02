@@ -270,7 +270,7 @@ static inline void decoder_detect_format(Decoder* instance, std::string_view lin
 static inline void decoder_process_yenc_header(Decoder* instance, std::string_view line) {
 	if (line.rfind("=ybegin ", 0) != std::string::npos)
 	{
-        std::string_view remaining = std::string_view(line.data() + 7, line.length() - 7);
+        std::string_view remaining = line.substr(7);
         extract_int(remaining, " size=", instance->file_size);
         if (!extract_int(remaining, " part=", instance->part)) {
             // Not multi-part
@@ -280,7 +280,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 
         std::string::size_type pos = 0;
 	    if ((pos = remaining.find(" name=")) != std::string::npos) {
-            std::string_view name = std::string_view(remaining.data() + 6 + pos, remaining.length() - 6 - pos);
+            std::string_view name = remaining.substr(pos + 6);
             // Not sure \r\n is necessary lines already have them stripped
             if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
                 instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
@@ -293,7 +293,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 	} else if (line.rfind("=ypart ", 0) != std::string::npos) {
         instance->body = true;
 
-        std::string_view remaining = std::string_view(line.data() + 6, line.length() - 6);
+        std::string_view remaining = line.substr(6);
         if (extract_int(remaining, " begin=", instance->part_begin) && instance->part_begin > 0) {
             instance->part_begin--;
         }
@@ -304,9 +304,9 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
         std::string::size_type pos = 0;
         std::string_view crc32;
 	    if ((pos = line.find(" pcrc32=", 5)) != std::string::npos) {
-	        crc32 = std::string_view(line.data() + 8 + pos, line.length() - 8 - pos);
+	        crc32 = line.substr(pos + 8);
 	    } else if ((pos = line.find(" crc32=", 5)) != std::string::npos) {
-	        crc32 = std::string_view(line.data() + 7 + pos, line.length() - 7 - pos);
+	        crc32 = line.substr(pos + 7);
 	    }
         if (crc32.length() >= 8) {
             // Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
@@ -428,12 +428,133 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
     Py_RETURN_TRUE;
 }
 
+static Py_ssize_t decoder_decode_yenc(Decoder *instance, char *buf, Py_ssize_t buf_len) {
+    if (buf_len < 0) {
+        return 0;
+    }
+
+    if (instance->data == nullptr) {
+        // Get the size and sanity check the values
+        const Py_ssize_t expected_size = std::min(
+            static_cast<Py_ssize_t>(YENC_MAX_PART_SIZE),
+            std::max(
+                instance->part_size > 0 ? instance->part_size : instance->file_size, // only multi-part have a part size
+                buf_len // for safety ensure we allocate at least enough to process the whole buffer
+            )
+        );
+        instance->data = PyByteArray_FromStringAndSize(nullptr, expected_size);
+        if (!instance->data) {
+            PyErr_SetNone(PyExc_MemoryError);
+            return -1;
+        }
+    } else if (instance->data_position + buf_len > PyBytes_GET_SIZE(instance->data)) {
+        // For safety resize to size of buffer
+        if (PyByteArray_Resize(instance->data, instance->data_position + buf_len) == -1) {
+            return -1;
+        }
+    }
+
+    char *src_ptr = buf;
+    char *dst_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
+    char *dest_start = dst_ptr;
+
+    RapidYenc::YencDecoderEnd end;
+    Py_ssize_t nsrc, ndst;
+    uint32_t crc = instance->crc;
+
+    // Decode the data
+    Py_BEGIN_ALLOW_THREADS;
+
+    end = RapidYenc::decode_end((const void**)&src_ptr, reinterpret_cast<void **>(&dst_ptr), buf_len, &instance->state);
+    nsrc = src_ptr - buf;
+    ndst = dst_ptr - dest_start;
+    crc = RapidYenc::crc32(dest_start, ndst, crc);
+
+    Py_END_ALLOW_THREADS;
+
+    instance->data_position += ndst;
+    instance->crc = crc;
+
+    switch (end) {
+        case RapidYenc::YDEC_END_NONE: {
+            if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
+                instance->state = RapidYenc::YDEC_STATE_CRLF;
+                return nsrc - 1;
+            }
+            return nsrc;
+        }
+        case RapidYenc::YDEC_END_CONTROL:
+            instance->body = false;
+            // step back to include =y
+            return nsrc - 2;
+        case RapidYenc::YDEC_END_ARTICLE:
+            instance->body = false;
+            // step back to include .\r\n
+            return nsrc - 3;
+    }
+
+    return nsrc;
+}
+
+static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *input_buffer) {
+    auto buf = static_cast<char*>(input_buffer->buf);
+    size_t buf_len = input_buffer->len;
+    Py_ssize_t read = 0;
+
+    if (instance->body && instance->format == YENC) {
+        read = decoder_decode_yenc(instance, buf, buf_len);
+        if (read == -1) return -1;
+        if (instance->body) {
+            return read;
+        }
+    }
+
+    std::string_view s = std::string_view(buf, buf_len);
+    std::size_t pos = 0;
+    while ((pos = s.find("\r\n", read)) != std::string::npos) {
+        std::string_view line = s.substr(read, pos - read); // does not include \r\n
+        read = pos + 2;
+
+        if (line == ".") {
+            instance->done = true;
+            return read;
+        }
+
+        if (instance->format == UNKNOWN) {
+            if (!instance->status_code && line.length() >= 3) {
+                // First line should start with a 3 character response code
+                if (!extract_int(line, "", instance->status_code)
+                    || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE)) {
+                    // Not a multi-line response... we are done
+                    instance->done = true;
+                    break;
+                }
+            }
+
+            decoder_detect_format(instance, line);
+        }
+
+        if (instance->format == YENC) {
+            decoder_process_yenc_header(instance, line);
+            if (instance->body) {
+                const auto n = decoder_decode_yenc(instance, buf + read, buf_len - read);
+                if (n == -1) return -1;
+                read += n;
+                if (instance->body) {
+                    return read;
+                }
+            }
+        } else if (instance->format == UU) {
+            // Not implemented
+        }
+    }
+
+    return read;
+}
+
 PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
-    Py_buffer* input_buffer;
-    char* buf = NULL;
-    Py_ssize_t buf_len = 0;
     PyObject* unprocessed_memoryview = Py_None;
 
     if (instance->done) {
@@ -448,132 +569,15 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     }
 
     // Get buffer and check it is a valid size and type
-    input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
+    Py_buffer *input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
     if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
         return NULL;
     }
 
-    buf = static_cast<char*>(input_buffer->buf);
-    buf_len = input_buffer->len;
-    
-    decode:
-    if (instance->body && instance->format == YENC && buf_len > 0) {
-        if (instance->data == NULL) {
-            // Get the size and sanity check the values
-            Py_ssize_t expected_size = std::min(
-                Py_ssize_t(YENC_MAX_PART_SIZE),
-                std::max(
-                    instance->part_size > 0 ? instance->part_size : instance->file_size, // only multi-part have a part size
-                    buf_len // for safety ensure we allocate at least enough to process the whole buffer
-                )
-            );
-            instance->data = PyByteArray_FromStringAndSize(NULL, expected_size);
-            if (!instance->data) {
-                return PyErr_NoMemory();
-            }
-        } else if (instance->data_position + buf_len > PyBytes_GET_SIZE(instance->data)) {
-            // For safety resize to size of buffer
-            if (PyByteArray_Resize(instance->data, instance->data_position + buf_len) == -1) {
-                return NULL;
-            }
-        }
-
-        char *src_ptr = buf;
-        char *dst_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
-        char *dest_start = dst_ptr;
-
-        // Decode the data
-        Py_BEGIN_ALLOW_THREADS;
-        
-        RapidYenc::YencDecoderEnd end = RapidYenc::decode_end((const void**)&src_ptr, (void**)&dst_ptr, buf_len, &instance->state);
-        size_t nsrc = src_ptr - buf;
-        size_t ndst = dst_ptr - dest_start;
-        instance->bytes_read += nsrc;
-        instance->data_position += ndst;
-        instance->crc = RapidYenc::crc32(dest_start, ndst, instance->crc);
-
-        switch (end) {
-            case RapidYenc::YDEC_END_NONE:
-                if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
-                    instance->state = RapidYenc::YDEC_STATE_CRLF;
-                    buf += nsrc - 1;
-                    buf_len -= nsrc - 1;
-                } else {
-                    buf += nsrc;
-                    buf_len -= nsrc;
-                }
-                break;
-            case RapidYenc::YDEC_END_CONTROL:
-                buf += nsrc - 2; // step back to include =y
-                buf_len -= nsrc - 2;
-                instance->body = false;
-                break;
-            case RapidYenc::YDEC_END_ARTICLE:
-                buf += nsrc - 3; // step back to include .\r\n
-                buf_len -= nsrc - 3;
-                instance->body = false;
-                break;
-        }
-
-        Py_END_ALLOW_THREADS;
-    }
-
-    if (!instance->body) {
-        std::string_view s = std::string_view(buf, buf_len);
-        std::string_view line;
-        std::size_t prev = 0, pos = 0;
-        while ((pos = s.find("\r\n", prev)) != std::string::npos) {
-            line = std::string_view(s.data() + prev, pos-prev);
-            size_t line_length = line.length() + 2;
-            prev = pos + 2;
-            instance->bytes_read += line_length;
-
-            // Not needed?
-            if (line.length() == 0) {
-                continue;
-            }
-
-            if (line == ".") {
-                instance->done = true;
-                buf += prev;
-                buf_len -= prev;
-                break;
-            }
-
-            if (instance->format == UNKNOWN) {
-                if (!instance->status_code && line.length() >= 3) {
-                    // First line should start with a 3 character response code
-                    if (!extract_int(line, "", instance->status_code) || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE)) {
-                        // Not a multi-line response... we are done
-                        instance->done = true;
-                        buf += prev;
-                        buf_len -= prev;
-                        break;
-                    }
-                }
-
-                decoder_detect_format(instance, line);
-            }
-
-            if (instance->format == YENC) {
-                decoder_process_yenc_header(instance, line);
-                if (instance->body) {
-                    buf += prev;
-                    buf_len -= prev;
-                    if (buf_len > 0) {
-                        goto decode;
-                    } else {
-                        break;
-                    }
-                } else {
-                    continue;
-                }
-            } else if (instance->format == UU) {
-                // Not implemented
-            }
-        }
-    }
+    const auto read = decoder_decode_buffer(instance, input_buffer);
+    if (read == -1) return NULL;
+    instance->bytes_read += read;
 
     if (instance->done && instance->data != NULL && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
         // Adjust the Python-size of the bytesarray-object
@@ -582,14 +586,15 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         PyByteArray_Resize(instance->data, instance->data_position);
     }
 
-    if (buf_len > 0) {
+    const Py_ssize_t unprocessed_length = input_buffer->len - read;
+    if (unprocessed_length > 0) {
         Py_buffer subbuf = *input_buffer; // shallow copy
-        subbuf.buf = (char*)input_buffer->buf + input_buffer->len - buf_len;
-        subbuf.len = buf_len;
+        subbuf.buf = static_cast<char *>(input_buffer->buf) + read;
+        subbuf.len = unprocessed_length;
 
         // Adjust shape - should always be true
         if (subbuf.ndim == 1 && subbuf.shape) {
-            subbuf.shape[0] = buf_len;
+            subbuf.shape[0] = unprocessed_length;
         }
 
         unprocessed_memoryview = PyMemoryView_FromBuffer(&subbuf);
