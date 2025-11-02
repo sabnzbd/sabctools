@@ -680,8 +680,8 @@ static PyMemberDef decoder_members[] = {
     {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
-    {"status_code", Py_T_INT, offsetof(Decoder, status_code), READONLY, ""},
-    {"bytes_read", Py_T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
+    {"status_code", T_INT, offsetof(Decoder, status_code), READONLY, ""},
+    {"bytes_read", T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
     {nullptr}
 };
 
