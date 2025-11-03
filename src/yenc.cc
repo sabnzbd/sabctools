@@ -246,15 +246,40 @@ finish:
 
 template <typename T>
 static inline bool extract_int(std::string_view line, const char* needle, T& dest) {
-    std::string::size_type pos = 0;
-    std::string::size_type epos = 0;
-    if ((pos = line.find(needle)) != std::string::npos) {
-        if ((epos = std::string_view(line.data() + strlen(needle) + pos).find_last_not_of("0123456789")) != std::string::npos) {
-            auto [ptr, ec] = std::from_chars(line.data() + strlen(needle) + pos, line.data() + strlen(needle) + pos + epos, dest);
-            return ec == std::errc();
-        }
+    std::size_t start = 0;
+
+    // find needle, or start from beginning if empty
+    if (needle && *needle) {
+        std::size_t pos = line.find(needle);
+        if (pos == std::string_view::npos) return false;
+        start = pos + std::strlen(needle);
     }
-    return false;
+
+    // slice the line from start
+    line.remove_prefix(start);
+
+    if (line.empty() || (line.front() < '0' || line.front() > '9')) return false;
+
+    // std::from_chars will automatically stop at first non-digit
+    auto [ptr, ec] = std::from_chars(line.data(), line.data() + line.size(), dest);
+
+    return ec == std::errc();
+}
+
+/**
+* Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
+* This is necessary become some posts have malformed hashes
+ */
+std::optional<uint32_t> parse_crc32(std::string_view crc32) {
+    uint64_t value = 0;
+    auto [ptr, ec] = std::from_chars(crc32.data(), crc32.data() + crc32.size(), value, 16);
+
+    // Fail if conversion failed
+    if (ec != std::errc{}) {
+        return std::nullopt;
+    }
+
+    return static_cast<uint32_t>(value); // Discard upper 32 bits
 }
 
 static inline void decoder_detect_format(Decoder* instance, std::string_view line) {
@@ -309,9 +334,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 	        crc32 = line.substr(pos + 7);
 	    }
         if (crc32.length() >= 8) {
-            // Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
-            // This is necessary become some posts have malformed hashes
-            instance->crc_expected = static_cast<uint32_t>(strtoull(crc32.data(), NULL, 16)); // TODO: could use from_chars
+            instance->crc_expected = parse_crc32(crc32);
         }
 	}
 }
