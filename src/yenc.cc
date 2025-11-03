@@ -258,7 +258,7 @@ static inline bool extract_int(std::string_view line, const char* needle, T& des
     // slice the line from start
     line.remove_prefix(start);
 
-    if (line.empty() || (line.front() < '0' || line.front() > '9')) return false;
+    if (line.empty() || line.front() < '0' || line.front() > '9') return false;
 
     // std::from_chars will automatically stop at first non-digit
     auto [ptr, ec] = std::from_chars(line.data(), line.data() + line.size(), dest);
@@ -450,11 +450,10 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
 
     Py_RETURN_TRUE;
 }
+static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
+    if (read >= buf_len) return false;
 
-static Py_ssize_t decoder_decode_yenc(Decoder *instance, char *buf, Py_ssize_t buf_len) {
-    if (buf_len < 0) {
-        return 0;
-    }
+    const long outlen = buf_len - read;
 
     if (instance->data == nullptr) {
         // Get the size and sanity check the values
@@ -462,22 +461,22 @@ static Py_ssize_t decoder_decode_yenc(Decoder *instance, char *buf, Py_ssize_t b
             static_cast<Py_ssize_t>(YENC_MAX_PART_SIZE),
             std::max(
                 instance->part_size > 0 ? instance->part_size : instance->file_size, // only multi-part have a part size
-                buf_len // for safety ensure we allocate at least enough to process the whole buffer
+                outlen // for safety ensure we allocate at least enough to process the whole buffer
             )
         );
         instance->data = PyByteArray_FromStringAndSize(nullptr, expected_size);
         if (!instance->data) {
             PyErr_SetNone(PyExc_MemoryError);
-            return -1;
+            return false;
         }
-    } else if (instance->data_position + buf_len > PyBytes_GET_SIZE(instance->data)) {
+    } else if (instance->data_position + outlen > PyBytes_GET_SIZE(instance->data)) {
         // For safety resize to size of buffer
-        if (PyByteArray_Resize(instance->data, instance->data_position + buf_len) == -1) {
-            return -1;
+        if (PyByteArray_Resize(instance->data, instance->data_position + outlen) == -1) {
+            return false;
         }
     }
 
-    char *src_ptr = buf;
+    const char *src_ptr = buf + read;
     char *dst_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
     char *dest_start = dst_ptr;
 
@@ -488,8 +487,8 @@ static Py_ssize_t decoder_decode_yenc(Decoder *instance, char *buf, Py_ssize_t b
     // Decode the data
     Py_BEGIN_ALLOW_THREADS;
 
-    end = RapidYenc::decode_end((const void**)&src_ptr, reinterpret_cast<void **>(&dst_ptr), buf_len, &instance->state);
-    nsrc = src_ptr - buf;
+    end = RapidYenc::decode_end((const void**)&src_ptr, reinterpret_cast<void **>(&dst_ptr), outlen, &instance->state);
+    nsrc = src_ptr - buf - read;
     ndst = dst_ptr - dest_start;
     crc = RapidYenc::crc32(dest_start, ndst, crc);
 
@@ -502,42 +501,62 @@ static Py_ssize_t decoder_decode_yenc(Decoder *instance, char *buf, Py_ssize_t b
         case RapidYenc::YDEC_END_NONE: {
             if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
                 instance->state = RapidYenc::YDEC_STATE_CRLF;
-                return nsrc - 1;
+                read += nsrc - 1;
+            } else {
+                read += nsrc;
             }
-            return nsrc;
+            break;
         }
         case RapidYenc::YDEC_END_CONTROL:
             instance->body = false;
             // step back to include =y
-            return nsrc - 2;
+            read += nsrc - 2;
+            break;
         case RapidYenc::YDEC_END_ARTICLE:
             instance->body = false;
             // step back to include .\r\n
-            return nsrc - 3;
+            read += nsrc - 3;
+            break;
     }
 
-    return nsrc;
+    return true;
+}
+
+
+/**
+ * Returns true if a line ending with \r\n was found
+ */
+bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std::string_view &line) {
+    if (read + 1 >= buf_len) return false; // Not enough room for "\r\n"
+
+    const char* start = buf + read;
+    const char* end = buf + buf_len;
+    const char* line_end = start;
+
+    // Scan for "\r\n"
+    while (line_end + 1 < end && !(line_end[0] == '\r' && line_end[1] == '\n')) {
+        ++line_end;
+    }
+
+    if (line_end + 1 >= end) return false; // No complete "\r\n"
+
+    line = std::string_view(start, line_end - start);
+    read = line_end - buf + 2; // Total bytes consumed including \r\n
+    return true;
 }
 
 static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *input_buffer) {
-    auto buf = static_cast<char*>(input_buffer->buf);
-    size_t buf_len = input_buffer->len;
+    const char* buf = static_cast<char*>(input_buffer->buf);
+    const Py_ssize_t buf_len = input_buffer->len;
     Py_ssize_t read = 0;
 
     if (instance->body && instance->format == YENC) {
-        read = decoder_decode_yenc(instance, buf, buf_len);
-        if (read == -1) return -1;
-        if (instance->body) {
-            return read;
-        }
+        if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
+        if (instance->body) return read;
     }
 
-    std::string_view s = std::string_view(buf, buf_len);
-    std::size_t pos = 0;
-    while ((pos = s.find("\r\n", read)) != std::string::npos) {
-        std::string_view line = s.substr(read, pos - read); // does not include \r\n
-        read = pos + 2;
-
+    std::string_view line;
+    while (next_crlf_line(buf, buf_len, read, line)) {
         if (line == ".") {
             instance->done = true;
             return read;
@@ -560,12 +579,8 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
         if (instance->format == YENC) {
             decoder_process_yenc_header(instance, line);
             if (instance->body) {
-                const auto n = decoder_decode_yenc(instance, buf + read, buf_len - read);
-                if (n == -1) return -1;
-                read += n;
-                if (instance->body) {
-                    return read;
-                }
+                if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
+                if (instance->body) return read;
             }
         } else if (instance->format == UU) {
             // Not implemented
