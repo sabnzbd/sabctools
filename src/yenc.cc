@@ -292,7 +292,7 @@ static inline bool extract_int(std::string_view line, const char* needle, T& des
     if (needle && *needle) {
         std::size_t pos = line.find(needle);
         if (pos == std::string_view::npos) return false;
-        start = pos + std::strlen(needle);
+        start = pos + strlen(needle);
     }
 
     // slice the line from start
