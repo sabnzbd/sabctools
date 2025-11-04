@@ -44,6 +44,7 @@
 #define YENC_CR          0x0d
 #define YENC_LF          0x0a
 #define NNTP_ARTICLE     220
+#define NNTP_HEAD        221
 #define NNTP_BODY        222
 #define NNTP_STAT        223
 
@@ -70,6 +71,7 @@ typedef struct {
     PyObject_HEAD
     PyObject* data; // decoded data
     Py_ssize_t data_position; // number of bytes decoded
+    PyObject *lines;
     EncodingFormat format;
     RapidYenc::YencDecoderState state;
     PyObject* file_name;

@@ -139,6 +139,35 @@ def test_nntp_not_multiline(code: int, success: bool):
     assert decoder.status_code == code
 
 
+def test_head():
+    data_plain = read_plain_yenc_file("test_head.yenc")
+    decoder = sabctools.Decoder()
+    done, remaining_view = decoder.decode(memoryview(data_plain))
+    assert done is True
+    assert remaining_view is None
+    assert decoder.success is True
+    assert decoder.status_code == 221
+    assert decoder.lines is not None
+    assert len(decoder.lines) == 13
+    assert "X-Received-Bytes: 740059" in decoder.lines
+    with pytest.raises(BufferError):
+        memoryview(decoder)
+
+
+def test_article():
+    data_plain = read_plain_yenc_file("test_article.yenc")
+    decoder = sabctools.Decoder()
+    done, remaining_view = decoder.decode(memoryview(data_plain))
+    assert done is True
+    assert remaining_view is None
+    assert decoder.success is True
+    assert decoder.status_code == 220
+    assert decoder.lines is not None
+    assert len(decoder.lines) == 13
+    assert "X-Received-Bytes: 740059" in decoder.lines
+    assert len((memoryview(decoder))) == 716800
+
+
 def test_streaming():
     BUFFER_SIZE = 1024
     buffer = bytearray(BUFFER_SIZE)

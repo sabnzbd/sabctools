@@ -72,6 +72,7 @@ def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, 
     assert decoder.status_code in (220, 222)
     assert done is True
     assert remaining is None
+    assert decoder.lines is None
 
     if not decoder.success:
         if not decoder.file_name:

@@ -409,6 +409,31 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 }
 
 /**
+ * Append a parsed line to the Decoder's collected header/response lines.
+ *
+ * Used while the encoding format is still UNKNOWN to retain NNTP response
+ * lines for diagnostics or higher-level consumers. Lazily allocates the
+ * Python list on first use and ignores empty lines.
+ *
+ * @param instance Decoder instance whose lines list will be appended to.
+ * @param line     Line contents without the trailing CRLF.
+ */
+static void decoder_append_line(Decoder* instance, std::string_view line) {
+    if (line.empty()) return; // Ignore empty lines
+
+    if (instance->lines == nullptr) {
+        instance->lines = PyList_New(0);
+        Py_INCREF(instance->lines);
+    }
+
+    PyObject *py_str = PyUnicode_FromStringAndSize(line.data(), line.size());
+    if (!py_str) return;
+
+    PyList_Append(instance->lines, py_str);
+    Py_DECREF(py_str);
+}
+
+/**
  * Destructor for Decoder objects. Releases Python object references and frees memory.
  * 
  * @param self The Decoder instance to deallocate
@@ -417,6 +442,7 @@ static void decoder_dealloc(Decoder* self)
 {
     Py_XDECREF(self->data);
     Py_XDECREF(self->file_name);
+    Py_XDECREF(self->lines);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -518,7 +544,6 @@ static PyObject* decoder_get_file_name(Decoder* self, void *closure)
     return self->file_name;
 }
 
-
 /**
  * Property getter for the 'crc' attribute. Returns calculated CRC only if it matches expected.
  * 
@@ -564,8 +589,8 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
  */
 static PyObject* decoder_get_success(Decoder* self, void *closure)
 {
-    // Special case for STAT responses (no body, just checking if article exists)
-    if (self->status_code == NNTP_STAT) {
+    // Special case for STAT/HEAD responses
+    if (self->status_code == NNTP_STAT || self->status_code == NNTP_HEAD) {
         Py_RETURN_TRUE;
     }
 
@@ -589,6 +614,24 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
 
     Py_RETURN_TRUE;
 }
+
+/**
+ * Property getter for the 'lines' attribute. Returns NNTP/header lines captured
+ * before the encoding format was determined.
+ *
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return List of Unicode strings, without \r\n at the end
+ */
+static PyObject* decoder_get_lines(Decoder* self, void *closure)
+{
+    if (self->lines == NULL) {
+        Py_RETURN_NONE;
+    }
+    Py_INCREF(self->lines);
+    return self->lines;
+}
+
 /**
  * Decode yEnc-encoded body data in streaming fashion.
  * This is the core decoding function that processes encoded data incrementally.
@@ -755,25 +798,33 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
             if (!instance->status_code && line.length() >= 3) {
                 // First line should be NNTP status code (220, 222, 223, etc.)
                 if (!extract_int(line, "", instance->status_code)
-                    || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE)) {
+                    || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE && instance->status_code != NNTP_HEAD)) {
                     // Single-line response (not ARTICLE/BODY), we're done
                     instance->done = true;
                     break;
                 }
+                continue;
             }
 
             decoder_detect_format(instance, line);
         }
 
-        if (instance->format == YENC) {
-            decoder_process_yenc_header(instance, line);
-            if (instance->body) {
-                // =ypart was encountered, switch to body decoding
-                if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
-                if (instance->body) return read;  // Still decoding, need more data
-            }
-        } else if (instance->format == UU) {
-            // UU encoding not implemented
+        switch (instance->format) {
+            case UNKNOWN:
+                // Format is still unknown so record lines
+                decoder_append_line(instance, line);
+                break;
+            case YENC:
+                decoder_process_yenc_header(instance, line);
+                if (instance->body) {
+                    // =ypart was encountered, switch to body decoding
+                    if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
+                    if (instance->body) return read;  // Still decoding, need more data
+                }
+                break;
+            case UU:
+                // UU encoding not implemented
+                break;
         }
     }
 
@@ -950,6 +1001,7 @@ static PyMemberDef decoder_members[] = {
 static PyGetSetDef decoder_gets_sets[] = {
     {"data", (getter)decoder_get_data, NULL, NULL, NULL},
     {"file_name", (getter)decoder_get_file_name, NULL, NULL, NULL},
+    {"lines", (getter)decoder_get_lines, NULL, NULL, NULL},
     {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
     {"success", (getter)decoder_get_success, NULL, NULL, NULL},

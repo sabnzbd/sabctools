@@ -1,4 +1,4 @@
-from typing import Tuple, Optional, IO
+from typing import Tuple, Optional, IO, List
 from ssl import SSLSocket
 
 __version__: str
@@ -26,6 +26,8 @@ class Decoder:
     data: memoryview
     crc: Optional[int]
     crc_expected: Optional[int]
+    lines: Optional[List[str]]
+    """NNTP lines before encoding format was determined."""
     def decode(self, data: memoryview) -> Tuple[bool, memoryview]: ...
     def success(self) -> bool: ...
     def __buffer__(self, __flags: int) -> memoryview: ...
