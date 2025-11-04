@@ -507,12 +507,12 @@ static PyObject* decoder_get_data(Decoder* self, void* closure)
  * 
  * @param self The Decoder instance
  * @param closure Unused closure parameter
- * @return Unicode string with filename, or empty string if not found
+ * @return Unicode string with filename, or None if not found
  */
 static PyObject* decoder_get_file_name(Decoder* self, void *closure)
 {
     if (self->file_name == NULL) {
-        return PyUnicode_New(0, 0);
+        Py_RETURN_NONE;
     }
     Py_INCREF(self->file_name);
     return self->file_name;

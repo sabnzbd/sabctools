@@ -19,7 +19,7 @@ def bytearray_malloc(size: int) -> bytearray: ...
 class Decoder:
     status_code: int
     bytes_read: int
-    file_name: str
+    file_name: Optional[str]
     file_size: int
     part_begin: int
     part_size: int
