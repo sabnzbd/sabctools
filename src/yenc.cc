@@ -245,6 +245,36 @@ finish:
 }
 
 /**
+ * Lightweight prefix check helper used when parsing protocol and yEnc header lines.
+ *
+ * Behavior:
+ * - C++20 and newer: delegates to std::string_view::starts_with for efficiency and clarity.
+ * - Pre-C++20: provides a constexpr fallback that compares characters until the
+ *   NUL terminator of the C-string prefix or a mismatch is found.
+ *
+ * Notes:
+ * - The prefix parameter must be a NUL-terminated C string.
+ * - This function does not allocate and operates only on the views provided.
+ *
+ * @param sv     Input string view to test.
+ * @param prefix NUL-terminated C-string prefix to match at the start of sv.
+ * @return true if sv begins with prefix; false otherwise.
+ */
+#if defined(__cplusplus) && __cplusplus >= 202002L
+constexpr bool starts_with(std::string_view sv, const char* prefix) {
+    return sv.starts_with(prefix);
+}
+#else
+constexpr bool starts_with(std::string_view sv, const char* prefix) {
+    size_t i = 0;
+    for (; prefix[i] != '\0'; ++i) {
+        if (i >= sv.size() || sv[i] != prefix[i]) return false;
+    }
+    return true;
+}
+#endif
+
+/**
  * Extract an integer from a yEnc header line after a specified needle pattern.
  * 
  * @param line The string view to search within
@@ -303,7 +333,7 @@ std::optional<uint32_t> parse_crc32(std::string_view crc32) {
  * @param line The line to examine for format detection
  */
 static inline void decoder_detect_format(Decoder* instance, std::string_view line) {
-	if (line.rfind("=ybegin ", 0) == 0)
+	if (starts_with(line, "=ybegin "))
 	{
 		instance->format = YENC;
         return;
@@ -324,52 +354,55 @@ static inline void decoder_detect_format(Decoder* instance, std::string_view lin
  * - =yend: Extracts CRC32 (pcrc32 for multi-part, crc32 for single file)
  */
 static inline void decoder_process_yenc_header(Decoder* instance, std::string_view line) {
-	if (line.rfind("=ybegin ", 0) != std::string::npos)
-	{
-        std::string_view remaining = line.substr(7);
-        extract_int(remaining, " size=", instance->file_size);
-        if (!extract_int(remaining, " part=", instance->part)) {
+    if (starts_with(line, "=ybegin ")) {
+        line.remove_prefix(7);
+        extract_int(line, " size=", instance->file_size);
+        if (!extract_int(line, " part=", instance->part)) {
             // Not multi-part, so body starts immediately after =ybegin
             instance->body = true;
         }
-        extract_int(remaining, " total=", instance->total);
+        extract_int(line, " total=", instance->total);
 
-        std::string::size_type pos = 0;
-	    if ((pos = remaining.find(" name=")) != std::string::npos) {
-            std::string_view name = remaining.substr(pos + 6);
+        std::string::size_type pos;
+	    if ((pos = line.find(" name=")) != std::string::npos) {
+	        line.remove_prefix(pos + 6);
             // Strip trailing whitespace/null from filename
-            if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
+            if ((pos = line.find_last_not_of('\0')) != std::string::npos) {
                 // Try UTF-8 first, fall back to Latin-1 for legacy encodings
-                instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
+                instance->file_name = PyUnicode_DecodeUTF8(line.data(), pos + 1, NULL);
                 if (!instance->file_name) {
                     PyErr_Clear();
-                    instance->file_name = PyUnicode_DecodeLatin1(name.data(), pos + 1, NULL);
+                    instance->file_name = PyUnicode_DecodeLatin1(line.data(), pos + 1, NULL);
                 }
             }
 	    }
-	} else if (line.rfind("=ypart ", 0) != std::string::npos) {
+    } else if (starts_with(line, "=ypart ")) {
         // =ypart signals start of body data in multi-part files
         instance->body = true;
-
-        std::string_view remaining = line.substr(6);
+        line.remove_prefix(6);
         // Convert from 1-based to 0-based indexing
-        if (extract_int(remaining, " begin=", instance->part_begin) && instance->part_begin > 0) {
+        if (extract_int(line, " begin=", instance->part_begin) && instance->part_begin > 0) {
             instance->part_begin--;
         }
         // Calculate part size as (end - begin)
-        if (extract_int(remaining, " end=", instance->part_size) && instance->part_size >= instance->part_begin) {
+        if (extract_int(line, " end=", instance->part_size) && instance->part_size >= instance->part_begin) {
             instance->part_size -= instance->part_begin;
         }
-	} else if (line.rfind("=yend ", 0) != std::string::npos) {
-        std::string::size_type pos = 0;
+    } else if (starts_with(line, "=yend ")) {
+        line.remove_prefix(5);
         std::string_view crc32;
         // Multi-part files use pcrc32 (part CRC), single files use crc32
-	    if ((pos = line.find(" pcrc32=", 5)) != std::string::npos) {
-	        crc32 = line.substr(pos + 8);
-	    } else if ((pos = line.find(" crc32=", 5)) != std::string::npos) {
-	        crc32 = line.substr(pos + 7);
-	    }
-        if (crc32.length() >= 8) {
+        constexpr std::string_view prefixes[] = { " pcrc32=", " crc32=" };
+
+        for (const auto& prefix : prefixes) {
+            auto pos = line.find(prefix, 5);
+            if (pos != std::string::npos) {
+                crc32 = line.substr(pos + prefix.size());
+                break;
+            }
+        }
+
+        if (crc32.size() >= 8) {
             instance->crc_expected = parse_crc32(crc32);
         }
 	}
