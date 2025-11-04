@@ -68,7 +68,7 @@ def read_pickle(filename):
 def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, int, Optional[int]]:
     decoder = sabctools.Decoder()
 
-    done, remaining = decoder.decode(memoryview(data if data[-3:] == b".\r\n" else data + b"\r\n.\r\n"))
+    done, remaining = decoder.decode(memoryview(data))
     assert decoder.status_code in (220, 222)
     assert done is True
     assert remaining is None

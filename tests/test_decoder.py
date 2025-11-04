@@ -149,12 +149,15 @@ def test_streaming():
 
     yenc_files = [
         "test_regular_2.yenc",
-        "test_special_utf8_chars.yenc"  # doesn't end with .\r\n
+        "test_special_utf8_chars.yenc"
     ]
     responses = []
 
     # Read in chunks like a network
-    f = io.BytesIO(b"".join(map(lambda x: read_plain_yenc_file(x), yenc_files)) + b".\r\n")
+    f = io.BytesIO()
+    for filename in yenc_files:
+        f.write(read_plain_yenc_file(filename))
+    f.seek(0)
 
     decoder = sabctools.Decoder()
 
