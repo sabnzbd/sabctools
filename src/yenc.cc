@@ -244,6 +244,16 @@ finish:
     return retval;
 }
 
+/**
+ * Extract an integer from a yEnc header line after a specified needle pattern.
+ * 
+ * @param line The string view to search within
+ * @param needle The pattern to search for (e.g., " size="). If empty, starts from beginning
+ * @param dest Output parameter to store the extracted integer
+ * @return true if extraction succeeded, false otherwise
+ * 
+ * Example: extract_int("line=123 size=456", " size=", dest) extracts 456
+ */
 template <typename T>
 static inline bool extract_int(std::string_view line, const char* needle, T& dest) {
     std::size_t start = 0;
@@ -267,8 +277,11 @@ static inline bool extract_int(std::string_view line, const char* needle, T& des
 }
 
 /**
-* Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits
-* This is necessary become some posts have malformed hashes
+ * Parse up to 64 bit representations of a CRC32 hash, discarding the upper 32 bits.
+ * This is necessary because some posts have malformed hashes that exceed 32 bits.
+ * 
+ * @param crc32 String view containing hexadecimal CRC value
+ * @return Optional uint32_t with the parsed CRC, or nullopt if parsing fails
  */
 std::optional<uint32_t> parse_crc32(std::string_view crc32) {
     uint64_t value = 0;
@@ -282,6 +295,13 @@ std::optional<uint32_t> parse_crc32(std::string_view crc32) {
     return static_cast<uint32_t>(value); // Discard upper 32 bits
 }
 
+/**
+ * Detect the encoding format of the article by examining a line.
+ * Currently only detects yEnc format (lines starting with "=ybegin ").
+ * 
+ * @param instance The Decoder instance to update
+ * @param line The line to examine for format detection
+ */
 static inline void decoder_detect_format(Decoder* instance, std::string_view line) {
 	if (line.rfind("=ybegin ", 0) == 0)
 	{
@@ -292,13 +312,24 @@ static inline void decoder_detect_format(Decoder* instance, std::string_view lin
 	instance->format = UNKNOWN;
 }
 
+/**
+ * Process yEnc header lines (=ybegin, =ypart, =yend) and extract metadata.
+ * 
+ * @param instance The Decoder instance to update with extracted metadata
+ * @param line The header line to process
+ * 
+ * Handles three types of yEnc headers:
+ * - =ybegin: Extracts file size, part number, total parts, and filename
+ * - =ypart: Marks start of body and extracts part begin/end positions (converts to 0-based)
+ * - =yend: Extracts CRC32 (pcrc32 for multi-part, crc32 for single file)
+ */
 static inline void decoder_process_yenc_header(Decoder* instance, std::string_view line) {
 	if (line.rfind("=ybegin ", 0) != std::string::npos)
 	{
         std::string_view remaining = line.substr(7);
         extract_int(remaining, " size=", instance->file_size);
         if (!extract_int(remaining, " part=", instance->part)) {
-            // Not multi-part
+            // Not multi-part, so body starts immediately after =ybegin
             instance->body = true;
         }
         extract_int(remaining, " total=", instance->total);
@@ -306,8 +337,9 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
         std::string::size_type pos = 0;
 	    if ((pos = remaining.find(" name=")) != std::string::npos) {
             std::string_view name = remaining.substr(pos + 6);
-            // Not sure \r\n is necessary lines already have them stripped
+            // Strip trailing whitespace/null from filename
             if ((pos = name.find_last_not_of("\r\n\0")) != std::string::npos) {
+                // Try UTF-8 first, fall back to Latin-1 for legacy encodings
                 instance->file_name = PyUnicode_DecodeUTF8(name.data(), pos + 1, NULL);
                 if (!instance->file_name) {
                     PyErr_Clear();
@@ -316,18 +348,22 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
             }
 	    }
 	} else if (line.rfind("=ypart ", 0) != std::string::npos) {
+        // =ypart signals start of body data in multi-part files
         instance->body = true;
 
         std::string_view remaining = line.substr(6);
+        // Convert from 1-based to 0-based indexing
         if (extract_int(remaining, " begin=", instance->part_begin) && instance->part_begin > 0) {
             instance->part_begin--;
         }
+        // Calculate part size as (end - begin)
         if (extract_int(remaining, " end=", instance->part_size) && instance->part_size >= instance->part_begin) {
             instance->part_size -= instance->part_begin;
         }
 	} else if (line.rfind("=yend ", 0) != std::string::npos) {
         std::string::size_type pos = 0;
         std::string_view crc32;
+        // Multi-part files use pcrc32 (part CRC), single files use crc32
 	    if ((pos = line.find(" pcrc32=", 5)) != std::string::npos) {
 	        crc32 = line.substr(pos + 8);
 	    } else if ((pos = line.find(" crc32=", 5)) != std::string::npos) {
@@ -339,6 +375,11 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 	}
 }
 
+/**
+ * Destructor for Decoder objects. Releases Python object references and frees memory.
+ * 
+ * @param self The Decoder instance to deallocate
+ */
 static void decoder_dealloc(Decoder* self)
 {
     Py_XDECREF(self->data);
@@ -346,6 +387,15 @@ static void decoder_dealloc(Decoder* self)
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
+/**
+ * Implements the buffer protocol for Decoder objects, allowing zero-copy access to decoded data.
+ * This enables using Decoder instances with memoryview() for efficient data access.
+ * 
+ * @param obj The Decoder object
+ * @param view Output buffer view to populate
+ * @param flags Buffer protocol flags (writable flag is ignored/removed)
+ * @return 0 on success, -1 on error
+ */
 static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
 {
     Decoder *self = (Decoder *)obj;
@@ -355,7 +405,7 @@ static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
         return -1;
     }
 
-    // Remove writeable request if present
+    // Remove writeable request if present - decoded data is always read-only
     flags &= ~PyBUF_WRITABLE;
 
     // Ensure the underlying object supports the buffer protocol
@@ -370,6 +420,13 @@ static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
     return 0;
 }
 
+/**
+ * Release a buffer obtained via decoder_getbuffer.
+ * Required by Python's buffer protocol.
+ * 
+ * @param obj The Decoder object
+ * @param view The buffer view to release
+ */
 static void decoder_releasebuffer(PyObject *obj, Py_buffer *view)
 {
     PyBuffer_Release(view);
@@ -380,23 +437,45 @@ static PyBufferProcs decoder_as_buffer = {
     decoder_releasebuffer
 };
 
+/**
+ * Constructor for Decoder objects. Initializes a new streaming decoder instance.
+ * 
+ * @param type The type object
+ * @param args Positional arguments (unused)
+ * @param kwds Keyword arguments (unused)
+ * @return New Decoder instance or NULL on allocation failure
+ */
 static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 {
     Decoder* self = (Decoder*)type->tp_alloc(type, 0);
     if (!self) return NULL;
 
-    // Not necessary because they are the zero values
+    // Initialize to starting state (tp_alloc zeros memory, but explicit for clarity)
     self->format = UNKNOWN;
     self->state = RapidYenc::YDEC_STATE_CRLF;
 
     return (PyObject*)self;
 }
 
+/**
+ * Property getter for the 'data' attribute. Returns a memoryview of the decoded data.
+ * 
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return memoryview object providing access to decoded data
+ */
 static PyObject* decoder_get_data(Decoder* self, void* closure)
 {
     return PyMemoryView_FromObject((PyObject*)self);
 }
 
+/**
+ * Property getter for the 'file_name' attribute. Returns the filename from yEnc headers.
+ * 
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return Unicode string with filename, or empty string if not found
+ */
 static PyObject* decoder_get_file_name(Decoder* self, void *closure)
 {
     if (self->file_name == NULL) {
@@ -407,6 +486,13 @@ static PyObject* decoder_get_file_name(Decoder* self, void *closure)
 }
 
 
+/**
+ * Property getter for the 'crc' attribute. Returns calculated CRC only if it matches expected.
+ * 
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return CRC32 value if valid and matches expected, otherwise None
+ */
 static PyObject* decoder_get_crc(Decoder* self, void *closure)
 {
     if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
@@ -415,6 +501,13 @@ static PyObject* decoder_get_crc(Decoder* self, void *closure)
     return PyLong_FromUnsignedLong(self->crc);
 }
 
+/**
+ * Property getter for the 'crc_expected' attribute. Returns the CRC from yEnc footer.
+ * 
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return Expected CRC32 value from =yend line, or None if not found
+ */
 static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
 {
     if (!self->crc_expected.has_value()) {
@@ -423,9 +516,22 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
     return PyLong_FromUnsignedLong(self->crc_expected.value());
 }
 
+/**
+ * Property getter for the 'success' attribute. Determines if decoding was successful.
+ * 
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return True if all validation checks pass, False otherwise
+ * 
+ * Success criteria:
+ * - NNTP status code is 220 (ARTICLE), 222 (BODY), or 223 (STAT)
+ * - Filename was found in headers
+ * - Expected CRC was found in footer
+ * - Calculated CRC matches expected CRC
+ */
 static PyObject* decoder_get_success(Decoder* self, void *closure)
 {
-    // Special case for STAT responses
+    // Special case for STAT responses (no body, just checking if article exists)
     if (self->status_code == NNTP_STAT) {
         Py_RETURN_TRUE;
     }
@@ -450,13 +556,32 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
 
     Py_RETURN_TRUE;
 }
+/**
+ * Decode yEnc-encoded body data in streaming fashion.
+ * This is the core decoding function that processes encoded data incrementally.
+ * 
+ * @param instance The Decoder instance with state to maintain across calls
+ * @param buf Input buffer containing encoded data
+ * @param buf_len Total length of input buffer
+ * @param read Input/output parameter tracking position in buffer
+ * @return true on success, false on error
+ * 
+ * Key behaviors:
+ * - Allocates output buffer on first call based on expected size from headers
+ * - Resizes output buffer if needed (for malformed posts)
+ * - Uses RapidYenc SIMD decoder with state machine to handle partial data
+ * - Updates CRC incrementally as data is decoded
+ * - Detects end conditions (control line, article terminator) and adjusts read position
+ * - Releases GIL during decoding for parallel processing
+ */
 static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     if (read >= buf_len) return false;
 
     const long outlen = buf_len - read;
 
     if (instance->data == nullptr) {
-        // Get the size and sanity check the values
+        // Allocate output buffer on first decode call
+        // Use size from headers, capped at YENC_MAX_PART_SIZE for safety
         const Py_ssize_t expected_size = std::min(
             static_cast<Py_ssize_t>(YENC_MAX_PART_SIZE),
             std::max(
@@ -470,7 +595,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
             return false;
         }
     } else if (instance->data_position + outlen > PyBytes_GET_SIZE(instance->data)) {
-        // For safety resize to size of buffer
+        // Resize buffer if headers were incorrect (shouldn't happen with valid posts)
         if (PyByteArray_Resize(instance->data, instance->data_position + outlen) == -1) {
             return false;
         }
@@ -484,7 +609,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
     Py_ssize_t nsrc, ndst;
     uint32_t crc = instance->crc;
 
-    // Decode the data
+    // Release GIL during CPU-intensive decode operation for better parallelism
     Py_BEGIN_ALLOW_THREADS;
 
     end = RapidYenc::decode_end((const void**)&src_ptr, reinterpret_cast<void **>(&dst_ptr), outlen, &instance->state);
@@ -497,25 +622,28 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
     instance->data_position += ndst;
     instance->crc = crc;
 
+    // Handle different end conditions from the decoder
     switch (end) {
         case RapidYenc::YDEC_END_NONE: {
+            // Processed all available data without hitting a terminator
             if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
+                // Special case: found "\r\n=" but no more data - might be start of =yend
                 instance->state = RapidYenc::YDEC_STATE_CRLF;
-                read += nsrc - 1;
+                read += nsrc - 1;  // Back up to allow =yend detection
             } else {
                 read += nsrc;
             }
             break;
         }
         case RapidYenc::YDEC_END_CONTROL:
+            // Found "\r\n=y" - likely =yend line, exit body mode
             instance->body = false;
-            // step back to include =y
-            read += nsrc - 2;
+            read += nsrc - 2;  // Back up to include "=y" for header processing
             break;
         case RapidYenc::YDEC_END_ARTICLE:
+            // Found ".\r\n" - NNTP article terminator, exit body mode
             instance->body = false;
-            // step back to include .\r\n
-            read += nsrc - 3;
+            read += nsrc - 3;  // Back up to include ".\r\n" for terminator detection
             break;
     }
 
@@ -524,7 +652,14 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
 
 
 /**
- * Returns true if a line ending with \r\n was found
+ * Extract the next complete line ending with \r\n from the buffer.
+ * Used for parsing NNTP and yEnc header/footer lines.
+ * 
+ * @param buf Input buffer
+ * @param buf_len Length of input buffer
+ * @param read Input/output parameter tracking current position in buffer
+ * @param line Output parameter receiving the line content (without \r\n)
+ * @return true if a complete line was found, false if incomplete
  */
 bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std::string_view &line) {
     if (read + 1 >= buf_len) return false; // Not enough room for "\r\n"
@@ -545,29 +680,50 @@ bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std:
     return true;
 }
 
+/**
+ * Main buffer processing function for the streaming decoder.
+ * Handles state transitions between line-based parsing and body decoding.
+ * 
+ * @param instance The Decoder instance maintaining state across calls
+ * @param input_buffer The buffer to process
+ * @return Number of bytes consumed from buffer, or -1 on error
+ * 
+ * Processing flow:
+ * 1. If already in body mode, decode yEnc data immediately
+ * 2. Otherwise, parse line-by-line:
+ *    - Detect NNTP article terminator (".\r\n")
+ *    - Parse NNTP status code from first line
+ *    - Detect encoding format (yEnc)
+ *    - Process yEnc headers (=ybegin, =ypart, =yend)
+ *    - Switch to body decoding when =ypart is encountered
+ * 3. Return number of bytes processed (may be less than buffer length)
+ */
 static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *input_buffer) {
     const char* buf = static_cast<char*>(input_buffer->buf);
     const Py_ssize_t buf_len = input_buffer->len;
     Py_ssize_t read = 0;
 
+    // Resume body decoding if we were in the middle of it
     if (instance->body && instance->format == YENC) {
         if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
-        if (instance->body) return read;
+        if (instance->body) return read;  // Still in body, need more data
     }
 
+    // Parse headers and footers line-by-line
     std::string_view line;
     while (next_crlf_line(buf, buf_len, read, line)) {
         if (line == ".") {
+            // NNTP article terminator
             instance->done = true;
             return read;
         }
 
         if (instance->format == UNKNOWN) {
             if (!instance->status_code && line.length() >= 3) {
-                // First line should start with a 3 character response code
+                // First line should be NNTP status code (220, 222, 223, etc.)
                 if (!extract_int(line, "", instance->status_code)
                     || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE)) {
-                    // Not a multi-line response... we are done
+                    // Single-line response (not ARTICLE/BODY), we're done
                     instance->done = true;
                     break;
                 }
@@ -579,17 +735,40 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
         if (instance->format == YENC) {
             decoder_process_yenc_header(instance, line);
             if (instance->body) {
+                // =ypart was encountered, switch to body decoding
                 if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
-                if (instance->body) return read;
+                if (instance->body) return read;  // Still decoding, need more data
             }
         } else if (instance->format == UU) {
-            // Not implemented
+            // UU encoding not implemented
         }
     }
 
     return read;
 }
 
+/**
+ * Main decode method called from Python: decoder.decode(data)
+ * Processes a chunk of data in streaming fashion, maintaining state between calls.
+ * 
+ * @param self The Decoder instance
+ * @param Py_memoryview_obj memoryview containing data to decode
+ * @return Tuple of (done: bool, remaining: memoryview | None)
+ * 
+ * Returns:
+ * - done: True if decoding is complete (saw ".\r\n" or single-line response)
+ * - remaining: memoryview of unprocessed data if buffer contained multiple articles,
+ *              or None if all data was consumed
+ * 
+ * This enables efficient streaming from network sockets:
+ * ```python
+ * decoder = sabctools.Decoder()
+ * while data := socket.recv(8192):
+ *     done, remaining = decoder.decode(memoryview(data))
+ *     if done:
+ *         break
+ * ```
+ */
 PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     Decoder* instance = reinterpret_cast<Decoder*>(self);
 
@@ -600,13 +779,13 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         return NULL;
     }
 
-    // Verify it's a bytearray
+    // Verify input type
     if (!PyMemoryView_Check(Py_memoryview_obj)) {
         PyErr_SetString(PyExc_TypeError, "Expected memoryview");
         return NULL;
     }
 
-    // Get buffer and check it is a valid size and type
+    // Get buffer and validate
     Py_buffer *input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
     if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
@@ -618,19 +797,20 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     instance->bytes_read += read;
 
     if (instance->done && instance->data != NULL && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
-        // Adjust the Python-size of the bytesarray-object
-        // This will only do a real resize if the data shrunk by half, so never in our case!
-        // Resizing a bytes object always does a real resize, so more costly
+        // Shrink bytearray to actual decoded size
+        // PyByteArray_Resize only does a real realloc if shrinking by 50%+, so this is cheap
+        // (bytes objects would always realloc, making them less efficient)
         PyByteArray_Resize(instance->data, instance->data_position);
     }
 
+    // Create memoryview for unprocessed data if any remains
     const Py_ssize_t unprocessed_length = input_buffer->len - read;
     if (unprocessed_length > 0) {
         Py_buffer subbuf = *input_buffer; // shallow copy
         subbuf.buf = static_cast<char *>(input_buffer->buf) + read;
         subbuf.len = unprocessed_length;
 
-        // Adjust shape - should always be true
+        // Adjust shape for 1D array
         if (subbuf.ndim == 1 && subbuf.shape) {
             subbuf.shape[0] = unprocessed_length;
         }
@@ -704,6 +884,12 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
     return retval;
 }
 
+/**
+ * String representation of Decoder for debugging.
+ * 
+ * @param self The Decoder instance
+ * @return Unicode string with decoder state summary
+ */
 static PyObject* decoder_repr(Decoder* self)
 {
     return PyUnicode_FromFormat(
