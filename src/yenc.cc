@@ -610,7 +610,7 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
 static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     if (read >= buf_len) return false;
 
-    const long outlen = buf_len - read;
+    const Py_ssize_t outlen = buf_len - read;
 
     if (instance->data == nullptr) {
         // Allocate output buffer on first decode call
