@@ -675,7 +675,7 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
  * @return true if a complete line was found, false if incomplete
  */
 bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std::string_view &line) {
-    if (read + 1 >= buf_len) return false; // Not enough room for "\r\n"
+    if (read + 1 >= static_cast<Py_ssize_t>(buf_len)) return false; // Not enough room for "\r\n"
 
     const char* start = buf + read;
     const char* end = buf + buf_len;
@@ -923,7 +923,7 @@ static PyObject* decoder_repr(Decoder* self)
 
 static PyMethodDef decoder_methods[] = {
     {"decode", decoder_decode, METH_O, ""},
-    {nullptr}
+    {nullptr, nullptr, 0, nullptr}
 };
 
 static PyMemberDef decoder_members[] = {
@@ -932,7 +932,7 @@ static PyMemberDef decoder_members[] = {
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
     {"status_code", T_INT, offsetof(Decoder, status_code), READONLY, ""},
     {"bytes_read", T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
-    {nullptr}
+    {nullptr, 0, 0, 0, nullptr}
 };
 
 static PyGetSetDef decoder_gets_sets[] = {
@@ -942,46 +942,46 @@ static PyGetSetDef decoder_gets_sets[] = {
     {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
     {"success", (getter)decoder_get_success, NULL, NULL, NULL},
-    {NULL}
+    {nullptr, nullptr, nullptr, nullptr, nullptr}
 };
 
 PyTypeObject DecoderType = {
-    PyVarObject_HEAD_INIT(NULL, 0)
+    PyVarObject_HEAD_INIT(nullptr, 0)
     "sabctools.Decoder",            // tp_name
     sizeof(Decoder),                // tp_basicsize
     0,                              // tp_itemsize
     (destructor)decoder_dealloc,    // tp_dealloc
     0,                              // tp_vectorcall_offset
-    0,                              // tp_getattr
-    0,                              // tp_setattr
-    0,                              // tp_as_async
+    nullptr,                        // tp_getattr
+    nullptr,                        // tp_setattr
+    nullptr,                        // tp_as_async
     (reprfunc)decoder_repr,         // tp_repr
-    0,                              // tp_as_number
-    0,                              // tp_as_sequence
-    0,                              // tp_as_mapping
-    0,                              // tp_hash
-    0,                              // tp_call
-    0,                              // tp_str
-    0,                              // tp_getattro
-    0,                              // tp_setattro
+    nullptr,                        // tp_as_number
+    nullptr,                        // tp_as_sequence
+    nullptr,                        // tp_as_mapping
+    nullptr,                        // tp_hash
+    nullptr,                        // tp_call
+    nullptr,                        // tp_str
+    nullptr,                        // tp_getattro
+    nullptr,                        // tp_setattro
     &decoder_as_buffer,             // tp_as_buffer
     Py_TPFLAGS_DEFAULT,             // tp_flags
     PyDoc_STR("Decoder"),           // tp_doc
-    0,                              // tp_traverse
-    0,                              // tp_clear
-    0,                              // tp_richcompare
+    nullptr,                        // tp_traverse
+    nullptr,                        // tp_clear
+    nullptr,                        // tp_richcompare
     0,                              // tp_weaklistoffset
-    0,                              // tp_iter
-    0,                              // tp_iternext
+    nullptr,                        // tp_iter
+    nullptr,                        // tp_iternext
     decoder_methods,                // tp_methods
     decoder_members,                // tp_members
     decoder_gets_sets,              // tp_getset
-    0,                              // tp_base
-    0,                              // tp_dict
-    0,                              // tp_descr_get
-    0,                              // tp_descr_set
+    nullptr,                        // tp_base
+    nullptr,                        // tp_dict
+    nullptr,                        // tp_descr_get
+    nullptr,                        // tp_descr_set
     0,                              // tp_dictoffset
-    0,                              // tp_init
+    nullptr,                        // tp_init
     PyType_GenericAlloc,            // tp_alloc
     (newfunc)decoder_new,           // tp_new
 };
