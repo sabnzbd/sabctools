@@ -18,7 +18,7 @@
 ###################
 # SUPPORT FUNCTIONS
 ###################
-import binascii
+from zlib import crc32
 import re
 import pickle
 from typing import Tuple, Optional, Union
@@ -52,6 +52,11 @@ def correct_unknown_encoding(str_or_bytes_in: Union[str, bytes]) -> str:
 def read_plain_yenc_file(filename: str) -> bytearray:
     with open("tests/yencfiles/%s" % filename, "rb") as yencfile:
         return bytearray(yencfile.read())
+
+
+def read_uu_file(filename: str) -> bytearray:
+    with open("tests/uufiles/%s" % filename, "rb") as uufile:
+        return bytearray(uufile.read())
 
 
 def read_pickle(filename):
@@ -119,7 +124,7 @@ def python_yenc(data_plain):
             size = end - begin + 1
             begin -= 1
 
-    return decoded_data, ybegin["name"], int(ybegin["size"]), begin, size, binascii.crc32(decoded_data)
+    return decoded_data, ybegin["name"], int(ybegin["size"]), begin, size, crc32(decoded_data)
 
 
 def parse_yenc_data(data):

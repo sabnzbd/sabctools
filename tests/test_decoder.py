@@ -1,5 +1,7 @@
 import io
 import sys
+from zlib import crc32
+
 import pytest
 import glob
 from tests.testsupport import *
@@ -220,3 +222,15 @@ def test_streaming():
         assert dec.status_code in (220, 222)
         assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (memoryview(dec), correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
 
+
+def test_uu():
+    data_plain = read_uu_file("logo_full.nntp")
+    decoder = sabctools.Decoder()
+    done, unprocessed = decoder.decode(memoryview(data_plain))
+    assert done is True
+    assert unprocessed is None
+    assert decoder.success is True
+    assert decoder.lines is None
+    assert decoder.file_name == "logo-full.svg"
+    assert decoder.file_size == 2184
+    assert crc32(decoder) == 0x6BC2917D

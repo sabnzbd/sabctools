@@ -327,19 +327,57 @@ std::optional<uint32_t> parse_crc32(std::string_view crc32) {
 
 /**
  * Detect the encoding format of the article by examining a line.
- * Currently only detects yEnc format (lines starting with "=ybegin ").
+ * Detects yEnc format (lines starting with "=ybegin ") and UUEncode format
+ * (60/61 character lines starting with 'M', or "begin " header with octal permissions).
  * 
  * @param instance The Decoder instance to update
  * @param line The line to examine for format detection
  */
 static inline void decoder_detect_format(Decoder* instance, std::string_view line) {
+    // YEnc detection
 	if (starts_with(line, "=ybegin "))
 	{
 		instance->format = YENC;
         return;
 	}
 
-	instance->format = UNKNOWN;
+    // UUEncode detection: 60 or 61 chars, starts with 'M'
+    if ((line.size() == 60 || line.size() == 61) && line.front() == 'M') {
+        instance->format = UU;
+        return;
+    }
+
+    // UUEncode alternative header form: "begin "
+    if (starts_with(line, "begin ")) {
+        line.remove_prefix(6);
+
+        // Skip leading spaces
+        while (!line.empty() && isspace(static_cast<unsigned char>(line.front())))
+            line.remove_prefix(1);
+
+        // Extract the next token (permission part)
+        size_t perm_len = 0;
+        while (perm_len < line.size() && !isspace(static_cast<unsigned char>(line[perm_len])))
+            ++perm_len;
+
+        if (perm_len == 0)
+            return; // No permission digits found
+
+        const std::string_view perms = line.substr(0, perm_len);
+
+        // Check all characters are between '0' and '7'
+        bool all_valid = true;
+        for (const char c : perms) {
+            if (c < '0' || c > '7') {
+                all_valid = false;
+                break;
+            }
+        }
+
+        if (all_valid) {
+            instance->format = UU;
+        }
+    }
 }
 
 /**
@@ -603,13 +641,15 @@ static PyObject* decoder_get_success(Decoder* self, void *closure)
         Py_RETURN_FALSE;
     }
 
-    if (!self->crc_expected.has_value()) {
-        // CRC32 not found - article is invalid
-        Py_RETURN_FALSE;
-    }
+    if (self->format == YENC) {
+        if (!self->crc_expected.has_value()) {
+            // CRC32 not found - article is invalid
+            Py_RETURN_FALSE;
+        }
 
-    if (self->crc != self->crc_expected.value()) {
-        Py_RETURN_FALSE;
+        if (self->crc != self->crc_expected.value()) {
+            Py_RETURN_FALSE;
+        }
     }
 
     Py_RETURN_TRUE;
@@ -726,6 +766,122 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
     return true;
 }
 
+/**
+ * Decode a single UUEncoded character to its 6-bit value.
+ *
+ * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
+ * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
+ */
+constexpr unsigned char uu_decode_char(const char c) noexcept {
+    return (c == '`') ? 0 : ((c - ' ') & 0x3F);
+}
+
+/**
+ * Decode a single UUEncoded line and update the Decoder's state and buffer.
+ *
+ * Adapted (with modifications assisted by AI) from:
+ *   UUDECODE - a Win32 utility to uudecode single files
+ *   Copyright (C) 1998 Clem Dye
+ *   Source: http://www.bastet.com/uue.zip
+ *
+ * Behavior:
+ * - Header detection: on lines starting with "begin ", extracts filename and enters body mode.
+ * - Heuristic body detection: if no header yet, treats 60/61-char lines starting with 'M' as body.
+ * - End detection: lines starting with "end " or "`" terminate UU decoding.
+ * - Body decoding: uses the leading length character followed by groups of 4 printable
+ *   characters to reconstruct up to 3 bytes per group, appending to the bytearray.
+ * - Storage: lazily allocates/resizes the output bytearray and advances data_position.
+ *
+ * Notes:
+ * - CRC/permissions from UU are not validated here.
+ * - Expects a single logical line without trailing CRLF.
+ *
+ * @param instance The Decoder instance to update.
+ * @param line     The current input line (without CRLF).
+ * @return true on success, false on allocation/resize failure.
+ */
+static bool decoder_decode_uu(Decoder* instance, std::string_view line)
+{
+    // Allocate or resize bytearray
+    if (!instance->data) {
+        instance->data = PyByteArray_FromStringAndSize(nullptr, line.size());
+        if (!instance->data) {
+            PyErr_SetNone(PyExc_MemoryError);
+            return false;
+        }
+    } else if (PyByteArray_Resize(instance->data, instance->data_position + line.size()) == -1) {
+        return false;
+    }
+
+    // Detect 'begin' line and extract filename
+    if (!instance->body) {
+        if (starts_with(line, "begin ")) {
+            line.remove_prefix(6);
+
+            auto trim_while = [](std::string_view& sv, auto pred) {
+                while (!sv.empty() && pred(sv.front())) sv.remove_prefix(1);
+            };
+
+            trim_while(line, [](const unsigned char c){ return std::isspace(c); }); // skip leading spaces
+            trim_while(line, [](const unsigned char c){ return std::isdigit(c); }); // skip permissions
+            trim_while(line, [](const unsigned char c){ return std::isspace(c); }); // skip spaces after permissions
+
+            // The rest of the line is the filename
+            instance->file_name = PyUnicode_DecodeUTF8(line.data(), line.size(), nullptr);
+
+            instance->body = true;
+            return true;
+        }
+
+        // Begin missing but looks like UUEncode: 60 or 61 chars, starts with 'M'
+        if ((line.size() == 60 || line.size() == 61) && line.front() == 'M') {
+            instance->body = true;
+        }
+    }
+
+    // Detect 'end' line
+    if (instance->body && (starts_with(line, "end ") || starts_with(line, "`"))) {
+        instance->body = false;
+        instance->file_size = instance->data_position;
+        return true;
+    }
+
+    // Decode body lines
+    if (instance->body && !line.empty()) {
+        std::size_t effLen = uu_decode_char(line.front());
+        if (effLen > line.size() - 1) return true; // ignore invalid lines
+
+        line.remove_prefix(1); // skip length byte
+        char* out_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
+        auto it = line.begin();
+        const auto end = line.end();
+
+        while (effLen > 0 && std::distance(it, end) >= 4) {
+            const auto chunk = std::min(effLen, static_cast<std::size_t>(3));
+            const unsigned char c0 = uu_decode_char(*it++);
+            const unsigned char c1 = uu_decode_char(*it++);
+            unsigned char c2 = 0;
+
+            *out_ptr++ = static_cast<char>(c0 << 2 | c1 >> 4);
+
+            if (chunk > 1) {
+                c2 = uu_decode_char(*it++);
+                *out_ptr++ = static_cast<char>(c1 << 4 | c2 >> 2);
+            }
+
+            if (chunk > 2) {
+                const unsigned char c3 = uu_decode_char(*it++);
+                *out_ptr++ = static_cast<char>(c2 << 6 | c3);
+            }
+
+            effLen -= 3;
+        }
+
+        instance->data_position = out_ptr - PyByteArray_AsString(instance->data);
+    }
+
+    return true;
+}
 
 /**
  * Extract the next complete line ending with \r\n from the buffer.
@@ -823,7 +979,7 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
                 }
                 break;
             case UU:
-                // UU encoding not implemented
+                if (!decoder_decode_uu(instance, line)) return -1;
                 break;
         }
     }
