@@ -7,16 +7,13 @@ import glob
 from tests.testsupport import *
 
 
-def test_regular():
-    data_plain = read_plain_yenc_file("test_regular.yenc")
+@pytest.mark.parametrize(
+    "filename",
+    ["test_regular.yenc", "test_regular_2.yenc"],
+)
+def test_regular(filename: str):
+    data_plain = read_plain_yenc_file(filename)
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
-    data_plain = read_plain_yenc_file("test_regular_2.yenc")
-    assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
-
-
-def test_bytes_compat():
-    data_plain = read_plain_yenc_file("test_regular.yenc")
-    assert python_yenc(data_plain) == sabctools.yenc_decode(memoryview(bytes(data_plain)))
 
 
 def test_partial():
@@ -70,12 +67,6 @@ def test_end_after_filename():
     assert "No data available" in str(excinfo.value)
 
 
-def test_empty():
-    with pytest.raises(ValueError) as excinfo:
-        sabctools.yenc_decode(memoryview(bytearray(b"")))
-    assert "Invalid data length" in str(excinfo.value)
-
-
 def test_ref_counts():
     """Note that sys.getrefcount itself adds another reference!"""
     # In Python 3.14+, getrefcount returns 1, in earlier versions it returns 2
@@ -91,13 +82,6 @@ def test_ref_counts():
     assert sys.getrefcount(begin) == expected_refcount
     assert sys.getrefcount(end) == expected_refcount
     assert sys.getrefcount(crc_correct) == expected_refcount
-
-    # Test simple error case
-    fake_inp = memoryview(bytearray(b"1234"))
-    assert sys.getrefcount(fake_inp) == expected_refcount
-    with pytest.raises(ValueError):
-        sabctools.yenc_decode(fake_inp)
-    assert sys.getrefcount(fake_inp) == expected_refcount
 
     # Test further processing
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")

@@ -55,7 +55,6 @@
 #define YENC_MAX_PART_SIZE 10*1024*1024
 
 /* Functions */
-PyObject* yenc_decode(PyObject *, PyObject*);
 PyObject* yenc_encode(PyObject *, PyObject*);
 
 /* Decoder Class */

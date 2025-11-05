@@ -29,12 +29,6 @@ PyMODINIT_FUNC PyInit_sabctools(void);
 /* Python API requirements */
 static PyMethodDef sabctools_methods[] = {
     {
-        "yenc_decode",
-        yenc_decode,
-        METH_O,
-        "yenc_decode(raw_data)"
-    },
-    {
         "yenc_encode",
         yenc_encode,
         METH_O,
