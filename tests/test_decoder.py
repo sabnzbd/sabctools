@@ -46,16 +46,14 @@ def test_bad_crc():
 
 def test_bad_crc_end():
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")
-    with pytest.raises(ValueError) as excinfo:
-        sabctools_yenc_wrapper(data_plain)
-    assert "Invalid CRC in footer" in str(excinfo.value)
+    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain)
+    assert crc is None
 
 
 def test_no_filename():
     data_plain = read_plain_yenc_file("test_no_name.yenc")
-    with pytest.raises(ValueError) as excinfo:
-        sabctools_yenc_wrapper(data_plain)
-    assert "Could not find yEnc filename" in str(excinfo.value)
+    (_, filename, _, _, _, _) = sabctools_yenc_wrapper(data_plain)
+    assert filename is None
 
 
 def test_padded_crc():
@@ -65,8 +63,9 @@ def test_padded_crc():
 
 def test_end_after_filename():
     data_plain = read_plain_yenc_file("test_end_after_filename.yenc")
-    with pytest.raises(ValueError):
+    with pytest.raises(BufferError) as excinfo:
         sabctools_yenc_wrapper(data_plain)
+    assert "No data available" in str(excinfo.value)
 
 
 def test_empty():
@@ -100,8 +99,8 @@ def test_ref_counts():
 
     # Test further processing
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")
-    with pytest.raises(ValueError):
-        sabctools_yenc_wrapper(data_plain)
+    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain)
+    assert crc is None
     assert sys.getrefcount(data_plain) == expected_refcount
 
 

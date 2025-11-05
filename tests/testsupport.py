@@ -74,13 +74,7 @@ def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, 
     assert remaining is None
     assert decoder.lines is None
 
-    if not decoder.success:
-        if not decoder.file_name:
-            raise ValueError("Could not find yEnc filename")
-        if decoder.crc_expected is None:
-            raise ValueError("Invalid CRC in footer")
-
-    return memoryview(decoder), correct_unknown_encoding(decoder.file_name), decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
+    return memoryview(decoder), decoder.file_name, decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
 
 
 def python_yenc(data_plain):
