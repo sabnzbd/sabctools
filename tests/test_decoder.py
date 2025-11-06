@@ -161,10 +161,7 @@ def test_streaming():
     buffer_remaining = 0
     has_seen_unprocessable = False
 
-    yenc_files = [
-        "test_regular_2.yenc",
-        "test_special_utf8_chars.yenc"
-    ]
+    yenc_files = ["test_regular_2.yenc"] * 5 + ["test_special_utf8_chars.yenc"]
     responses = []
 
     # Read in chunks like a network
@@ -180,7 +177,6 @@ def test_streaming():
             # Are there unprocessed bytes that we need to try first?
             done, remaining_view = decoder.decode(remaining_view)
             if done:
-                buffer_remaining = 0
                 responses.append(decoder)
                 decoder = sabctools.Decoder()
                 continue
@@ -196,6 +192,7 @@ def test_streaming():
 
         done, remaining_view = decoder.decode(buffer_view[:read_bytes+buffer_remaining])
         if done:
+            buffer_remaining = 0
             responses.append(decoder)
             decoder = sabctools.Decoder()
 
