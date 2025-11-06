@@ -276,24 +276,24 @@ static void decoder_dealloc(Decoder* self)
  */
 static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
 {
-    Decoder *self = (Decoder *)obj;
+    Decoder *self = reinterpret_cast<Decoder *>(obj);
 
-    if (self->data == NULL) {
+    if (self->data == nullptr) {
         PyErr_SetString(PyExc_BufferError, "No data available");
         return -1;
     }
 
-    // Remove writeable request if present - decoded data is always read-only
-    flags &= ~PyBUF_WRITABLE;
+    const Py_ssize_t length = self->data_position;
 
-    // Ensure the underlying object supports the buffer protocol
-    if (PyObject_GetBuffer(self->data, view, flags) < 0) {
-        PyErr_SetString(PyExc_BufferError, "Underlying data does not support buffer protocol");
+    if (length > PyByteArray_Size(self->data)) {
+        PyErr_SetString(PyExc_ValueError, "slice out of bounds");
         return -1;
     }
 
-    // Explicitly mark buffer as read-only
-    view->readonly = 1;
+    // Populate buffer with a slice of decoded data, always read-only
+    if (PyBuffer_FillInfo(view, self->data, PyByteArray_AsString(self->data), length, 1, flags) < 0) {
+        return -1;
+    }
 
     return 0;
 }
@@ -823,13 +823,6 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     const auto read = decoder_decode_buffer(instance, input_buffer);
     if (read == -1) return NULL;
     instance->bytes_read += read;
-
-    if (instance->done && instance->data != NULL && instance->data_position != PyBytes_GET_SIZE(instance->data)) {
-        // Shrink bytearray to actual decoded size
-        // PyByteArray_Resize only does a real realloc if shrinking by 50%+, so this is cheap
-        // (bytes objects would always realloc, making them less efficient)
-        PyByteArray_Resize(instance->data, instance->data_position);
-    }
 
     // Create memoryview for unprocessed data if any remains
     const Py_ssize_t unprocessed_length = input_buffer->len - read;
