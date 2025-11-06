@@ -20,10 +20,12 @@ import sys
 import platform
 import re
 import tempfile
+import shutil
 from setuptools import distutils
 from distutils.ccompiler import CCompiler
 from distutils.errors import CompileError
 from typing import Type
+from contextlib import closing, ExitStack
 
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
@@ -34,39 +36,38 @@ def autoconf_check(
     compiler: Type[CCompiler], include_check: str = None, define_check: str = None, flag_check: str = None
 ):
     """A makeshift Python version of the autoconf checks"""
-    with tempfile.NamedTemporaryFile("w", suffix=".cc") as f:
-        if include_check:
-            log.info("==> Checking support for include: %s", include_check)
-            f.write(f"#include <{include_check}>\n")
+    with ExitStack() as stack:
+        tmpdir = tempfile.mkdtemp()
+        stack.callback(shutil.rmtree, tmpdir)
+        (tmp_fd, tmp_path) = tempfile.mkstemp(suffix='.cc', prefix='sabctools_', dir=tmpdir)
 
-        if define_check:
-            log.info("==> Checking support for define: %s", define_check)
-            # Just let it crash
-            f.write(f"#ifndef {define_check}\n")
-            f.write(f"#error {define_check} not available!\n")
-            f.write(f"#endif\n")
+        with closing(os.fdopen(tmp_fd, 'w')) as f:
+            if include_check:
+                log.info("==> Checking support for include: %s", include_check)
+                f.write(f"#include <{include_check}>\n")
+
+            if define_check:
+                log.info("==> Checking support for define: %s", define_check)
+                # Just let it crash
+                f.write(f"#ifndef {define_check}\n")
+                f.write(f"#error {define_check} not available!\n")
+                f.write(f"#endif\n")
+
+            f.write("int main (int argc, char **argv) { return 0; }")
 
         extra_postargs = []
         if flag_check:
             log.info("==> Checking support for flag: %s", flag_check)
             extra_postargs.append(flag_check)
 
-        f.write("int main (int argc, char **argv) { return 0; }")
-
-        # Make sure contents are on disk
-        f.flush()
-
         try:
             log.info("==> Please ignore any errors shown below!")
-            result_files = compiler.compile([f.name], extra_postargs=extra_postargs)
+            compiler.compile([tmp_path], output_dir=tmpdir, extra_postargs=extra_postargs)
             log.info("==> Success!")
         except CompileError:
             log.info("==> Not available!")
             return False
 
-        # Remove output file(s)
-        for result_file in result_files:
-            os.unlink(result_file)
     return True
 
 
@@ -96,6 +97,14 @@ class SABCToolsBuild(build_ext):
             # different ISA extensions are selected for specific files
             ldflags = ["/OPT:REF", "/OPT:ICF"]
             cflags = ["/O2", "/GS-", "/Gy", "/sdl-", "/Oy", "/Oi"]
+            if autoconf_check(self.compiler, flag_check="/std:c++20"):
+                cflags.append("/std:c++20")
+                ext.extra_compile_args.append("/std:c++20")
+            elif autoconf_check(self.compiler, flag_check="/std:c++17"):
+                cflags.append("/std:c++17")
+                ext.extra_compile_args.append("/std:c++17")
+            else:
+                log.info("==> C++17 flag not available")
         else:
             # TODO: consider -flto - may require some extra testing
             ldflags = ["-ldl"]  # for dlopen
@@ -110,16 +119,14 @@ class SABCToolsBuild(build_ext):
                 "-fPIC",
                 "-fwrapv",
             ]
-            # gcc before 4.3 did not support the "-std=c++11" flag
-            # gcc before 4.7 called it "-std=c++0x"
-            if autoconf_check(self.compiler, flag_check="-std=c++11"):
-                cflags.append("-std=c++11")
-                ext.extra_compile_args.append("-std=c++11")
-            elif autoconf_check(self.compiler, flag_check="-std=c++0x"):
-                cflags.append("-std=c++0x")
-                ext.extra_compile_args.append("-std=c++0x")
+            if autoconf_check(self.compiler, flag_check="-std=c++20"):
+                cflags.append("-std=c++20")
+                ext.extra_compile_args.append("-std=c++20")
+            elif autoconf_check(self.compiler, flag_check="-std=c++17"):
+                cflags.append("-std=c++17")
+                ext.extra_compile_args.append("-std=c++17")
             else:
-                log.info("==> C++11 flag not available")
+                log.info("==> C++17 flag not available")
 
             # Verify specific flags for ARM chips
             # macOS ARM does not need any flags, they support everything
