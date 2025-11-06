@@ -52,7 +52,10 @@
 #define YENC_MAX_TAIL_BYTES 256
 
 /* Prevent strange yEnc sizes */
-#define YENC_MAX_PART_SIZE 10*1024*1024
+#define YENC_MAX_PART_SIZE (10*1024*1024)
+
+/* Minimum decoder internal buffer size */
+#define YENC_MIN_BUFFER_SIZE (64*1024)
 
 /* Functions */
 PyObject* yenc_encode(PyObject *, PyObject*);

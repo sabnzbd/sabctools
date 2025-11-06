@@ -481,10 +481,10 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         // Use size from headers, capped at YENC_MAX_PART_SIZE for safety
         const Py_ssize_t expected_size = std::min(
             static_cast<Py_ssize_t>(YENC_MAX_PART_SIZE),
-            std::max(
-                instance->part_size > 0 ? instance->part_size : instance->file_size, // only multi-part have a part size
-                outlen // for safety ensure we allocate at least enough to process the whole buffer
-            )
+            // For safety ensure we allocate at least enough to process the whole buffer
+            // Minimum size of 64KB to usually avoid subsequent resizes
+            // Only multi-part have a part size
+            std::max(outlen, static_cast<Py_ssize_t>(YENC_MIN_BUFFER_SIZE)) + (instance->part_size > 0 ? instance->part_size : instance->file_size )
         );
         instance->data = PyByteArray_FromStringAndSize(nullptr, expected_size);
         if (!instance->data) {
