@@ -498,8 +498,14 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         }
     }
 
+    // Pin output memory while the GIL is released
+    Py_buffer dst_buffer;
+    if (PyObject_GetBuffer(instance->data, &dst_buffer, PyBUF_WRITABLE) < 0) {
+        return false;
+    }
+
     const char *src_ptr = buf + read;
-    char *dst_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
+    char *dst_ptr = static_cast<char*>(dst_buffer.buf) + instance->data_position;
     char *dest_start = dst_ptr;
 
     RapidYenc::YencDecoderEnd end;
@@ -516,6 +522,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
 
     Py_END_ALLOW_THREADS;
 
+    PyBuffer_Release(&dst_buffer);
     instance->data_position += ndst;
     instance->crc = crc;
 
