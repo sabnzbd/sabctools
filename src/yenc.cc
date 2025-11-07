@@ -914,10 +914,10 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
 static PyObject* decoder_repr(Decoder* self)
 {
     return PyUnicode_FromFormat(
-        "<Decoder: done=%s, status_code=%d, file_name=%R, length=%zd>",
-        self->done ? "True" : "False",
+        "<Decoder: done=%R, status_code=%d, file_name=%R, length=%zd>",
+        self->done ? Py_True : Py_False,
         self->status_code,
-        decoder_get_file_name(self, NULL),
+        self->file_name ? self->file_name : Py_None,
         self->data_position);
 }
 
