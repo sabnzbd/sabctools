@@ -84,7 +84,11 @@ void openssl_init() {
     PyObject *ssl_module = NULL;
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
+    #if defined(_WIN32) || defined(__CYGWIN__)
+    HMODULE openssl_handle = NULL;
+    #else
     void* openssl_handle = NULL;
+    #endif
 
     ssl_module = PyImport_ImportModule("ssl");
     if(!ssl_module) goto cleanup;
@@ -100,16 +104,16 @@ void openssl_init() {
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #ifdef _M_ARM64
-    HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-3-arm64.dll"));
+    openssl_handle = GetModuleHandle(TEXT("libssl-3-arm64.dll"));
 #else
-    HMODULE windows_openssl_handle = GetModuleHandle(TEXT("libssl-3.dll"));
-    if(!windows_openssl_handle) windows_openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
+    openssl_handle = GetModuleHandle(TEXT("libssl-3.dll"));
+    if(!openssl_handle) openssl_handle = GetModuleHandle(TEXT("libssl-1_1.dll"));
 #endif
-    if(!windows_openssl_handle) goto cleanup;
+    if(!openssl_handle) goto cleanup;
 
-    *(void**)&SSL_read_ex = GetProcAddress(windows_openssl_handle, "SSL_read_ex");
-    *(void**)&SSL_get_error = GetProcAddress(windows_openssl_handle, "SSL_get_error");
-    *(void**)&SSL_get_shutdown = GetProcAddress(windows_openssl_handle, "SSL_get_shutdown");
+    *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
+    *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
+    *(void**)&SSL_get_shutdown = GetProcAddress(openssl_handle, "SSL_get_shutdown");
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 
