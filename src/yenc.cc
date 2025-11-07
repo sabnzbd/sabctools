@@ -23,7 +23,41 @@
 #include "yencode/decoder.h"
 #include "yencode/crc.h"
 
+/* Global objects */
+
+static PyObject* ENCODING_FORMAT_UNKNOWN = nullptr;
+static PyObject* ENCODING_FORMAT_YENC = nullptr;
+static PyObject* ENCODING_FORMAT_UU = nullptr;
+
+static PyObject* DECODING_STATUS_NOT_FINISHED = nullptr;
+static PyObject* DECODING_STATUS_SUCCESS = nullptr;
+static PyObject* DECODING_STATUS_NO_DATA = nullptr;
+static PyObject* DECODING_STATUS_INVALID_SIZE = nullptr;
+static PyObject* DECODING_STATUS_INVALID_CRC = nullptr;
+static PyObject* DECODING_STATUS_INVALID_FILENAME = nullptr;
+static PyObject* DECODING_STATUS_NOT_FOUND = nullptr;
+static PyObject* DECODING_STATUS_FAILED = nullptr;
+static PyObject* DECODING_STATUS_AUTH = nullptr;
+static PyObject* DECODING_STATUS_UNKNOWN = nullptr;
+
 /* Function definitions */
+
+/**
+ * Check if a value matches any of the provided candidates.
+ * 
+ * Uses C++17 fold expressions to efficiently test equality against
+ * a variadic list of values.
+ * 
+ * @param v Value to test
+ * @param ts Variadic list of candidate values to compare against
+ * @return true if v equals any of ts; false otherwise
+ * 
+ * Example: one_of(status, STATUS_SUCCESS, STATUS_OK, STATUS_COMPLETE)
+ */
+template<typename T, typename... Ts>
+constexpr bool one_of(T v, Ts... ts) {
+    return ((v == ts) || ...);
+}
 
 /**
  * Lightweight prefix check helper used when parsing protocol and yEnc header lines.
@@ -118,13 +152,17 @@ static inline void decoder_detect_format(Decoder* instance, std::string_view lin
     // YEnc detection
 	if (starts_with(line, "=ybegin "))
 	{
-		instance->format = YENC;
+	    Py_XDECREF(instance->format);
+		instance->format = ENCODING_FORMAT_YENC;
+		Py_INCREF(ENCODING_FORMAT_YENC);
         return;
 	}
 
     // UUEncode detection: 60 or 61 chars, starts with 'M'
     if ((line.size() == 60 || line.size() == 61) && line.front() == 'M') {
-        instance->format = UU;
+	    Py_XDECREF(instance->format);
+        instance->format = ENCODING_FORMAT_UU;
+        Py_INCREF(ENCODING_FORMAT_UU);
         return;
     }
 
@@ -156,7 +194,9 @@ static inline void decoder_detect_format(Decoder* instance, std::string_view lin
         }
 
         if (all_valid) {
-            instance->format = UU;
+	        Py_XDECREF(instance->format);
+            instance->format = ENCODING_FORMAT_UU;
+            Py_INCREF(ENCODING_FORMAT_UU);
         }
     }
 }
@@ -197,6 +237,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 	    }
     } else if (starts_with(line, "=ypart ")) {
         // =ypart signals start of body data in multi-part files
+        instance->has_part = true;
         instance->body = true;
         line.remove_prefix(6);
         // Convert from 1-based to 0-based indexing
@@ -208,6 +249,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
             instance->part_size -= instance->part_begin;
         }
     } else if (starts_with(line, "=yend ")) {
+        instance->has_end = true;
         line.remove_prefix(5);
         std::string_view crc32;
         // Multi-part files use pcrc32 (part CRC), single files use crc32
@@ -224,6 +266,8 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
         if (crc32.size() >= 8) {
             instance->crc_expected = parse_crc32(crc32);
         }
+
+        extract_int(line, " size=", instance->end_size);
 	}
 }
 
@@ -262,6 +306,7 @@ static void decoder_dealloc(Decoder* self)
     Py_XDECREF(self->data);
     Py_XDECREF(self->file_name);
     Py_XDECREF(self->lines);
+    Py_XDECREF(self->format);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -329,7 +374,7 @@ static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
     if (!self) return NULL;
 
     // Initialize to starting state (tp_alloc zeros memory, but explicit for clarity)
-    self->format = UNKNOWN;
+    self->format = ENCODING_FORMAT_UNKNOWN; Py_INCREF(ENCODING_FORMAT_UNKNOWN);
     self->state = RapidYenc::YDEC_STATE_CRLF;
 
     return (PyObject*)self;
@@ -394,46 +439,158 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
 }
 
 /**
- * Property getter for the 'success' attribute. Determines if decoding was successful.
+ * Validate a completed yEnc-encoded article and return its decoding status.
+ * 
+ * Performs a series of validation checks on the decoded yEnc data:
+ * 1. Ensures data was actually decoded (non-zero size)
+ * 2. Verifies the decoded size matches the expected size from yEnc headers
+ * 3. Validates the calculated CRC32 matches the expected CRC from =yend footer
+ * 4. Confirms a filename was extracted from the =ybegin header
+ * 
+ * @param self The Decoder instance with completed yEnc decoding
+ * @return PyObject* representing the status:
+ *         - DECODING_STATUS_NO_DATA if no data was decoded
+ *         - DECODING_STATUS_INVALID_SIZE if decoded size doesn't match expected
+ *         - DECODING_STATUS_INVALID_CRC if CRC validation fails
+ *         - DECODING_STATUS_INVALID_FILENAME if no filename was found
+ *         - DECODING_STATUS_SUCCESS if all validations pass
+ * 
+ * Note: This function increments the reference count of the returned status object.
+ */
+inline PyObject* decoder_get_status_yenc(Decoder* self) {
+    if (self->data_position == 0) {
+        Py_INCREF(DECODING_STATUS_NO_DATA);
+        return DECODING_STATUS_NO_DATA;
+    }
+
+    if ((!self->has_part && self->data_position != self->end_size) || self->data_position != self->end_size) {
+        Py_INCREF(DECODING_STATUS_INVALID_SIZE);
+        return DECODING_STATUS_INVALID_SIZE;
+    }
+
+    if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
+        Py_INCREF(DECODING_STATUS_INVALID_CRC);
+        return DECODING_STATUS_INVALID_CRC;
+    }
+
+    if (self->file_name == nullptr) {
+        Py_INCREF(DECODING_STATUS_INVALID_FILENAME);
+        return DECODING_STATUS_INVALID_FILENAME;
+    }
+
+    Py_INCREF(DECODING_STATUS_SUCCESS);
+    return DECODING_STATUS_SUCCESS;
+}
+
+/**
+ * Validate a completed UUEncode-encoded article and return its decoding status.
+ * 
+ * Performs basic validation checks on the decoded UUEncode data:
+ * 1. Ensures data was actually decoded (non-zero size)
+ * 2. Confirms a filename was extracted from the UUEncode header
+ * 
+ * Unlike yEnc validation, UUEncode does not include CRC or size information
+ * in its headers, so only minimal validation is performed.
+ * 
+ * @param self The Decoder instance with completed UUEncode decoding
+ * @return PyObject* representing the status:
+ *         - DECODING_STATUS_NO_DATA if no data was decoded
+ *         - DECODING_STATUS_INVALID_FILENAME if no filename was found
+ *         - DECODING_STATUS_SUCCESS if all validations pass
+ * 
+ * Note: This function increments the reference count of the returned status object.
+ */
+inline PyObject* decoder_get_status_uu(Decoder* self)
+{
+    if (self->data_position == 0) {
+        Py_INCREF(DECODING_STATUS_NO_DATA);
+        return DECODING_STATUS_NO_DATA;
+    }
+
+    if (self->file_name == nullptr) {
+        Py_INCREF(DECODING_STATUS_INVALID_FILENAME);
+        return DECODING_STATUS_INVALID_FILENAME;
+    }
+
+    Py_INCREF(DECODING_STATUS_SUCCESS);
+    return DECODING_STATUS_SUCCESS;
+}
+
+/**
+ * Property getter for the 'status' attribute. Returns the overall decoding status.
+ * 
+ * This is the main status property that dispatches to format-specific validators
+ * or interprets NNTP response codes when no encoding format was detected.
+ * 
+ * Status determination flow:
+ * 1. If decoding is incomplete (!done), returns NOT_FINISHED
+ * 2. If format is yEnc, delegates to decoder_get_status_yenc for validation
+ * 3. If format is UUEncode, delegates to decoder_get_status_uu for validation
+ * 4. Otherwise interprets NNTP status codes:
+ *    - STAT/MULTILINE responses: SUCCESS (non-article responses)
+ *    - AUTH codes: DECODING_STATUS_AUTH (authentication required)
+ *    - COMMAND_FAILED: DECODING_STATUS_FAILED (connection may need to close)
+ *    - 410-439: DECODING_STATUS_NOT_FOUND (article/group selection failures)
+ *    - 440-499: DECODING_STATUS_FAILED (other command failures)
+ *    - Other codes: DECODING_STATUS_UNKNOWN (caller must inspect status_code)
  * 
  * @param self The Decoder instance
  * @param closure Unused closure parameter
- * @return True if all validation checks pass, False otherwise
- * 
- * Success criteria:
- * - NNTP status code is 220 (ARTICLE), 222 (BODY), or 223 (STAT)
- * - Filename was found in headers
- * - Expected CRC was found in footer
- * - Calculated CRC matches expected CRC
+ * @return PyObject* representing the decoding status (reference count incremented)
  */
-static PyObject* decoder_get_success(Decoder* self, void *closure)
+static PyObject* decoder_get_status(Decoder* self, void *closure)
 {
-    // Special case for STAT/HEAD responses
-    if (self->status_code == NNTP_STAT || self->status_code == NNTP_HEAD) {
-        Py_RETURN_TRUE;
+    // EOF not reached, need more data
+    if (!self->done) {
+        Py_INCREF(DECODING_STATUS_NOT_FINISHED);
+        return DECODING_STATUS_NOT_FINISHED;
     }
 
-    if (self->status_code != NNTP_BODY && self->status_code != NNTP_ARTICLE) {
-        Py_RETURN_FALSE;
+    if (self->format == ENCODING_FORMAT_YENC) {
+        return decoder_get_status_yenc(self);
     }
 
-    if (self->file_name == NULL)
-    {
-        Py_RETURN_FALSE;
+    if (self->format == ENCODING_FORMAT_UU) {
+        return decoder_get_status_uu(self);
     }
 
-    if (self->format == YENC) {
-        if (!self->crc_expected.has_value()) {
-            // CRC32 not found - article is invalid
-            Py_RETURN_FALSE;
+    // Include special cases for non-article responses
+    if (one_of(self->status_code, NNTP_STAT, NNTP_MULTILINE)) {
+        Py_INCREF(DECODING_STATUS_SUCCESS);
+        return DECODING_STATUS_SUCCESS;
+    }
+
+    // Need to or are in the process of authenticating
+    if (one_of(self->status_code, NNTP_AUTH)) {
+        Py_INCREF(DECODING_STATUS_AUTH);
+        return DECODING_STATUS_AUTH;
+    }
+
+    // Connection needs closing
+    if (one_of(self->status_code, NNTP_COMMAND_FAILED)) {
+        Py_INCREF(DECODING_STATUS_FAILED);
+        return DECODING_STATUS_FAILED;
+    }
+
+    // 4xx - Command was syntactically correct but failed for some reason
+    // x1x - Newsgroup selection
+    // x2x - Article selection
+    // x3x - Distribution functions
+    // x4x - Posting
+    // x8x - Reserved for authentication and privacy extensions
+    // x9x - Reserved for private use (non-standard extensions)
+    if (self->status_code >= 410 && self->status_code <= 499) {
+        if (self->status_code <= 439) {
+            Py_INCREF(DECODING_STATUS_NOT_FOUND);
+            return DECODING_STATUS_NOT_FOUND;
         }
-
-        if (self->crc != self->crc_expected.value()) {
-            Py_RETURN_FALSE;
-        }
+        Py_INCREF(DECODING_STATUS_FAILED);
+        return DECODING_STATUS_FAILED;
     }
 
-    Py_RETURN_TRUE;
+    // Case not handled, caller needs to look at status_code
+    Py_INCREF(DECODING_STATUS_UNKNOWN);
+    return DECODING_STATUS_UNKNOWN;
 }
 
 /**
@@ -724,7 +881,7 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
     Py_ssize_t read = 0;
 
     // Resume body decoding if we were in the middle of it
-    if (instance->body && instance->format == YENC) {
+    if (instance->body && instance->format == ENCODING_FORMAT_YENC) {
         if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
         if (instance->body) return read;  // Still in body, need more data
     }
@@ -738,11 +895,11 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
             return read;
         }
 
-        if (instance->format == UNKNOWN) {
+        if (instance->format == ENCODING_FORMAT_UNKNOWN) {
             if (!instance->status_code && line.length() >= 3) {
                 // First line should be NNTP status code (220, 222, 223, etc.)
                 if (!extract_int(line, "", instance->status_code)
-                    || (instance->status_code != NNTP_BODY && instance->status_code != NNTP_ARTICLE && instance->status_code != NNTP_HEAD)) {
+                    || !one_of(instance->status_code, NNTP_MULTILINE)) {
                     // Single-line response (not ARTICLE/BODY), we're done
                     instance->done = true;
                     break;
@@ -753,23 +910,19 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
             decoder_detect_format(instance, line);
         }
 
-        switch (instance->format) {
-            case UNKNOWN:
+            if (instance->format == ENCODING_FORMAT_UNKNOWN) {
                 // Format is still unknown so record lines
                 decoder_append_line(instance, line);
-                break;
-            case YENC:
+            } else if (instance->format == ENCODING_FORMAT_YENC) {
                 decoder_process_yenc_header(instance, line);
                 if (instance->body) {
                     // =ypart was encountered, switch to body decoding
                     if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
                     if (instance->body) return read;  // Still decoding, need more data
                 }
-                break;
-            case UU:
+            } else if (instance->format == ENCODING_FORMAT_UU) {
                 if (!decoder_decode_uu(instance, line)) return -1;
-                break;
-        }
+            }
     }
 
     return read;
@@ -841,7 +994,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         Py_INCREF(unprocessed_memoryview);
     }
 
-    return Py_BuildValue("(O, O)", instance->done ? Py_True : Py_False, unprocessed_memoryview);
+    return Py_BuildValue("(N, O)", decoder_get_status(instance, nullptr), unprocessed_memoryview);
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
@@ -913,12 +1066,15 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
  */
 static PyObject* decoder_repr(Decoder* self)
 {
-    return PyUnicode_FromFormat(
-        "<Decoder: done=%R, status_code=%d, file_name=%R, length=%zd>",
-        self->done ? Py_True : Py_False,
+    const auto status = decoder_get_status(self, nullptr);
+    const auto repr = PyUnicode_FromFormat(
+        "<Decoder: status=%R, status_code=%d, file_name=%R, length=%zd>",
+        status,
         self->status_code,
         self->file_name ? self->file_name : Py_None,
         self->data_position);
+    Py_DECREF(status);
+    return repr;
 }
 
 static PyMethodDef decoder_methods[] = {
@@ -932,6 +1088,7 @@ static PyMemberDef decoder_members[] = {
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
     {"status_code", T_INT, offsetof(Decoder, status_code), READONLY, ""},
     {"bytes_read", T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
+    {"format", T_OBJECT_EX, offsetof(Decoder, format), READONLY, ""},
     {nullptr, 0, 0, 0, nullptr}
 };
 
@@ -941,7 +1098,7 @@ static PyGetSetDef decoder_gets_sets[] = {
     {"lines", (getter)decoder_get_lines, NULL, NULL, NULL},
     {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
-    {"success", (getter)decoder_get_success, NULL, NULL, NULL},
+    {"status", (getter)decoder_get_status, NULL, NULL, NULL},
     {nullptr, nullptr, nullptr, nullptr, nullptr}
 };
 
@@ -985,3 +1142,102 @@ PyTypeObject DecoderType = {
     PyType_GenericAlloc,            // tp_alloc
     (newfunc)decoder_new,           // tp_new
 };
+
+static PyObject* create_encoding_format_enum() {
+    PyObject* enum_module = PyImport_ImportModule("enum");
+
+    PyObject* members = PyDict_New();
+    PyDict_SetItemString(members, "UNKNOWN",  PyLong_FromLong(0));
+    PyDict_SetItemString(members, "YENC",  PyLong_FromLong(1));
+    PyDict_SetItemString(members, "UU",  PyLong_FromLong(2));
+
+    PyObject* encoding_format_enum = PyObject_CallMethod(enum_module, "IntEnum", "(sO)", "EncodingFormat", members);
+
+    Py_DECREF(enum_module);
+    Py_DECREF(members);
+
+    return encoding_format_enum;
+}
+
+static PyObject* create_decoding_status_enum() {
+    PyObject* enum_module = PyImport_ImportModule("enum");
+
+    PyObject* members = PyDict_New();
+    PyDict_SetItemString(members, "NOT_FINISHED", PyLong_FromLong(0));
+    PyDict_SetItemString(members, "SUCCESS", PyLong_FromLong(1));
+    PyDict_SetItemString(members, "NO_DATA", PyLong_FromLong(2));
+    PyDict_SetItemString(members, "INVALID_SIZE", PyLong_FromLong(3));
+    PyDict_SetItemString(members, "INVALID_CRC", PyLong_FromLong(4));
+    PyDict_SetItemString(members, "INVALID_FILENAME", PyLong_FromLong(5));
+    PyDict_SetItemString(members, "NOT_FOUND", PyLong_FromLong(6));
+    PyDict_SetItemString(members, "FAILED", PyLong_FromLong(7));
+    PyDict_SetItemString(members, "AUTH", PyLong_FromLong(8));
+    PyDict_SetItemString(members, "UNKNOWN",  PyLong_FromLong(99));
+
+    PyObject* encoding_format_enum = PyObject_CallMethod(enum_module, "IntEnum", "(sO)", "DecodingStatus", members);
+
+    Py_DECREF(enum_module);
+    Py_DECREF(members);
+
+    return encoding_format_enum;
+}
+
+bool yenc_init(PyObject *m) {
+    RapidYenc::encoder_init();
+    RapidYenc::decoder_init();
+    RapidYenc::crc32_init();
+
+    PyObject* encoding_format_enum = create_encoding_format_enum();
+    if (!encoding_format_enum) return false;
+
+    ENCODING_FORMAT_UNKNOWN = PyObject_GetAttrString(encoding_format_enum, "UNKNOWN"); Py_INCREF(ENCODING_FORMAT_UNKNOWN);
+    ENCODING_FORMAT_YENC = PyObject_GetAttrString(encoding_format_enum, "YENC"); Py_INCREF(ENCODING_FORMAT_YENC);
+    ENCODING_FORMAT_UU = PyObject_GetAttrString(encoding_format_enum, "UU"); Py_INCREF(ENCODING_FORMAT_UU);
+
+    PyObject* decoding_status_enum = create_decoding_status_enum();
+    if (!decoding_status_enum) {
+        Py_DECREF(encoding_format_enum);
+        Py_DECREF(ENCODING_FORMAT_UNKNOWN);
+        Py_DECREF(ENCODING_FORMAT_YENC);
+        Py_DECREF(ENCODING_FORMAT_UU);
+        return false;
+    }
+
+    DECODING_STATUS_UNKNOWN = PyObject_GetAttrString(decoding_status_enum, "UNKNOWN"); Py_INCREF(DECODING_STATUS_UNKNOWN);
+    DECODING_STATUS_SUCCESS = PyObject_GetAttrString(decoding_status_enum, "SUCCESS"); Py_INCREF(DECODING_STATUS_SUCCESS);
+    DECODING_STATUS_NOT_FINISHED = PyObject_GetAttrString(decoding_status_enum, "NOT_FINISHED"); Py_INCREF(DECODING_STATUS_NOT_FINISHED);
+    DECODING_STATUS_NO_DATA = PyObject_GetAttrString(decoding_status_enum, "NO_DATA"); Py_INCREF(DECODING_STATUS_NO_DATA);
+    DECODING_STATUS_INVALID_SIZE = PyObject_GetAttrString(decoding_status_enum, "INVALID_SIZE"); Py_INCREF(DECODING_STATUS_INVALID_SIZE);
+    DECODING_STATUS_INVALID_CRC = PyObject_GetAttrString(decoding_status_enum, "INVALID_CRC"); Py_INCREF(DECODING_STATUS_INVALID_CRC);
+    DECODING_STATUS_INVALID_FILENAME = PyObject_GetAttrString(decoding_status_enum, "INVALID_FILENAME"); Py_INCREF(DECODING_STATUS_INVALID_FILENAME);
+    DECODING_STATUS_NOT_FOUND = PyObject_GetAttrString(decoding_status_enum, "NOT_FOUND"); Py_INCREF(DECODING_STATUS_NOT_FOUND);
+    DECODING_STATUS_FAILED = PyObject_GetAttrString(decoding_status_enum, "FAILED"); Py_INCREF(DECODING_STATUS_FAILED);
+    DECODING_STATUS_AUTH = PyObject_GetAttrString(decoding_status_enum, "AUTH"); Py_INCREF(DECODING_STATUS_AUTH);
+
+    Py_INCREF(&DecoderType);
+    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0) goto fail;
+    if (PyModule_AddObject(m, "EncodingFormat", encoding_format_enum) < 0) goto fail;
+    if (PyModule_AddObject(m, "DecodingStatus", decoding_status_enum) < 0) goto fail;
+
+    return true;
+
+fail:
+    Py_DECREF(&DecoderType);
+    Py_DECREF(encoding_format_enum);
+    Py_DECREF(decoding_status_enum);
+    Py_DECREF(ENCODING_FORMAT_UNKNOWN);
+    Py_DECREF(ENCODING_FORMAT_YENC);
+    Py_DECREF(ENCODING_FORMAT_UU);
+    Py_DECREF(DECODING_STATUS_UNKNOWN);
+    Py_DECREF(DECODING_STATUS_SUCCESS);
+    Py_DECREF(DECODING_STATUS_NOT_FINISHED);
+    Py_DECREF(DECODING_STATUS_NO_DATA);
+    Py_DECREF(DECODING_STATUS_INVALID_SIZE);
+    Py_DECREF(DECODING_STATUS_INVALID_CRC);
+    Py_DECREF(DECODING_STATUS_INVALID_FILENAME);
+    Py_DECREF(DECODING_STATUS_NOT_FOUND);
+    Py_DECREF(DECODING_STATUS_FAILED);
+    Py_DECREF(DECODING_STATUS_AUTH);
+
+    return false;
+}

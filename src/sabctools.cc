@@ -130,16 +130,16 @@ static const char* simd_detected(void) {
 PyMODINIT_FUNC PyInit_sabctools(void) {
     if (PyType_Ready(&DecoderType) < 0) return NULL;
 
-    // Initialize and add version / SIMD information
-    Py_Initialize();
-    RapidYenc::encoder_init();
-    RapidYenc::decoder_init();
-    RapidYenc::crc32_init();
-    openssl_init();
-    sparse_init();
-
     PyObject* m = PyModule_Create(&sabctools_definition);
     if (m == NULL) return NULL;
+
+    // Initialize and add version / SIMD information
+    if (!yenc_init(m)) {
+        Py_DECREF(m);
+        return NULL;
+    }
+    openssl_init();
+    sparse_init();
 
     PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);
     PyModule_AddStringConstant(m, "simd", simd_detected());
@@ -149,12 +149,6 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     Py_INCREF(openssl_linked_object);
     PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
 
-    Py_INCREF(&DecoderType);
-    if (PyModule_AddObject(m, "Decoder", (PyObject*)&DecoderType) < 0) {
-        Py_DECREF(&DecoderType);
-        Py_DECREF(m);
-        return NULL;
-    }
     return m;
 }
 

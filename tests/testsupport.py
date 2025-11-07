@@ -70,14 +70,15 @@ def read_pickle(filename):
     return bytearray(b"".join(data_chunks))
 
 
-def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, int, Optional[int]]:
+def sabctools_yenc_wrapper(data: bytearray, expected_status: sabctools.DecodingStatus = sabctools.DecodingStatus.SUCCESS) -> Tuple[memoryview, str, int, int, int, Optional[int]]:
     decoder = sabctools.Decoder()
 
-    done, remaining = decoder.decode(memoryview(data))
+    status, remaining = decoder.decode(memoryview(data))
     assert decoder.status_code in (220, 222)
-    assert done is True
+    assert status is expected_status
     assert remaining is None
     assert decoder.lines is None
+    assert decoder.format is sabctools.EncodingFormat.YENC
 
     return memoryview(decoder), decoder.file_name, decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
 
