@@ -793,8 +793,9 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
 
     // Decode body lines
     if (instance->body && !line.empty()) {
-        std::size_t effLen = uu_decode_char(line.front());
-        if (effLen > line.size() - 1) return true; // ignore invalid lines
+        // Workaround for broken uuencoders by Fredrik Lundh
+        std::size_t effLen = (((static_cast<unsigned char>(line.front()) - 32) & 63) * 4 + 5) / 3;
+        if (effLen > line.size()) return true; // ignore invalid lines
 
         line.remove_prefix(1); // skip length byte
         char* out_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
