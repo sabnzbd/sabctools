@@ -20,6 +20,18 @@
 #define SABCTOOLS_YENC_H
 
 #include <Python.h>
+#include "structmember.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#include <string_view>
+#include <iostream>
+#include <charconv>
+#include <optional>
+#include <algorithm>
+#include <iomanip>
+#include <string>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -32,14 +44,59 @@
 #define YENC_CR          0x0d
 #define YENC_LF          0x0a
 
+#define NNTP_CAPABILITIES             101
+#define NNTP_ARTICLE                  220
+#define NNTP_HEAD                     221
+#define NNTP_BODY                     222
+#define NNTP_STAT                     223
+#define NNTP_AUTH                     281, 381, 480, 481, 482
+#define NNTP_MULTILINE                NNTP_BODY, NNTP_ARTICLE, NNTP_HEAD, NNTP_CAPABILITIES
+#define NNTP_SERVER_UNAVAILABLE       400
+#define NNTP_UNKNOWN_COMMAND          500
+#define NNTP_SYNTAX_ERROR             501
+#define NNTP_COMMAND_UNAVAILABLE      502
+#define NNTP_COMMAND_NOT_SUPPORTED    503
+#define NNTP_COMMAND_FAILED           NNTP_SERVER_UNAVAILABLE, NNTP_UNKNOWN_COMMAND, NNTP_SYNTAX_ERROR, NNTP_COMMAND_UNAVAILABLE, NNTP_COMMAND_NOT_SUPPORTED
+
 /* The =yend line cannot be crazy long */
 #define YENC_MAX_TAIL_BYTES 256
 
 /* Prevent strange yEnc sizes */
-#define YENC_MAX_PART_SIZE 10*1024*1024
+#define YENC_MAX_PART_SIZE (10*1024*1024)
+
+/* Minimum decoder internal buffer size */
+#define YENC_MIN_BUFFER_SIZE (64*1024)
 
 /* Functions */
-PyObject* yenc_decode(PyObject *, PyObject*);
+bool yenc_init(PyObject *);
 PyObject* yenc_encode(PyObject *, PyObject*);
+
+/* Decoder Class */
+extern PyTypeObject DecoderType;
+
+typedef struct {
+    PyObject_HEAD
+    PyObject* data; // decoded data
+    Py_ssize_t data_position; // number of bytes decoded
+    PyObject *lines;
+    PyObject* format;
+    RapidYenc::YencDecoderState state;
+    PyObject* file_name;
+    Py_ssize_t file_size;
+    Py_ssize_t part;
+    Py_ssize_t part_begin;
+    Py_ssize_t part_size;
+    Py_ssize_t end_size;
+    Py_ssize_t total;
+    uint32_t crc;
+    std::optional<uint32_t> crc_expected;
+    int status_code;
+    unsigned long long bytes_read;
+
+	bool done; // seen \r\n.\r\n
+	bool body; // in yenc data
+	bool has_part; // seen =ypart
+	bool has_end; // seen =yend
+} Decoder;
 
 #endif //SABCTOOLS_YENC_H
