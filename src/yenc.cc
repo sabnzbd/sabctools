@@ -910,19 +910,19 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
             decoder_detect_format(instance, line);
         }
 
-            if (instance->format == ENCODING_FORMAT_UNKNOWN) {
-                // Format is still unknown so record lines
-                decoder_append_line(instance, line);
-            } else if (instance->format == ENCODING_FORMAT_YENC) {
-                decoder_process_yenc_header(instance, line);
-                if (instance->body) {
-                    // =ypart was encountered, switch to body decoding
-                    if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
-                    if (instance->body) return read;  // Still decoding, need more data
-                }
-            } else if (instance->format == ENCODING_FORMAT_UU) {
-                if (!decoder_decode_uu(instance, line)) return -1;
+        if (instance->format == ENCODING_FORMAT_UNKNOWN) {
+            // Format is still unknown so record lines
+            decoder_append_line(instance, line);
+        } else if (instance->format == ENCODING_FORMAT_YENC) {
+            decoder_process_yenc_header(instance, line);
+            if (instance->body) {
+                // =ypart was encountered, switch to body decoding
+                if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
+                if (instance->body) return read;  // Still decoding, need more data
             }
+        } else if (instance->format == ENCODING_FORMAT_UU) {
+            if (!decoder_decode_uu(instance, line)) return -1;
+        }
     }
 
     return read;
