@@ -793,6 +793,11 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
 
     // Decode body lines
     if (instance->body && !line.empty()) {
+        // Remove dot stuffing
+        if (starts_with(line, "..")) {
+            line.remove_prefix(1);
+        }
+
         // Workaround for broken uuencoders by Fredrik Lundh
         std::size_t effLen = (((static_cast<unsigned char>(line.front()) - 32) & 63) * 4 + 5) / 3;
         if (effLen > line.size()) return true; // ignore invalid lines
