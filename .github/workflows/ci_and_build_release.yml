@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v3.3.0
         env:
           CIBW_SKIP: '*i686*'
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
