@@ -141,6 +141,37 @@ std::optional<uint32_t> parse_crc32(std::string_view crc32) {
 }
 
 /**
+ * Decode a string to Python Unicode with encoding fallback.
+ * 
+ * Try UTF-8 first, fall back to Latin-1 for legacy encodings.
+ * 
+ * This handles filenames and other metadata in yEnc headers that may use
+ * non-UTF-8 encodings from older Usenet posts. Latin-1 is used as fallback
+ * because it can decode any byte sequence without error.
+ * 
+ * @param line String view containing the text to decode
+ * @return PyObject* Unicode string, or nullptr if line is empty or all decoding attempts fail
+ * 
+ * Note: Clears Python errors internally when decoding fails.
+ */
+static PyObject* decode_utf8_with_fallback(std::string_view line) {
+    if (line.empty()) return nullptr; // Ignore empty lines
+
+    auto try_decode = [&](auto decoder, const char* errors = nullptr) -> PyObject* {
+        PyObject* result = decoder(line.data(), line.size(), errors);
+        if (!result) PyErr_Clear();
+        return result;
+    };
+
+    PyObject* py_str = try_decode(PyUnicode_DecodeUTF8);
+    if (!py_str) {
+        py_str = try_decode(PyUnicode_DecodeLatin1, "replace");
+    }
+
+    return py_str;
+}
+
+/**
  * Detect the encoding format of the article by examining a line.
  * Detects yEnc format (lines starting with "=ybegin ") and UUEncode format
  * (60/61 character lines starting with 'M', or "begin " header with octal permissions).
@@ -227,12 +258,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
 	        line.remove_prefix(pos + 6);
             // Strip trailing whitespace/null from filename
             if ((pos = line.find_last_not_of('\0')) != std::string::npos) {
-                // Try UTF-8 first, fall back to Latin-1 for legacy encodings
-                instance->file_name = PyUnicode_DecodeUTF8(line.data(), pos + 1, NULL);
-                if (!instance->file_name) {
-                    PyErr_Clear();
-                    instance->file_name = PyUnicode_DecodeLatin1(line.data(), pos + 1, NULL);
-                }
+                instance->file_name = decode_utf8_with_fallback(line.substr(0, pos + 1));
             }
 	    }
     } else if (starts_with(line, "=ypart ")) {
@@ -282,15 +308,13 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
  * @param line     Line contents without the trailing CRLF.
  */
 static void decoder_append_line(Decoder* instance, std::string_view line) {
-    if (line.empty()) return; // Ignore empty lines
+    auto py_str = decode_utf8_with_fallback(line);
+    if (!py_str) return;
 
     if (instance->lines == nullptr) {
         instance->lines = PyList_New(0);
         Py_INCREF(instance->lines);
     }
-
-    PyObject *py_str = PyUnicode_FromStringAndSize(line.data(), line.size());
-    if (!py_str) return;
 
     PyList_Append(instance->lines, py_str);
     Py_DECREF(py_str);
@@ -772,7 +796,7 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
             trim_while(line, [](const unsigned char c){ return std::isspace(c); }); // skip spaces after permissions
 
             // The rest of the line is the filename
-            instance->file_name = PyUnicode_DecodeUTF8(line.data(), line.size(), nullptr);
+            instance->file_name = decode_utf8_with_fallback(line);
 
             instance->body = true;
             return true;
@@ -903,6 +927,8 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
 
         if (instance->format == ENCODING_FORMAT_UNKNOWN) {
             if (!instance->status_code && line.length() >= 3) {
+                // Store the full command response line
+                instance->message = decode_utf8_with_fallback(line);
                 // First line should be NNTP status code (220, 222, 223, etc.)
                 if (!extract_int(line, "", instance->status_code)
                     || !one_of(instance->status_code, NNTP_MULTILINE)) {
@@ -1074,9 +1100,10 @@ static PyObject* decoder_repr(Decoder* self)
 {
     const auto status = decoder_get_status(self, nullptr);
     const auto repr = PyUnicode_FromFormat(
-        "<Decoder: status=%R, status_code=%d, file_name=%R, length=%zd>",
+        "<Decoder: status=%R, status_code=%d, message=%R, file_name=%R, length=%zd>",
         status,
         self->status_code,
+        self->message ? self->message : Py_None,
         self->file_name ? self->file_name : Py_None,
         self->data_position);
     Py_DECREF(status);
@@ -1093,6 +1120,7 @@ static PyMemberDef decoder_members[] = {
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
     {"status_code", T_INT, offsetof(Decoder, status_code), READONLY, ""},
+    {"message", T_OBJECT_EX, offsetof(Decoder, message), READONLY, ""},
     {"bytes_read", T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
     {"format", T_OBJECT_EX, offsetof(Decoder, format), READONLY, ""},
     {nullptr, 0, 0, 0, nullptr}

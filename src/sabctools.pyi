@@ -48,6 +48,9 @@ class DecodingStatus(IntEnum):
 
 class Decoder:
     status_code: int
+    """Code extracted from the first 3 characters of the response"""
+    message: Optional[str]
+    """The first line of the response"""
     bytes_read: int
     """Bytes consumed, including status line and yEnc headers"""
     file_name: Optional[str]

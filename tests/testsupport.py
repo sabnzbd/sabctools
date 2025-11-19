@@ -79,6 +79,7 @@ def sabctools_yenc_wrapper(data: bytearray, expected_status: sabctools.DecodingS
     assert remaining is None
     assert decoder.lines is None
     assert decoder.format is sabctools.EncodingFormat.YENC
+    assert decoder.message
 
     return memoryview(decoder), decoder.file_name, decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
 

@@ -78,7 +78,7 @@ typedef struct {
     PyObject_HEAD
     PyObject* data; // decoded data
     Py_ssize_t data_position; // number of bytes decoded
-    PyObject *lines;
+    PyObject* lines;
     PyObject* format;
     RapidYenc::YencDecoderState state;
     PyObject* file_name;
@@ -91,6 +91,7 @@ typedef struct {
     uint32_t crc;
     std::optional<uint32_t> crc_expected;
     int status_code;
+	PyObject* message;
     unsigned long long bytes_read;
 
 	bool done; // seen \r\n.\r\n
