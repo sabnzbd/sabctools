@@ -65,7 +65,9 @@
 #define YENC_MAX_PART_SIZE (10*1024*1024)
 
 /* Minimum decoder internal buffer size */
-#define YENC_MIN_BUFFER_SIZE (64*1024)
+#define YENC_MIN_BUFFER_SIZE 1024
+/* How much raw data to process each loop */
+#define YENC_CHUNK_SIZE (64*1024)
 
 /* Functions */
 bool yenc_init(PyObject *);

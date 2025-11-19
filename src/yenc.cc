@@ -655,80 +655,122 @@ static PyObject* decoder_get_lines(Decoder* self, void *closure)
 static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     if (read >= buf_len) return false;
 
-    const Py_ssize_t outlen = buf_len - read;
+    constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
+
+    // Remaining input
+    Py_ssize_t remaining = buf_len - read;
+    if (remaining <= 0) return false;
 
     if (instance->data == nullptr) {
         // Allocate output buffer on first decode call
         // Use size from headers, capped at YENC_MAX_PART_SIZE for safety
-        const Py_ssize_t expected_size = std::min(
-            static_cast<Py_ssize_t>(YENC_MAX_PART_SIZE),
-            // For safety ensure we allocate at least enough to process the whole buffer
-            // Minimum size of 64KB to usually avoid subsequent resizes
-            // Only multi-part have a part size
-            std::max(outlen, static_cast<Py_ssize_t>(YENC_MIN_BUFFER_SIZE)) + (instance->part_size > 0 ? instance->part_size : instance->file_size )
-        );
-        instance->data = PyByteArray_FromStringAndSize(nullptr, expected_size);
+        Py_ssize_t base = instance->part_size > 0 ? instance->part_size : instance->file_size;
+        Py_ssize_t expected = base + 64;  // small margin to see the end of yEnc data
+        // Round up to next multiple of CHUNK
+        expected = ((expected + YENC_CHUNK_SIZE - 1) / CHUNK) * CHUNK;
+        // Add an extra CHUNK so we should never need to resize
+        expected += CHUNK;
+
+        if (expected < YENC_MIN_BUFFER_SIZE)
+            expected = YENC_MIN_BUFFER_SIZE;
+        if (expected > YENC_MAX_PART_SIZE)
+            expected = YENC_MAX_PART_SIZE;
+
+        instance->data = PyByteArray_FromStringAndSize(nullptr, expected);
         if (!instance->data) {
             PyErr_SetNone(PyExc_MemoryError);
             return false;
         }
-    } else if (instance->data_position + outlen > PyBytes_GET_SIZE(instance->data)) {
-        // Resize buffer if headers were incorrect (shouldn't happen with valid posts)
-        if (PyByteArray_Resize(instance->data, instance->data_position + outlen) == -1) {
-            return false;
-        }
     }
 
-    // Pin output memory while the GIL is released
-    Py_buffer dst_buffer;
-    if (PyObject_GetBuffer(instance->data, &dst_buffer, PyBUF_WRITABLE) < 0) {
+    // Pin buffer once per call
+    Py_buffer dst_buf;
+    if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
         return false;
+
+    char *data_ptr = static_cast<char*>(dst_buf.buf);
+
+    RapidYenc::YencDecoderEnd end = RapidYenc::YDEC_END_NONE;
+
+    // Main decode loop
+    while (read < buf_len) {
+        Py_ssize_t chunk_in = std::min(CHUNK, buf_len - read);
+
+        // Ensure buffer has enough space
+        Py_ssize_t needed = instance->data_position + chunk_in;
+        Py_ssize_t current = PyByteArray_GET_SIZE(instance->data);
+
+        if (needed > current) {
+            if (needed > YENC_MAX_PART_SIZE) {
+                PyBuffer_Release(&dst_buf);
+                return false;
+            }
+
+            // Release buffer to resize
+            PyBuffer_Release(&dst_buf);
+            if (PyByteArray_Resize(instance->data, needed) == -1) {
+                PyBuffer_Release(&dst_buf);
+                return false;
+            }
+
+            // Re-pin buffer after resize
+            if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
+                return false;
+            data_ptr = static_cast<char*>(dst_buf.buf);
+        }
+
+        const char *src = buf + read;
+        char *dst = data_ptr + instance->data_position;
+        char *dst_start = dst;
+
+        Py_ssize_t consumed = 0, produced = 0;
+
+        // Release GIL during CPU-intensive decode operation for better parallelism
+        Py_BEGIN_ALLOW_THREADS;
+
+        end = RapidYenc::decode_end(
+            reinterpret_cast<const void **>(&src),
+            reinterpret_cast<void **>(&dst),
+            chunk_in,
+            &instance->state
+        );
+
+        consumed = src - (buf + read);
+        produced = dst - dst_start;
+
+        if (produced > 0) {
+            instance->crc = RapidYenc::crc32(dst_start, produced, instance->crc);
+        }
+
+        Py_END_ALLOW_THREADS;
+
+        read += consumed;
+        instance->data_position += produced;
+
+        if (end != RapidYenc::YDEC_END_NONE || (consumed == 0 && produced == 0))
+            break;
     }
 
-    const char *src_ptr = buf + read;
-    char *dst_ptr = static_cast<char*>(dst_buffer.buf) + instance->data_position;
-    char *dest_start = dst_ptr;
-
-    RapidYenc::YencDecoderEnd end;
-    Py_ssize_t nsrc, ndst;
-    uint32_t crc = instance->crc;
-
-    // Release GIL during CPU-intensive decode operation for better parallelism
-    Py_BEGIN_ALLOW_THREADS;
-
-    end = RapidYenc::decode_end((const void**)&src_ptr, reinterpret_cast<void **>(&dst_ptr), outlen, &instance->state);
-    nsrc = src_ptr - buf - read;
-    ndst = dst_ptr - dest_start;
-    crc = RapidYenc::crc32(dest_start, ndst, crc);
-
-    Py_END_ALLOW_THREADS;
-
-    PyBuffer_Release(&dst_buffer);
-    instance->data_position += ndst;
-    instance->crc = crc;
+    PyBuffer_Release(&dst_buf);
 
     // Handle different end conditions from the decoder
     switch (end) {
-        case RapidYenc::YDEC_END_NONE: {
-            // Processed all available data without hitting a terminator
+        case RapidYenc::YDEC_END_NONE:
             if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
                 // Special case: found "\r\n=" but no more data - might be start of =yend
                 instance->state = RapidYenc::YDEC_STATE_CRLF;
-                read += nsrc - 1;  // Back up to allow =yend detection
-            } else {
-                read += nsrc;
+                read -= 1; // Back up to allow =yend detection
             }
             break;
-        }
         case RapidYenc::YDEC_END_CONTROL:
             // Found "\r\n=y" - likely =yend line, exit body mode
             instance->body = false;
-            read += nsrc - 2;  // Back up to include "=y" for header processing
+            read -= 2; // Back up to include "=y" for header processing
             break;
         case RapidYenc::YDEC_END_ARTICLE:
             // Found ".\r\n" - NNTP article terminator, exit body mode
-            instance->body = false;
-            read += nsrc - 3;  // Back up to include ".\r\n" for terminator detection
+            instance->body = false; // Back up to include ".\r\n" for terminator detection
+            read -= 3;
             break;
     }
 
