@@ -653,13 +653,10 @@ static PyObject* decoder_get_lines(Decoder* self, void *closure)
  * - Releases GIL during decoding for parallel processing
  */
 static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
-    if (read >= buf_len) return false;
+    // Already at the end of input
+    if (read >= buf_len) return true;
 
     constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
-
-    // Remaining input
-    Py_ssize_t remaining = buf_len - read;
-    if (remaining <= 0) return false;
 
     if (instance->data == nullptr) {
         // Allocate output buffer on first decode call
@@ -667,7 +664,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         Py_ssize_t base = instance->part_size > 0 ? instance->part_size : instance->file_size;
         Py_ssize_t expected = base + 64;  // small margin to see the end of yEnc data
         // Round up to next multiple of CHUNK
-        expected = ((expected + YENC_CHUNK_SIZE - 1) / CHUNK) * CHUNK;
+        expected = ((expected + CHUNK - 1) / CHUNK) * CHUNK;
         // Add an extra CHUNK so we should never need to resize
         expected += CHUNK;
 
@@ -678,7 +675,6 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
 
         instance->data = PyByteArray_FromStringAndSize(nullptr, expected);
         if (!instance->data) {
-            PyErr_SetNone(PyExc_MemoryError);
             return false;
         }
     }
@@ -703,6 +699,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         if (needed > current) {
             if (needed > YENC_MAX_PART_SIZE) {
                 PyBuffer_Release(&dst_buf);
+                PyErr_SetString(PyExc_BufferError, "would exceed YENC_MAX_PART_SIZE");
                 return false;
             }
 
@@ -769,8 +766,8 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
             break;
         case RapidYenc::YDEC_END_ARTICLE:
             // Found ".\r\n" - NNTP article terminator, exit body mode
-            instance->body = false; // Back up to include ".\r\n" for terminator detection
-            read -= 3;
+            instance->body = false;
+            read -= 3; // Back up to include ".\r\n" for terminator detection
             break;
     }
 
@@ -817,7 +814,6 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
     if (!instance->data) {
         instance->data = PyByteArray_FromStringAndSize(nullptr, line.size());
         if (!instance->data) {
-            PyErr_SetNone(PyExc_MemoryError);
             return false;
         }
     } else if (PyByteArray_Resize(instance->data, instance->data_position + line.size()) == -1) {

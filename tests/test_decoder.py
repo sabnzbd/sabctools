@@ -67,6 +67,11 @@ def test_end_after_filename():
         sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.NO_DATA)
     assert "No data available" in str(excinfo.value)
 
+def test_end_after_ypart():
+    data_plain = read_plain_yenc_file("test_end_after_ypart.yenc")
+    with pytest.raises(BufferError) as excinfo:
+        sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.NOT_FINISHED)
+    assert "No data available" in str(excinfo.value)
 
 def test_ref_counts():
     """Note that sys.getrefcount itself adds another reference!"""
