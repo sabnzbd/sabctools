@@ -652,7 +652,6 @@ static PyObject* decoder_get_lines(Decoder* self, void *closure)
  * Key behaviors:
  * - Allocates output buffer on first call based on expected size from headers
  *   and processes input in ``YENC_CHUNK_SIZE`` blocks to limit working set
- * - Resizes output buffer if needed (for malformed posts)
  * - Uses RapidYenc SIMD decoder with state machine to handle partial data
  * - Updates CRC incrementally as data is decoded
  * - Detects end conditions (control line, article terminator) and adjusts read position
