@@ -637,6 +637,11 @@ static PyObject* decoder_get_lines(Decoder* self, void *closure)
 /**
  * Decode yEnc-encoded body data in streaming fashion.
  * This is the core decoding function that processes encoded data incrementally.
+ *
+ * Data from ``buf`` is consumed in fixed-size chunks of ``YENC_CHUNK_SIZE`` bytes.
+ * The internal output bytearray is allocated once on first use and then grown
+ * only when required, which keeps reallocations to a minimum and avoids large
+ * temporary buffers.
  * 
  * @param instance The Decoder instance with state to maintain across calls
  * @param buf Input buffer containing encoded data
@@ -646,6 +651,7 @@ static PyObject* decoder_get_lines(Decoder* self, void *closure)
  * 
  * Key behaviors:
  * - Allocates output buffer on first call based on expected size from headers
+ *   and processes input in ``YENC_CHUNK_SIZE`` blocks to limit working set
  * - Resizes output buffer if needed (for malformed posts)
  * - Uses RapidYenc SIMD decoder with state machine to handle partial data
  * - Updates CRC incrementally as data is decoded

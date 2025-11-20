@@ -69,6 +69,22 @@ class Decoder:
     """Decoding process used"""
     status: DecodingStatus
     """Completed decoding result """
-    def decode(self, data: memoryview) -> Tuple[DecodingStatus, memoryview]: ...
+    def decode(self, data: memoryview) -> Tuple[DecodingStatus, memoryview]:
+        """Decode a buffer of NNTP response.
+
+        The decoder maintains an internal bytearray that is grown only as needed and
+        re-used across calls. Incoming data is consumed in fixed-size chunks to
+        avoid repeatedly allocating large temporary buffers. The return value is a
+        pair ``(status, remaining)`` where:
+
+        - ``status`` is the current :class:`DecodingStatus`.
+        - ``remaining`` is a ``memoryview`` of any unprocessed bytes from ``data``,
+          or ``None`` if the entire buffer was consumed.
+
+        Callers are expected to feed data from sockets or files incrementally,
+        passing any ``remaining`` bytes back into subsequent calls. This pattern
+        minimizes copying and wasted allocations while allowing streaming decode
+        of multiple NNTP responses.
+        """
     def __buffer__(self, __flags: int) -> memoryview: ...
     def __release_buffer__(self, __buffer: memoryview) -> None: ...
