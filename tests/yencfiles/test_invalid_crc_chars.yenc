@@ -1,0 +1,6 @@
+220 0 <message-id>
+
+=ybegin line=128 size=9 name=test.bin
+test data
+=yend size=9 crc32=GGGGGGGG
+.

@@ -239,3 +239,54 @@ def test_uu():
     assert decoder.file_name == "logo-full.svg"
     assert decoder.file_size == 2184
     assert crc32(decoder) == 0x6BC2917D
+
+
+# Tests for super-invalid inputs to ensure decoder doesn't crash
+
+@pytest.mark.parametrize(
+    "filename,expected_status",
+    [
+        # Protocol/Status edge cases
+        ("test_invalid_status_code.yenc", None),  # Non-numeric status code
+        ("test_truncated_status.yenc", DecodingStatus.NOT_FINISHED),  # Incomplete status line
+        ("test_empty_file.yenc", DecodingStatus.NOT_FINISHED),  # Empty file
+        ("test_only_newlines.yenc", DecodingStatus.NOT_FINISHED),  # Only newlines
+        # Malformed yEnc headers
+        ("test_malformed_ybegin.yenc", None),  # ybegin missing required fields
+        ("test_negative_size.yenc", None),  # Negative size value
+        ("test_huge_size.yenc", None),  # Extremely large size
+        ("test_double_ybegin.yenc", None),  # Two ybegin lines
+        # Structure violations
+        ("test_missing_yend.yenc", DecodingStatus.INVALID_SIZE),  # ybegin without yend
+        ("test_ypart_without_ybegin.yenc", None),  # ypart before ybegin
+        ("test_ypart_invalid_range.yenc", None),  # ypart begin > end
+        ("test_part_exceeds_limit.yenc", None),  # Part size > 10MB limit
+        # Special characters & encoding
+        ("test_non_ascii_everywhere.yenc", None),  # UTF-8/Chinese characters
+        ("test_only_dots.yenc", None),  # Dot-stuffing edge case
+        ("test_invalid_escape.yenc", None),  # Invalid escape sequences
+        # CRC edge cases (tested separately due to additional assertions)
+        ("test_extremely_long_crc.yenc", None),  # CRC exceeding 64-bit
+    ],
+)
+def test_invalid_inputs_no_crash(filename: str, expected_status):
+    """Test that decoder handles super-invalid inputs gracefully without crashing."""
+    data_plain = read_plain_yenc_file(filename)
+    decoder = sabctools.Decoder()
+    status, remaining = decoder.decode(memoryview(data_plain))
+    
+    # Basic check: decoder should not crash
+    assert decoder is not None
+    
+    # Check expected status if specified
+    if expected_status is not None:
+        assert status is expected_status
+
+
+def test_invalid_crc_chars():
+    """Test with non-hex characters in CRC field - crc_expected should be None."""
+    data_plain = read_plain_yenc_file("test_invalid_crc_chars.yenc")
+    decoder = sabctools.Decoder()
+    status, remaining = decoder.decode(memoryview(data_plain))
+    assert decoder is not None
+    assert decoder.crc_expected is None
