@@ -1,11 +1,9 @@
 import io
 import sys
-from zlib import crc32
 
 import pytest
 import glob
 from tests.testsupport import *
-from sabctools import DecodingStatus
 
 
 @pytest.mark.parametrize(
@@ -19,7 +17,7 @@ def test_regular(filename: str):
 
 def test_partial():
     data_plain = read_plain_yenc_file("test_partial.yenc")
-    decoded_data, filename, filesize, begin, size, crc_correct = sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.INVALID_SIZE)
+    decoded_data, filename, filesize, begin, size, crc_correct = sabctools_yenc_wrapper(data_plain)
     assert filename == "90E2Sdvsmds0801dvsmds90E.part06.rar"
     assert filesize == 49152000
     assert begin == 15360000
@@ -46,13 +44,13 @@ def test_bad_crc():
 
 def test_bad_crc_end():
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")
-    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.INVALID_CRC)
+    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain)
     assert crc is None
 
 
 def test_no_filename():
     data_plain = read_plain_yenc_file("test_no_name.yenc")
-    (_, filename, _, _, _, _) = sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.INVALID_FILENAME)
+    (_, filename, _, _, _, _) = sabctools_yenc_wrapper(data_plain)
     assert filename is None
 
 
@@ -64,13 +62,13 @@ def test_padded_crc():
 def test_end_after_filename():
     data_plain = read_plain_yenc_file("test_end_after_filename.yenc")
     with pytest.raises(BufferError) as excinfo:
-        sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.NO_DATA)
+        sabctools_yenc_wrapper(data_plain)
     assert "No data available" in str(excinfo.value)
 
 def test_end_after_ypart():
     data_plain = read_plain_yenc_file("test_end_after_ypart.yenc")
     with pytest.raises(BufferError) as excinfo:
-        sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.NOT_FINISHED)
+        sabctools_yenc_wrapper(data_plain)
     assert "No data available" in str(excinfo.value)
 
 def test_ref_counts():
@@ -91,7 +89,7 @@ def test_ref_counts():
 
     # Test further processing
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")
-    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain, expected_status=DecodingStatus.INVALID_CRC)
+    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain)
     assert crc is None
     assert sys.getrefcount(data_plain) == expected_refcount
 
@@ -115,30 +113,30 @@ def test_small_file_pickles(filename: str):
 
 
 @pytest.mark.parametrize(
-    "code,expected_status",
+    "code",
     [
         # Article
-        (223, DecodingStatus.SUCCESS),  # stat
-        (412, DecodingStatus.NOT_FOUND),  # No newsgroup selected
-        (423, DecodingStatus.NOT_FOUND),  # No article with that number
-        (420, DecodingStatus.NOT_FOUND),  # No newsgroup selected
-        (430, DecodingStatus.NOT_FOUND),  # Article not found
+        223,  # stat
+        412,  # No newsgroup selected
+        423,  # No article with that number
+        420,  # No newsgroup selected
+        430,  # Article not found
         # Auth
-        (281, DecodingStatus.AUTH),  # Authentication accepted
-        (381, DecodingStatus.AUTH),  # Password required
-        (481, DecodingStatus.AUTH),  # Authentication failed/rejected
-        (482, DecodingStatus.AUTH),  # Authentication commands issued out of sequence
+        281,  # Authentication accepted
+        381,  # Password required
+        481,  # Authentication failed/rejected
+        482,  # Authentication commands issued out of sequence
         # Generic
-        (500, DecodingStatus.FAILED),  # Unknown command
-        (501, DecodingStatus.FAILED),  # Syntax error
-        (502, DecodingStatus.FAILED),  # Command unavailable
-        (503, DecodingStatus.FAILED),  # Not supported
+        500,  # Unknown command
+        501,  # Syntax error
+        502,  # Command unavailable
+        503,  # Not supported
     ],
 )
-def test_nntp_not_multiline(code: int, expected_status: DecodingStatus):
+def test_nntp_not_multiline(code: int):
     decoder = sabctools.Decoder()
-    status, remaining_view = decoder.decode(memoryview(bytes(f"{code} 0 <message-id>\r\n", encoding="utf-8")))
-    assert status is expected_status
+    eof, remaining_view = decoder.decode(memoryview(bytes(f"{code} 0 <message-id>\r\n", encoding="utf-8")))
+    assert eof
     assert remaining_view is None
     assert decoder.status_code == code
 
@@ -146,8 +144,8 @@ def test_nntp_not_multiline(code: int, expected_status: DecodingStatus):
 def test_head():
     data_plain = read_plain_yenc_file("test_head.yenc")
     decoder = sabctools.Decoder()
-    status, remaining_view = decoder.decode(memoryview(data_plain))
-    assert status is DecodingStatus.SUCCESS
+    eof, remaining_view = decoder.decode(memoryview(data_plain))
+    assert eof
     assert remaining_view is None
     assert decoder.status_code == 221
     assert decoder.lines is not None
@@ -159,8 +157,8 @@ def test_head():
 def test_capabilities():
     data_plain = read_plain_yenc_file("capabilities.yenc")
     decoder = sabctools.Decoder()
-    status, remaining_view = decoder.decode(memoryview(data_plain))
-    assert status is DecodingStatus.SUCCESS
+    eof, remaining_view = decoder.decode(memoryview(data_plain))
+    assert eof
     assert len(decoder.lines) == 2
     assert "VERSION 1" in decoder.lines
     assert "AUTHINFO USER PASS" in decoder.lines
@@ -168,8 +166,8 @@ def test_capabilities():
 def test_article():
     data_plain = read_plain_yenc_file("test_article.yenc")
     decoder = sabctools.Decoder()
-    status, remaining_view = decoder.decode(memoryview(data_plain))
-    assert status is DecodingStatus.SUCCESS
+    eof, remaining_view = decoder.decode(memoryview(data_plain))
+    assert eof
     assert remaining_view is None
     assert decoder.status_code == 220
     assert decoder.lines is not None
@@ -232,9 +230,9 @@ def test_streaming():
 def test_uu():
     data_plain = read_uu_file("logo_full.nntp")
     decoder = sabctools.Decoder()
-    status, unprocessed = decoder.decode(memoryview(data_plain))
-    assert status is DecodingStatus.SUCCESS
-    assert unprocessed is None
+    eof, remaining_view = decoder.decode(memoryview(data_plain))
+    assert eof
+    assert remaining_view is None
     assert decoder.lines is None
     assert decoder.file_name == "logo-full.svg"
     assert decoder.file_size == 2184
@@ -244,49 +242,45 @@ def test_uu():
 # Tests for super-invalid inputs to ensure decoder doesn't crash
 
 @pytest.mark.parametrize(
-    "filename,expected_status",
+    "filename",
     [
         # Protocol/Status edge cases
-        ("test_invalid_status_code.yenc", None),  # Non-numeric status code
-        ("test_truncated_status.yenc", DecodingStatus.NOT_FINISHED),  # Incomplete status line
-        ("test_empty_file.yenc", DecodingStatus.NOT_FINISHED),  # Empty file
-        ("test_only_newlines.yenc", DecodingStatus.NOT_FINISHED),  # Only newlines
+        "test_invalid_status_code.yenc",  # Non-numeric status code
+        "test_truncated_status.yenc",  # Incomplete status line
+        "test_empty_file.yenc",  # Empty file
+        "test_only_newlines.yenc",  # Only newlines
         # Malformed yEnc headers
-        ("test_malformed_ybegin.yenc", None),  # ybegin missing required fields
-        ("test_negative_size.yenc", None),  # Negative size value
-        ("test_huge_size.yenc", None),  # Extremely large size
-        ("test_double_ybegin.yenc", None),  # Two ybegin lines
+        "test_malformed_ybegin.yenc",  # ybegin missing required fields
+        "test_negative_size.yenc",  # Negative size value
+        "test_huge_size.yenc",  # Extremely large size
+        "test_double_ybegin.yenc",  # Two ybegin lines
         # Structure violations
-        ("test_missing_yend.yenc", DecodingStatus.INVALID_SIZE),  # ybegin without yend
-        ("test_ypart_without_ybegin.yenc", None),  # ypart before ybegin
-        ("test_ypart_invalid_range.yenc", None),  # ypart begin > end
-        ("test_part_exceeds_limit.yenc", None),  # Part size > 10MB limit
+        "test_missing_yend.yenc",  # ybegin without yend
+        "test_ypart_without_ybegin.yenc",  # ypart before ybegin
+        "test_ypart_invalid_range.yenc",  # ypart begin > end
+        "test_part_exceeds_limit.yenc",  # Part size > 10MB limit
         # Special characters & encoding
-        ("test_non_ascii_everywhere.yenc", None),  # UTF-8/Chinese characters
-        ("test_only_dots.yenc", None),  # Dot-stuffing edge case
-        ("test_invalid_escape.yenc", None),  # Invalid escape sequences
+        "test_non_ascii_everywhere.yenc",  # UTF-8/Chinese characters
+        "test_only_dots.yenc",  # Dot-stuffing edge case
+        "test_invalid_escape.yenc",  # Invalid escape sequences
         # CRC edge cases (tested separately due to additional assertions)
-        ("test_extremely_long_crc.yenc", None),  # CRC exceeding 64-bit
+        "test_extremely_long_crc.yenc",  # CRC exceeding 64-bit
     ],
 )
-def test_invalid_inputs_no_crash(filename: str, expected_status):
+def test_invalid_inputs_no_crash(filename: str):
     """Test that decoder handles super-invalid inputs gracefully without crashing."""
     data_plain = read_plain_yenc_file(filename)
     decoder = sabctools.Decoder()
-    status, remaining = decoder.decode(memoryview(data_plain))
+    eof, remaining_view = decoder.decode(memoryview(data_plain))
     
     # Basic check: decoder should not crash
     assert decoder is not None
-    
-    # Check expected status if specified
-    if expected_status is not None:
-        assert status is expected_status
 
 
 def test_invalid_crc_chars():
     """Test with non-hex characters in CRC field - crc_expected should be None."""
     data_plain = read_plain_yenc_file("test_invalid_crc_chars.yenc")
     decoder = sabctools.Decoder()
-    status, remaining = decoder.decode(memoryview(data_plain))
+    eof, remaining_view = decoder.decode(memoryview(data_plain))
     assert decoder is not None
     assert decoder.crc_expected is None

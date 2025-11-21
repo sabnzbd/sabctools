@@ -29,17 +29,6 @@ static PyObject* ENCODING_FORMAT_UNKNOWN = nullptr;
 static PyObject* ENCODING_FORMAT_YENC = nullptr;
 static PyObject* ENCODING_FORMAT_UU = nullptr;
 
-static PyObject* DECODING_STATUS_NOT_FINISHED = nullptr;
-static PyObject* DECODING_STATUS_SUCCESS = nullptr;
-static PyObject* DECODING_STATUS_NO_DATA = nullptr;
-static PyObject* DECODING_STATUS_INVALID_SIZE = nullptr;
-static PyObject* DECODING_STATUS_INVALID_CRC = nullptr;
-static PyObject* DECODING_STATUS_INVALID_FILENAME = nullptr;
-static PyObject* DECODING_STATUS_NOT_FOUND = nullptr;
-static PyObject* DECODING_STATUS_FAILED = nullptr;
-static PyObject* DECODING_STATUS_AUTH = nullptr;
-static PyObject* DECODING_STATUS_UNKNOWN = nullptr;
-
 /* Function definitions */
 
 /**
@@ -352,7 +341,7 @@ static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
         return -1;
     }
 
-    const Py_ssize_t length = self->data_position;
+    const Py_ssize_t length = self->bytes_decoded;
 
     if (length > PyByteArray_Size(self->data)) {
         PyErr_SetString(PyExc_ValueError, "slice out of bounds");
@@ -463,161 +452,6 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
 }
 
 /**
- * Validate a completed yEnc-encoded article and return its decoding status.
- * 
- * Performs a series of validation checks on the decoded yEnc data:
- * 1. Ensures data was actually decoded (non-zero size)
- * 2. Verifies the decoded size matches the expected size from yEnc headers
- * 3. Validates the calculated CRC32 matches the expected CRC from =yend footer
- * 4. Confirms a filename was extracted from the =ybegin header
- * 
- * @param self The Decoder instance with completed yEnc decoding
- * @return PyObject* representing the status:
- *         - DECODING_STATUS_NO_DATA if no data was decoded
- *         - DECODING_STATUS_INVALID_SIZE if decoded size doesn't match expected
- *         - DECODING_STATUS_INVALID_CRC if CRC validation fails
- *         - DECODING_STATUS_INVALID_FILENAME if no filename was found
- *         - DECODING_STATUS_SUCCESS if all validations pass
- * 
- * Note: This function increments the reference count of the returned status object.
- */
-inline PyObject* decoder_get_status_yenc(Decoder* self) {
-    if (self->data_position == 0) {
-        Py_INCREF(DECODING_STATUS_NO_DATA);
-        return DECODING_STATUS_NO_DATA;
-    }
-
-    if ((!self->has_part && self->data_position != self->end_size) || self->data_position != self->end_size) {
-        Py_INCREF(DECODING_STATUS_INVALID_SIZE);
-        return DECODING_STATUS_INVALID_SIZE;
-    }
-
-    if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
-        Py_INCREF(DECODING_STATUS_INVALID_CRC);
-        return DECODING_STATUS_INVALID_CRC;
-    }
-
-    if (self->file_name == nullptr) {
-        Py_INCREF(DECODING_STATUS_INVALID_FILENAME);
-        return DECODING_STATUS_INVALID_FILENAME;
-    }
-
-    Py_INCREF(DECODING_STATUS_SUCCESS);
-    return DECODING_STATUS_SUCCESS;
-}
-
-/**
- * Validate a completed UUEncode-encoded article and return its decoding status.
- * 
- * Performs basic validation checks on the decoded UUEncode data:
- * 1. Ensures data was actually decoded (non-zero size)
- * 2. Confirms a filename was extracted from the UUEncode header
- * 
- * Unlike yEnc validation, UUEncode does not include CRC or size information
- * in its headers, so only minimal validation is performed.
- * 
- * @param self The Decoder instance with completed UUEncode decoding
- * @return PyObject* representing the status:
- *         - DECODING_STATUS_NO_DATA if no data was decoded
- *         - DECODING_STATUS_INVALID_FILENAME if no filename was found
- *         - DECODING_STATUS_SUCCESS if all validations pass
- * 
- * Note: This function increments the reference count of the returned status object.
- */
-inline PyObject* decoder_get_status_uu(Decoder* self)
-{
-    if (self->data_position == 0) {
-        Py_INCREF(DECODING_STATUS_NO_DATA);
-        return DECODING_STATUS_NO_DATA;
-    }
-
-    if (self->file_name == nullptr) {
-        Py_INCREF(DECODING_STATUS_INVALID_FILENAME);
-        return DECODING_STATUS_INVALID_FILENAME;
-    }
-
-    Py_INCREF(DECODING_STATUS_SUCCESS);
-    return DECODING_STATUS_SUCCESS;
-}
-
-/**
- * Property getter for the 'status' attribute. Returns the overall decoding status.
- * 
- * This is the main status property that dispatches to format-specific validators
- * or interprets NNTP response codes when no encoding format was detected.
- * 
- * Status determination flow:
- * 1. If decoding is incomplete (!done), returns NOT_FINISHED
- * 2. If format is yEnc, delegates to decoder_get_status_yenc for validation
- * 3. If format is UUEncode, delegates to decoder_get_status_uu for validation
- * 4. Otherwise interprets NNTP status codes:
- *    - STAT/MULTILINE responses: SUCCESS (non-article responses)
- *    - AUTH codes: DECODING_STATUS_AUTH (authentication required)
- *    - COMMAND_FAILED: DECODING_STATUS_FAILED (connection may need to close)
- *    - 410-439: DECODING_STATUS_NOT_FOUND (article/group selection failures)
- *    - 440-499: DECODING_STATUS_FAILED (other command failures)
- *    - Other codes: DECODING_STATUS_UNKNOWN (caller must inspect status_code)
- * 
- * @param self The Decoder instance
- * @param closure Unused closure parameter
- * @return PyObject* representing the decoding status (reference count incremented)
- */
-static PyObject* decoder_get_status(Decoder* self, void *closure)
-{
-    // EOF not reached, need more data
-    if (!self->done) {
-        Py_INCREF(DECODING_STATUS_NOT_FINISHED);
-        return DECODING_STATUS_NOT_FINISHED;
-    }
-
-    if (self->format == ENCODING_FORMAT_YENC) {
-        return decoder_get_status_yenc(self);
-    }
-
-    if (self->format == ENCODING_FORMAT_UU) {
-        return decoder_get_status_uu(self);
-    }
-
-    // Include special cases for non-article responses
-    if (one_of(self->status_code, NNTP_STAT, NNTP_MULTILINE)) {
-        Py_INCREF(DECODING_STATUS_SUCCESS);
-        return DECODING_STATUS_SUCCESS;
-    }
-
-    // Need to or are in the process of authenticating
-    if (one_of(self->status_code, NNTP_AUTH)) {
-        Py_INCREF(DECODING_STATUS_AUTH);
-        return DECODING_STATUS_AUTH;
-    }
-
-    // Connection needs closing
-    if (one_of(self->status_code, NNTP_COMMAND_FAILED)) {
-        Py_INCREF(DECODING_STATUS_FAILED);
-        return DECODING_STATUS_FAILED;
-    }
-
-    // 4xx - Command was syntactically correct but failed for some reason
-    // x1x - Newsgroup selection
-    // x2x - Article selection
-    // x3x - Distribution functions
-    // x4x - Posting
-    // x8x - Reserved for authentication and privacy extensions
-    // x9x - Reserved for private use (non-standard extensions)
-    if (self->status_code >= 410 && self->status_code <= 499) {
-        if (self->status_code <= 439) {
-            Py_INCREF(DECODING_STATUS_NOT_FOUND);
-            return DECODING_STATUS_NOT_FOUND;
-        }
-        Py_INCREF(DECODING_STATUS_FAILED);
-        return DECODING_STATUS_FAILED;
-    }
-
-    // Case not handled, caller needs to look at status_code
-    Py_INCREF(DECODING_STATUS_UNKNOWN);
-    return DECODING_STATUS_UNKNOWN;
-}
-
-/**
  * Property getter for the 'lines' attribute. Returns NNTP/header lines captured
  * before the encoding format was determined.
  *
@@ -698,7 +532,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         Py_ssize_t chunk_in = std::min(CHUNK, buf_len - read);
 
         // Ensure buffer has enough space
-        Py_ssize_t needed = instance->data_position + chunk_in;
+        Py_ssize_t needed = instance->bytes_decoded + chunk_in;
         Py_ssize_t current = PyByteArray_GET_SIZE(instance->data);
 
         if (needed > current) {
@@ -722,7 +556,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         }
 
         const char *src = buf + read;
-        char *dst = data_ptr + instance->data_position;
+        char *dst = data_ptr + instance->bytes_decoded;
         char *dst_start = dst;
 
         Py_ssize_t consumed = 0, produced = 0;
@@ -747,7 +581,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         Py_END_ALLOW_THREADS;
 
         read += consumed;
-        instance->data_position += produced;
+        instance->bytes_decoded += produced;
 
         if (end != RapidYenc::YDEC_END_NONE || (consumed == 0 && produced == 0))
             break;
@@ -821,7 +655,7 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
         if (!instance->data) {
             return false;
         }
-    } else if (PyByteArray_Resize(instance->data, instance->data_position + line.size()) == -1) {
+    } else if (PyByteArray_Resize(instance->data, instance->bytes_decoded + line.size()) == -1) {
         return false;
     }
 
@@ -854,7 +688,7 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
     // Detect 'end' line
     if (instance->body && (starts_with(line, "end ") || starts_with(line, "`"))) {
         instance->body = false;
-        instance->file_size = instance->data_position;
+        instance->file_size = instance->bytes_decoded;
         return true;
     }
 
@@ -870,7 +704,7 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
         if (effLen > line.size()) return true; // ignore invalid lines
 
         line.remove_prefix(1); // skip length byte
-        char* out_ptr = PyByteArray_AsString(instance->data) + instance->data_position;
+        char* out_ptr = PyByteArray_AsString(instance->data) + instance->bytes_decoded;
         auto it = line.begin();
         const auto end = line.end();
 
@@ -895,7 +729,7 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
             effLen -= 3;
         }
 
-        instance->data_position = out_ptr - PyByteArray_AsString(instance->data);
+        instance->bytes_decoded = out_ptr - PyByteArray_AsString(instance->data);
     }
 
     return true;
@@ -964,7 +798,7 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
     while (next_crlf_line(buf, buf_len, read, line)) {
         if (line == ".") {
             // NNTP article terminator
-            instance->done = true;
+            instance->eof = true;
             return read;
         }
 
@@ -976,7 +810,7 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
                 if (!extract_int(line, "", instance->status_code)
                     || !one_of(instance->status_code, NNTP_MULTILINE)) {
                     // Single-line response (not ARTICLE/BODY), we're done
-                    instance->done = true;
+                    instance->eof = true;
                     break;
                 }
                 continue;
@@ -1020,8 +854,8 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
  * ```python
  * decoder = sabctools.Decoder()
  * while data := socket.recv(8192):
- *     done, remaining = decoder.decode(memoryview(data))
- *     if done:
+ *     eof, remaining = decoder.decode(memoryview(data))
+ *     if eof:
  *         break
  * ```
  */
@@ -1030,7 +864,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
 
     PyObject* unprocessed_memoryview = Py_None;
 
-    if (instance->done) {
+    if (instance->eof) {
         PyErr_SetString(PyExc_ValueError, "Already finished decoding");
         return NULL;
     }
@@ -1069,7 +903,7 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
         Py_INCREF(unprocessed_memoryview);
     }
 
-    return Py_BuildValue("(N, O)", decoder_get_status(instance, nullptr), unprocessed_memoryview);
+    return Py_BuildValue("(O, O)", instance->eof ? Py_True : Py_False, unprocessed_memoryview);
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
@@ -1141,16 +975,13 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
  */
 static PyObject* decoder_repr(Decoder* self)
 {
-    const auto status = decoder_get_status(self, nullptr);
-    const auto repr = PyUnicode_FromFormat(
-        "<Decoder: status=%R, status_code=%d, message=%R, file_name=%R, length=%zd>",
-        status,
+    return PyUnicode_FromFormat(
+        "<Decoder: eof=%R, status_code=%d, message=%R, file_name=%R, length=%zd>",
+        self->eof ? Py_True : Py_False,
         self->status_code,
         self->message ? self->message : Py_None,
         self->file_name ? self->file_name : Py_None,
-        self->data_position);
-    Py_DECREF(status);
-    return repr;
+        self->bytes_decoded);
 }
 
 static PyMethodDef decoder_methods[] = {
@@ -1159,12 +990,14 @@ static PyMethodDef decoder_methods[] = {
 };
 
 static PyMemberDef decoder_members[] = {
+    {"eof", T_BOOL, offsetof(Decoder, eof), READONLY, ""},
     {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
     {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
     {"status_code", T_INT, offsetof(Decoder, status_code), READONLY, ""},
     {"message", T_OBJECT_EX, offsetof(Decoder, message), READONLY, ""},
-    {"bytes_read", T_ULONGLONG, offsetof(Decoder, bytes_read), READONLY, ""},
+    {"bytes_read", T_PYSSIZET, offsetof(Decoder, bytes_read), READONLY, ""},
+    {"bytes_decoded", T_PYSSIZET, offsetof(Decoder, bytes_decoded), READONLY, ""},
     {"format", T_OBJECT_EX, offsetof(Decoder, format), READONLY, ""},
     {nullptr, 0, 0, 0, nullptr}
 };
@@ -1175,7 +1008,6 @@ static PyGetSetDef decoder_gets_sets[] = {
     {"lines", (getter)decoder_get_lines, NULL, NULL, NULL},
     {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
     {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
-    {"status", (getter)decoder_get_status, NULL, NULL, NULL},
     {nullptr, nullptr, nullptr, nullptr, nullptr}
 };
 
@@ -1291,70 +1123,12 @@ bool yenc_init(PyObject *m) {
         return false;
     }
 
-    // Create DecodingStatus enum
-    static EnumEntry decoding_entries[] = {
-        {"NOT_FINISHED", 0},
-        {"SUCCESS", 1},
-        {"NO_DATA", 2},
-        {"INVALID_SIZE", 3},
-        {"INVALID_CRC", 4},
-        {"INVALID_FILENAME", 5},
-        {"NOT_FOUND", 6},
-        {"FAILED", 7},
-        {"AUTH", 8},
-        {"UNKNOWN", 99}
-    };
-    PyObject* decoding_enum = create_int_enum("DecodingStatus", decoding_entries, std::size(decoding_entries));
-    if (!decoding_enum) {
-        Py_XDECREF(encoding_enum);
-        Py_XDECREF(ENCODING_FORMAT_UNKNOWN);
-        Py_XDECREF(ENCODING_FORMAT_YENC);
-        Py_XDECREF(ENCODING_FORMAT_UU);
-        return false;
-    }
-
-    DECODING_STATUS_UNKNOWN        = PyObject_GetAttrString(decoding_enum, "UNKNOWN");
-    DECODING_STATUS_SUCCESS        = PyObject_GetAttrString(decoding_enum, "SUCCESS");
-    DECODING_STATUS_NOT_FINISHED   = PyObject_GetAttrString(decoding_enum, "NOT_FINISHED");
-    DECODING_STATUS_NO_DATA        = PyObject_GetAttrString(decoding_enum, "NO_DATA");
-    DECODING_STATUS_INVALID_SIZE   = PyObject_GetAttrString(decoding_enum, "INVALID_SIZE");
-    DECODING_STATUS_INVALID_CRC    = PyObject_GetAttrString(decoding_enum, "INVALID_CRC");
-    DECODING_STATUS_INVALID_FILENAME = PyObject_GetAttrString(decoding_enum, "INVALID_FILENAME");
-    DECODING_STATUS_NOT_FOUND      = PyObject_GetAttrString(decoding_enum, "NOT_FOUND");
-    DECODING_STATUS_FAILED         = PyObject_GetAttrString(decoding_enum, "FAILED");
-    DECODING_STATUS_AUTH           = PyObject_GetAttrString(decoding_enum, "AUTH");
-
-    // Verify all were created
-    if (!DECODING_STATUS_UNKNOWN || !DECODING_STATUS_SUCCESS || !DECODING_STATUS_NOT_FINISHED ||
-        !DECODING_STATUS_NO_DATA || !DECODING_STATUS_INVALID_SIZE || !DECODING_STATUS_INVALID_CRC ||
-        !DECODING_STATUS_INVALID_FILENAME || !DECODING_STATUS_NOT_FOUND || !DECODING_STATUS_FAILED ||
-        !DECODING_STATUS_AUTH) {
-        Py_XDECREF(encoding_enum);
-        Py_XDECREF(decoding_enum);
-        Py_XDECREF(ENCODING_FORMAT_UNKNOWN);
-        Py_XDECREF(ENCODING_FORMAT_YENC);
-        Py_XDECREF(ENCODING_FORMAT_UU);
-        Py_XDECREF(DECODING_STATUS_UNKNOWN);
-        Py_XDECREF(DECODING_STATUS_SUCCESS);
-        Py_XDECREF(DECODING_STATUS_NOT_FINISHED);
-        Py_XDECREF(DECODING_STATUS_NO_DATA);
-        Py_XDECREF(DECODING_STATUS_INVALID_SIZE);
-        Py_XDECREF(DECODING_STATUS_INVALID_CRC);
-        Py_XDECREF(DECODING_STATUS_INVALID_FILENAME);
-        Py_XDECREF(DECODING_STATUS_NOT_FOUND);
-        Py_XDECREF(DECODING_STATUS_FAILED);
-        Py_XDECREF(DECODING_STATUS_AUTH);
-        return false;
-    }
-
     // Add objects to module
     Py_INCREF(&DecoderType);
     if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0 ||
-        PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0 ||
-        PyModule_AddObject(m, "DecodingStatus", decoding_enum) < 0) {
+        PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0) {
         Py_XDECREF(&DecoderType);
         Py_XDECREF(encoding_enum);
-        Py_XDECREF(decoding_enum);
         return false;
     }
 

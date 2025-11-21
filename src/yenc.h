@@ -49,14 +49,7 @@
 #define NNTP_HEAD                     221
 #define NNTP_BODY                     222
 #define NNTP_STAT                     223
-#define NNTP_AUTH                     281, 381, 480, 481, 482
 #define NNTP_MULTILINE                NNTP_BODY, NNTP_ARTICLE, NNTP_HEAD, NNTP_CAPABILITIES
-#define NNTP_SERVER_UNAVAILABLE       400
-#define NNTP_UNKNOWN_COMMAND          500
-#define NNTP_SYNTAX_ERROR             501
-#define NNTP_COMMAND_UNAVAILABLE      502
-#define NNTP_COMMAND_NOT_SUPPORTED    503
-#define NNTP_COMMAND_FAILED           NNTP_SERVER_UNAVAILABLE, NNTP_UNKNOWN_COMMAND, NNTP_SYNTAX_ERROR, NNTP_COMMAND_UNAVAILABLE, NNTP_COMMAND_NOT_SUPPORTED
 
 /* The =yend line cannot be crazy long */
 #define YENC_MAX_TAIL_BYTES 256
@@ -78,28 +71,29 @@ extern PyTypeObject DecoderType;
 
 typedef struct {
     PyObject_HEAD
-    PyObject* data; // decoded data
-    Py_ssize_t data_position; // number of bytes decoded
-    PyObject* lines;
-    PyObject* format;
-    RapidYenc::YencDecoderState state;
-    PyObject* file_name;
-    Py_ssize_t file_size;
-    Py_ssize_t part;
-    Py_ssize_t part_begin;
-    Py_ssize_t part_size;
-    Py_ssize_t end_size;
-    Py_ssize_t total;
-    uint32_t crc;
-    std::optional<uint32_t> crc_expected;
-    int status_code;
-	PyObject* message;
-    unsigned long long bytes_read;
 
-	bool done; // seen \r\n.\r\n
-	bool body; // in yenc data
-	bool has_part; // seen =ypart
-	bool has_end; // seen =yend
+	PyObject* data;
+	Py_ssize_t bytes_decoded;
+	Py_ssize_t bytes_read;
+	PyObject* lines;
+	PyObject* format;
+	PyObject* file_name;
+	Py_ssize_t file_size;
+	Py_ssize_t part;
+	Py_ssize_t part_begin;
+	Py_ssize_t part_size;
+	Py_ssize_t end_size;
+	Py_ssize_t total;
+	std::optional<uint32_t> crc_expected;
+	PyObject* message;
+	RapidYenc::YencDecoderState state;
+	int status_code;
+	uint32_t crc;
+
+	bool eof;
+	bool body;
+	bool has_part;
+	bool has_end;
 } Decoder;
 
 #endif //SABCTOOLS_YENC_H

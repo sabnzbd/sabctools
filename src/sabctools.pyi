@@ -21,38 +21,17 @@ class EncodingFormat(IntEnum):
     YENC = 1
     UU = 2
 
-class DecodingStatus(IntEnum):
-    NOT_FINISHED = 0
-    """End of response not reached, need more data"""
-    SUCCESS = 1
-    """
-    Successful command response
-    For article requests size, crc, and filename are valid
-    """
-    NO_DATA = 2
-    """Response has no binary data"""
-    INVALID_SIZE = 3
-    """Decoded data length does not match yEnc headers"""
-    INVALID_CRC = 4
-    """CRC does not match yEnc headers"""
-    INVALID_FILENAME = 5
-    """Filename not found in yEnc/UU headers"""
-    NOT_FOUND = 6
-    """Article not found, server responded 410 to 439"""
-    FAILED = 7
-    """Command failed: check status_code"""
-    AUTH = 8
-    """Authentication related response"""
-    UNKNOWN = 99
-    """Check status_code and handle appropriately"""
-
 class Decoder:
+    eof: bool
+    """End of response reached"""
     status_code: int
     """Code extracted from the first 3 characters of the response"""
     message: Optional[str]
     """The first line of the response"""
     bytes_read: int
     """Bytes consumed, including status line and yEnc headers"""
+    bytes_decoded: int
+    """Bytes produced"""
     file_name: Optional[str]
     file_size: int
     part_begin: int
@@ -67,17 +46,15 @@ class Decoder:
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: EncodingFormat
     """Decoding process used"""
-    status: DecodingStatus
-    """Completed decoding result """
-    def decode(self, data: memoryview) -> Tuple[DecodingStatus, memoryview]:
+    def decode(self, data: memoryview) -> Tuple[bool, memoryview]:
         """Decode a buffer of NNTP response.
 
         The decoder maintains an internal bytearray that is grown only as needed and
         re-used across calls. Incoming data is consumed in fixed-size chunks to
         avoid repeatedly allocating large temporary buffers. The return value is a
-        pair ``(status, remaining)`` where:
+        pair ``(eof, remaining)`` where:
 
-        - ``status`` is the current :class:`DecodingStatus`.
+        - ``eof`` is a ``bool`` indicating if the end of the response was reached.
         - ``remaining`` is a ``memoryview`` of any unprocessed bytes from ``data``,
           or ``None`` if the entire buffer was consumed.
 
