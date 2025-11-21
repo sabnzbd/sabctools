@@ -1220,43 +1220,53 @@ PyTypeObject DecoderType = {
     (newfunc)decoder_new,           // tp_new
 };
 
-static PyObject* create_encoding_format_enum() {
-    PyObject* enum_module = PyImport_ImportModule("enum");
+struct EnumEntry {
+    const char* name;
+    long value;
+};
 
-    PyObject* members = PyDict_New();
-    PyDict_SetItemString(members, "UNKNOWN",  PyLong_FromLong(0));
-    PyDict_SetItemString(members, "YENC",  PyLong_FromLong(1));
-    PyDict_SetItemString(members, "UU",  PyLong_FromLong(2));
+// Add a key, value to a dictionary
+static bool add_member(PyObject* dict, const char* name, PyObject* value) {
+    if (!dict || !name || !value) return false;
 
-    PyObject* encoding_format_enum = PyObject_CallMethod(enum_module, "IntEnum", "(sO)", "EncodingFormat", members);
+    Py_INCREF(value);
+    if (PyDict_SetItemString(dict, name, value) < 0) {
+        Py_DECREF(value);
+        return false;
+    }
+    Py_DECREF(value);
 
-    Py_DECREF(enum_module);
-    Py_DECREF(members);
-
-    return encoding_format_enum;
+    return true;
 }
 
-static PyObject* create_decoding_status_enum() {
-    PyObject* enum_module = PyImport_ImportModule("enum");
+// Create an int enum for a list of entries
+static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries, std::size_t count) {
+    if (!enum_name || !entries) return nullptr;
 
     PyObject* members = PyDict_New();
-    PyDict_SetItemString(members, "NOT_FINISHED", PyLong_FromLong(0));
-    PyDict_SetItemString(members, "SUCCESS", PyLong_FromLong(1));
-    PyDict_SetItemString(members, "NO_DATA", PyLong_FromLong(2));
-    PyDict_SetItemString(members, "INVALID_SIZE", PyLong_FromLong(3));
-    PyDict_SetItemString(members, "INVALID_CRC", PyLong_FromLong(4));
-    PyDict_SetItemString(members, "INVALID_FILENAME", PyLong_FromLong(5));
-    PyDict_SetItemString(members, "NOT_FOUND", PyLong_FromLong(6));
-    PyDict_SetItemString(members, "FAILED", PyLong_FromLong(7));
-    PyDict_SetItemString(members, "AUTH", PyLong_FromLong(8));
-    PyDict_SetItemString(members, "UNKNOWN",  PyLong_FromLong(99));
+    if (!members) return nullptr;
 
-    PyObject* encoding_format_enum = PyObject_CallMethod(enum_module, "IntEnum", "(sO)", "DecodingStatus", members);
+    // Range over the entries
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto& e = entries[i];
+        if (!add_member(members, e.name, PyLong_FromLong(e.value))) {
+            Py_DECREF(members);
+            return nullptr;
+        }
+    }
+
+    PyObject* enum_module = PyImport_ImportModule("enum");
+    if (!enum_module) {
+        Py_DECREF(members);
+        return nullptr;
+    }
+
+    PyObject* enum_obj = PyObject_CallMethod(enum_module, "IntEnum", "(sO)", enum_name, members);
 
     Py_DECREF(enum_module);
     Py_DECREF(members);
 
-    return encoding_format_enum;
+    return enum_obj;
 }
 
 bool yenc_init(PyObject *m) {
@@ -1264,57 +1274,89 @@ bool yenc_init(PyObject *m) {
     RapidYenc::decoder_init();
     RapidYenc::crc32_init();
 
-    PyObject* encoding_format_enum = create_encoding_format_enum();
-    if (!encoding_format_enum) return false;
+    // Create EncodingFormat enum
+    static EnumEntry encoding_entries[] = {
+        {"UNKNOWN", 0},
+        {"YENC", 1},
+        {"UU", 2}
+    };
+    PyObject* encoding_enum = create_int_enum("EncodingFormat", encoding_entries, std::size(encoding_entries));
+    if (!encoding_enum) return false;
 
-    ENCODING_FORMAT_UNKNOWN = PyObject_GetAttrString(encoding_format_enum, "UNKNOWN"); Py_INCREF(ENCODING_FORMAT_UNKNOWN);
-    ENCODING_FORMAT_YENC = PyObject_GetAttrString(encoding_format_enum, "YENC"); Py_INCREF(ENCODING_FORMAT_YENC);
-    ENCODING_FORMAT_UU = PyObject_GetAttrString(encoding_format_enum, "UU"); Py_INCREF(ENCODING_FORMAT_UU);
-
-    PyObject* decoding_status_enum = create_decoding_status_enum();
-    if (!decoding_status_enum) {
-        Py_DECREF(encoding_format_enum);
-        Py_DECREF(ENCODING_FORMAT_UNKNOWN);
-        Py_DECREF(ENCODING_FORMAT_YENC);
-        Py_DECREF(ENCODING_FORMAT_UU);
+    ENCODING_FORMAT_UNKNOWN = PyObject_GetAttrString(encoding_enum, "UNKNOWN");
+    ENCODING_FORMAT_YENC     = PyObject_GetAttrString(encoding_enum, "YENC");
+    ENCODING_FORMAT_UU       = PyObject_GetAttrString(encoding_enum, "UU");
+    if (!ENCODING_FORMAT_UNKNOWN || !ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU) {
+        Py_XDECREF(encoding_enum);
         return false;
     }
 
-    DECODING_STATUS_UNKNOWN = PyObject_GetAttrString(decoding_status_enum, "UNKNOWN"); Py_INCREF(DECODING_STATUS_UNKNOWN);
-    DECODING_STATUS_SUCCESS = PyObject_GetAttrString(decoding_status_enum, "SUCCESS"); Py_INCREF(DECODING_STATUS_SUCCESS);
-    DECODING_STATUS_NOT_FINISHED = PyObject_GetAttrString(decoding_status_enum, "NOT_FINISHED"); Py_INCREF(DECODING_STATUS_NOT_FINISHED);
-    DECODING_STATUS_NO_DATA = PyObject_GetAttrString(decoding_status_enum, "NO_DATA"); Py_INCREF(DECODING_STATUS_NO_DATA);
-    DECODING_STATUS_INVALID_SIZE = PyObject_GetAttrString(decoding_status_enum, "INVALID_SIZE"); Py_INCREF(DECODING_STATUS_INVALID_SIZE);
-    DECODING_STATUS_INVALID_CRC = PyObject_GetAttrString(decoding_status_enum, "INVALID_CRC"); Py_INCREF(DECODING_STATUS_INVALID_CRC);
-    DECODING_STATUS_INVALID_FILENAME = PyObject_GetAttrString(decoding_status_enum, "INVALID_FILENAME"); Py_INCREF(DECODING_STATUS_INVALID_FILENAME);
-    DECODING_STATUS_NOT_FOUND = PyObject_GetAttrString(decoding_status_enum, "NOT_FOUND"); Py_INCREF(DECODING_STATUS_NOT_FOUND);
-    DECODING_STATUS_FAILED = PyObject_GetAttrString(decoding_status_enum, "FAILED"); Py_INCREF(DECODING_STATUS_FAILED);
-    DECODING_STATUS_AUTH = PyObject_GetAttrString(decoding_status_enum, "AUTH"); Py_INCREF(DECODING_STATUS_AUTH);
+    // Create DecodingStatus enum
+    static EnumEntry decoding_entries[] = {
+        {"NOT_FINISHED", 0},
+        {"SUCCESS", 1},
+        {"NO_DATA", 2},
+        {"INVALID_SIZE", 3},
+        {"INVALID_CRC", 4},
+        {"INVALID_FILENAME", 5},
+        {"NOT_FOUND", 6},
+        {"FAILED", 7},
+        {"AUTH", 8},
+        {"UNKNOWN", 99}
+    };
+    PyObject* decoding_enum = create_int_enum("DecodingStatus", decoding_entries, std::size(decoding_entries));
+    if (!decoding_enum) {
+        Py_XDECREF(encoding_enum);
+        Py_XDECREF(ENCODING_FORMAT_UNKNOWN);
+        Py_XDECREF(ENCODING_FORMAT_YENC);
+        Py_XDECREF(ENCODING_FORMAT_UU);
+        return false;
+    }
 
+    DECODING_STATUS_UNKNOWN        = PyObject_GetAttrString(decoding_enum, "UNKNOWN");
+    DECODING_STATUS_SUCCESS        = PyObject_GetAttrString(decoding_enum, "SUCCESS");
+    DECODING_STATUS_NOT_FINISHED   = PyObject_GetAttrString(decoding_enum, "NOT_FINISHED");
+    DECODING_STATUS_NO_DATA        = PyObject_GetAttrString(decoding_enum, "NO_DATA");
+    DECODING_STATUS_INVALID_SIZE   = PyObject_GetAttrString(decoding_enum, "INVALID_SIZE");
+    DECODING_STATUS_INVALID_CRC    = PyObject_GetAttrString(decoding_enum, "INVALID_CRC");
+    DECODING_STATUS_INVALID_FILENAME = PyObject_GetAttrString(decoding_enum, "INVALID_FILENAME");
+    DECODING_STATUS_NOT_FOUND      = PyObject_GetAttrString(decoding_enum, "NOT_FOUND");
+    DECODING_STATUS_FAILED         = PyObject_GetAttrString(decoding_enum, "FAILED");
+    DECODING_STATUS_AUTH           = PyObject_GetAttrString(decoding_enum, "AUTH");
+
+    // Verify all were created
+    if (!DECODING_STATUS_UNKNOWN || !DECODING_STATUS_SUCCESS || !DECODING_STATUS_NOT_FINISHED ||
+        !DECODING_STATUS_NO_DATA || !DECODING_STATUS_INVALID_SIZE || !DECODING_STATUS_INVALID_CRC ||
+        !DECODING_STATUS_INVALID_FILENAME || !DECODING_STATUS_NOT_FOUND || !DECODING_STATUS_FAILED ||
+        !DECODING_STATUS_AUTH) {
+        Py_XDECREF(encoding_enum);
+        Py_XDECREF(decoding_enum);
+        Py_XDECREF(ENCODING_FORMAT_UNKNOWN);
+        Py_XDECREF(ENCODING_FORMAT_YENC);
+        Py_XDECREF(ENCODING_FORMAT_UU);
+        Py_XDECREF(DECODING_STATUS_UNKNOWN);
+        Py_XDECREF(DECODING_STATUS_SUCCESS);
+        Py_XDECREF(DECODING_STATUS_NOT_FINISHED);
+        Py_XDECREF(DECODING_STATUS_NO_DATA);
+        Py_XDECREF(DECODING_STATUS_INVALID_SIZE);
+        Py_XDECREF(DECODING_STATUS_INVALID_CRC);
+        Py_XDECREF(DECODING_STATUS_INVALID_FILENAME);
+        Py_XDECREF(DECODING_STATUS_NOT_FOUND);
+        Py_XDECREF(DECODING_STATUS_FAILED);
+        Py_XDECREF(DECODING_STATUS_AUTH);
+        return false;
+    }
+
+    // Add objects to module
     Py_INCREF(&DecoderType);
-    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0) goto fail;
-    if (PyModule_AddObject(m, "EncodingFormat", encoding_format_enum) < 0) goto fail;
-    if (PyModule_AddObject(m, "DecodingStatus", decoding_status_enum) < 0) goto fail;
+    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0 ||
+        PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0 ||
+        PyModule_AddObject(m, "DecodingStatus", decoding_enum) < 0) {
+        Py_XDECREF(&DecoderType);
+        Py_XDECREF(encoding_enum);
+        Py_XDECREF(decoding_enum);
+        return false;
+    }
 
     return true;
-
-fail:
-    Py_DECREF(&DecoderType);
-    Py_DECREF(encoding_format_enum);
-    Py_DECREF(decoding_status_enum);
-    Py_DECREF(ENCODING_FORMAT_UNKNOWN);
-    Py_DECREF(ENCODING_FORMAT_YENC);
-    Py_DECREF(ENCODING_FORMAT_UU);
-    Py_DECREF(DECODING_STATUS_UNKNOWN);
-    Py_DECREF(DECODING_STATUS_SUCCESS);
-    Py_DECREF(DECODING_STATUS_NOT_FINISHED);
-    Py_DECREF(DECODING_STATUS_NO_DATA);
-    Py_DECREF(DECODING_STATUS_INVALID_SIZE);
-    Py_DECREF(DECODING_STATUS_INVALID_CRC);
-    Py_DECREF(DECODING_STATUS_INVALID_FILENAME);
-    Py_DECREF(DECODING_STATUS_NOT_FOUND);
-    Py_DECREF(DECODING_STATUS_FAILED);
-    Py_DECREF(DECODING_STATUS_AUTH);
-
-    return false;
 }
