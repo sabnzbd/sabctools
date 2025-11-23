@@ -128,8 +128,6 @@ static const char* simd_detected(void) {
 }
 
 PyMODINIT_FUNC PyInit_sabctools(void) {
-    if (PyType_Ready(&DecoderType) < 0) return NULL;
-
     PyObject* m = PyModule_Create(&sabctools_definition);
     if (m == NULL) return NULL;
 

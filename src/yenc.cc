@@ -1063,6 +1063,8 @@ static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries
 }
 
 bool yenc_init(PyObject *m) {
+    if (PyType_Ready(&DecoderType) < 0) return false;
+
     RapidYenc::encoder_init();
     RapidYenc::decoder_init();
     RapidYenc::crc32_init();
