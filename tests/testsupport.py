@@ -70,7 +70,7 @@ def read_pickle(filename):
     return bytearray(b"".join(data_chunks))
 
 
-def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, int, Optional[int]]:
+def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, int, Optional[int]]:
     decoder = sabctools.Decoder()
 
     eof, remaining_view = decoder.decode(memoryview(data))
@@ -80,7 +80,7 @@ def sabctools_yenc_wrapper(data: bytearray) -> Tuple[memoryview, str, int, int, 
     assert decoder.format is sabctools.EncodingFormat.YENC
     assert decoder.message
 
-    return memoryview(decoder), decoder.file_name, decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
+    return decoder.data, decoder.file_name, decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
 
 
 def python_yenc(data_plain):

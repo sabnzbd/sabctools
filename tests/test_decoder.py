@@ -59,17 +59,17 @@ def test_padded_crc():
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
-def test_end_after_filename():
-    data_plain = read_plain_yenc_file("test_end_after_filename.yenc")
-    with pytest.raises(BufferError) as excinfo:
-        sabctools_yenc_wrapper(data_plain)
-    assert "No data available" in str(excinfo.value)
-
-def test_end_after_ypart():
-    data_plain = read_plain_yenc_file("test_end_after_ypart.yenc")
-    with pytest.raises(BufferError) as excinfo:
-        sabctools_yenc_wrapper(data_plain)
-    assert "No data available" in str(excinfo.value)
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "test_end_after_filename.yenc",
+        "test_end_after_ypart.yenc",
+    ],
+)
+def test_end_after(filename: str):
+    data_plain = read_plain_yenc_file(filename)
+    decoded_data, _, _, _, _, _ = sabctools_yenc_wrapper(data_plain)
+    assert decoded_data is None
 
 def test_ref_counts():
     """Note that sys.getrefcount itself adds another reference!"""
@@ -137,6 +137,7 @@ def test_nntp_not_multiline(code: int):
     decoder = sabctools.Decoder()
     eof, remaining_view = decoder.decode(memoryview(bytes(f"{code} 0 <message-id>\r\n", encoding="utf-8")))
     assert eof
+    assert decoder.data is None
     assert remaining_view is None
     assert decoder.status_code == code
 
@@ -146,19 +147,19 @@ def test_head():
     decoder = sabctools.Decoder()
     eof, remaining_view = decoder.decode(memoryview(data_plain))
     assert eof
+    assert decoder.data is None
     assert remaining_view is None
     assert decoder.status_code == 221
     assert decoder.lines is not None
     assert len(decoder.lines) == 13
     assert "X-Received-Bytes: 740059" in decoder.lines
-    with pytest.raises(BufferError):
-        memoryview(decoder)
 
 def test_capabilities():
     data_plain = read_plain_yenc_file("capabilities.yenc")
     decoder = sabctools.Decoder()
     eof, remaining_view = decoder.decode(memoryview(data_plain))
     assert eof
+    assert decoder.data is None
     assert len(decoder.lines) == 2
     assert "VERSION 1" in decoder.lines
     assert "AUTHINFO USER PASS" in decoder.lines
@@ -168,12 +169,13 @@ def test_article():
     decoder = sabctools.Decoder()
     eof, remaining_view = decoder.decode(memoryview(data_plain))
     assert eof
+    assert decoder.data
     assert remaining_view is None
     assert decoder.status_code == 220
     assert decoder.lines is not None
     assert len(decoder.lines) == 13
     assert "X-Received-Bytes: 740059" in decoder.lines
-    assert len((memoryview(decoder))) == 716800
+    assert len(decoder.data) == 716800
 
 
 def test_streaming():
@@ -198,8 +200,8 @@ def test_streaming():
     while len(responses) != len(yenc_files):
         if remaining_view is not None:
             # Are there unprocessed bytes that we need to try first?
-            done, remaining_view = decoder.decode(remaining_view)
-            if done:
+            eof, remaining_view = decoder.decode(remaining_view)
+            if eof:
                 responses.append(decoder)
                 decoder = sabctools.Decoder()
                 continue
@@ -213,8 +215,8 @@ def test_streaming():
         if (read_bytes := f.readinto(buffer_view[buffer_remaining:])) == 0:
             break
 
-        done, remaining_view = decoder.decode(buffer_view[:read_bytes+buffer_remaining])
-        if done:
+        eof, remaining_view = decoder.decode(buffer_view[:read_bytes+buffer_remaining])
+        if eof:
             buffer_remaining = 0
             responses.append(decoder)
             decoder = sabctools.Decoder()
@@ -224,7 +226,7 @@ def test_streaming():
 
     for i, dec in enumerate(responses):
         assert dec.status_code in (220, 222)
-        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (memoryview(dec), correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
+        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (dec.data, correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
 
 
 def test_uu():
@@ -232,11 +234,12 @@ def test_uu():
     decoder = sabctools.Decoder()
     eof, remaining_view = decoder.decode(memoryview(data_plain))
     assert eof
+    assert decoder.data
     assert remaining_view is None
     assert decoder.lines is None
     assert decoder.file_name == "logo-full.svg"
     assert decoder.file_size == 2184
-    assert crc32(decoder) == 0x6BC2917D
+    assert crc32(decoder.data) == 0x6BC2917D
 
 
 # Tests for super-invalid inputs to ensure decoder doesn't crash

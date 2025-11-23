@@ -324,56 +324,6 @@ static void decoder_dealloc(Decoder* self)
 }
 
 /**
- * Implements the buffer protocol for Decoder objects, allowing zero-copy access to decoded data.
- * This enables using Decoder instances with memoryview() for efficient data access.
- * 
- * @param obj The Decoder object
- * @param view Output buffer view to populate
- * @param flags Buffer protocol flags (writable flag is ignored/removed)
- * @return 0 on success, -1 on error
- */
-static int decoder_getbuffer(PyObject *obj, Py_buffer *view, int flags)
-{
-    Decoder *self = reinterpret_cast<Decoder *>(obj);
-
-    if (self->data == nullptr) {
-        PyErr_SetString(PyExc_BufferError, "No data available");
-        return -1;
-    }
-
-    const Py_ssize_t length = self->bytes_decoded;
-
-    if (length > PyByteArray_Size(self->data)) {
-        PyErr_SetString(PyExc_ValueError, "slice out of bounds");
-        return -1;
-    }
-
-    // Populate buffer with a slice of decoded data, always read-only
-    if (PyBuffer_FillInfo(view, self->data, PyByteArray_AsString(self->data), length, 1, flags) < 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
-/**
- * Release a buffer obtained via decoder_getbuffer.
- * Required by Python's buffer protocol.
- * 
- * @param obj The Decoder object
- * @param view The buffer view to release
- */
-static void decoder_releasebuffer(PyObject *obj, Py_buffer *view)
-{
-    PyBuffer_Release(view);
-}
-
-static PyBufferProcs decoder_as_buffer = {
-    decoder_getbuffer,
-    decoder_releasebuffer
-};
-
-/**
  * Constructor for Decoder objects. Initializes a new streaming decoder instance.
  * 
  * @param type The type object
@@ -402,7 +352,11 @@ static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
  */
 static PyObject* decoder_get_data(Decoder* self, void* closure)
 {
-    return PyMemoryView_FromObject((PyObject*)self);
+    if (!self->eof || !self->bytes_decoded || self->data == NULL) {
+        Py_RETURN_NONE;
+    }
+    Py_INCREF(self->data);
+    return self->data;
 }
 
 /**
@@ -886,6 +840,13 @@ PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
     if (read == -1) return NULL;
     instance->bytes_read += read;
 
+    if (instance->eof && instance->bytes_decoded && instance->data) {
+        // Adjust the Python-size of the bytearray-object
+        // This will only do a real resize if the data shrunk by half, so never in our case!
+        // Resizing a bytes object always does a real resize, so more costly
+        PyByteArray_Resize(instance->data, instance->bytes_decoded);
+    }
+
     // Create memoryview for unprocessed data if any remains
     const Py_ssize_t unprocessed_length = input_buffer->len - read;
     if (unprocessed_length > 0) {
@@ -1030,7 +991,7 @@ PyTypeObject DecoderType = {
     nullptr,                        // tp_str
     nullptr,                        // tp_getattro
     nullptr,                        // tp_setattro
-    &decoder_as_buffer,             // tp_as_buffer
+    nullptr,                        // tp_as_buffer
     Py_TPFLAGS_DEFAULT,             // tp_flags
     PyDoc_STR("Decoder"),           // tp_doc
     nullptr,                        // tp_traverse
@@ -1116,8 +1077,8 @@ bool yenc_init(PyObject *m) {
     if (!encoding_enum) return false;
 
     ENCODING_FORMAT_UNKNOWN = PyObject_GetAttrString(encoding_enum, "UNKNOWN");
-    ENCODING_FORMAT_YENC     = PyObject_GetAttrString(encoding_enum, "YENC");
-    ENCODING_FORMAT_UU       = PyObject_GetAttrString(encoding_enum, "UU");
+    ENCODING_FORMAT_YENC = PyObject_GetAttrString(encoding_enum, "YENC");
+    ENCODING_FORMAT_UU = PyObject_GetAttrString(encoding_enum, "UU");
     if (!ENCODING_FORMAT_UNKNOWN || !ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU) {
         Py_XDECREF(encoding_enum);
         return false;

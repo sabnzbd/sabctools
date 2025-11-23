@@ -36,8 +36,8 @@ class Decoder:
     file_size: int
     part_begin: int
     part_size: int
-    data: memoryview
-    """Decoded data an alternative to memoryview(decoder)"""
+    data: Optional[bytearray]
+    """Decoded data"""
     crc: Optional[int]
     """CRC of decoded data, None if does not match crc_expected"""
     crc_expected: Optional[int]
@@ -46,7 +46,7 @@ class Decoder:
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: EncodingFormat
     """Decoding process used"""
-    def decode(self, data: memoryview) -> Tuple[bool, memoryview]:
+    def decode(self, data: memoryview) -> Tuple[bool, Optional[memoryview]]:
         """Decode a buffer of NNTP response.
 
         The decoder maintains an internal bytearray that is grown only as needed and
@@ -63,5 +63,3 @@ class Decoder:
         minimizes copying and wasted allocations while allowing streaming decode
         of multiple NNTP responses.
         """
-    def __buffer__(self, __flags: int) -> memoryview: ...
-    def __release_buffer__(self, __buffer: memoryview) -> None: ...
