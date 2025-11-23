@@ -22,16 +22,11 @@
 #include <Python.h>
 #include "structmember.h"
 
-#include <stdio.h>
-#include <string.h>
 
 #include <string_view>
 #include <iostream>
 #include <charconv>
 #include <optional>
-#include <algorithm>
-#include <iomanip>
-#include <string>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
