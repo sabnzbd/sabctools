@@ -27,6 +27,7 @@
 #include <iostream>
 #include <charconv>
 #include <optional>
+#include <deque>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
@@ -61,12 +62,10 @@
 bool yenc_init(PyObject *);
 PyObject* yenc_encode(PyObject *, PyObject*);
 
-/* Decoder Class */
-extern PyTypeObject DecoderType;
-
 typedef struct {
     PyObject_HEAD
 
+	PyObject *decoder; // reference to parent decoder
 	PyObject* data;
 	Py_ssize_t bytes_decoded;
 	Py_ssize_t bytes_read;
@@ -89,6 +88,17 @@ typedef struct {
 	bool body;
 	bool has_part;
 	bool has_end;
+} NNTPResponse;
+
+typedef struct {
+	PyObject_HEAD
+
+	std::deque<NNTPResponse*> deque; // completed responses
+	NNTPResponse* response; // current response being worked on
+	char* data; // raw input
+	Py_ssize_t size; // size of data
+	Py_ssize_t consumed; // left position
+	Py_ssize_t position; // right position
 } Decoder;
 
 #endif //SABCTOOLS_YENC_H

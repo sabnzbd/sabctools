@@ -71,6 +71,7 @@ def test_end_after(filename: str):
     decoded_data, _, _, _, _, _ = sabctools_yenc_wrapper(data_plain)
     assert decoded_data is None
 
+
 def test_ref_counts():
     """Note that sys.getrefcount itself adds another reference!"""
     # In Python 3.14+, getrefcount returns 1, in earlier versions it returns 2
@@ -134,95 +135,82 @@ def test_small_file_pickles(filename: str):
     ],
 )
 def test_nntp_not_multiline(code: int):
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(bytes(f"{code} 0 <message-id>\r\n", encoding="utf-8")))
-    assert eof
-    assert decoder.data is None
-    assert remaining_view is None
-    assert decoder.status_code == code
+    line = bytes(f"{code} 0 <message-id>\r\n", encoding="utf-8")
+    input = BytesIO(line)
+    decoder = sabctools.Decoder(len(line))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.data is None
+    assert response.status_code == code
 
 
 def test_head():
     data_plain = read_plain_yenc_file("test_head.yenc")
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(data_plain))
-    assert eof
-    assert decoder.data is None
-    assert remaining_view is None
-    assert decoder.status_code == 221
-    assert decoder.lines is not None
-    assert len(decoder.lines) == 13
-    assert "X-Received-Bytes: 740059" in decoder.lines
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+
+    response = next(decoder, None)
+    assert response
+    assert response.data is None
+    assert response.status_code == 221
+    assert response.lines is not None
+    assert len(response.lines) == 13
+    assert "X-Received-Bytes: 740059" in response.lines
 
 def test_capabilities():
     data_plain = read_plain_yenc_file("capabilities.yenc")
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(data_plain))
-    assert eof
-    assert decoder.data is None
-    assert len(decoder.lines) == 2
-    assert "VERSION 1" in decoder.lines
-    assert "AUTHINFO USER PASS" in decoder.lines
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+
+    response = next(decoder, None)
+    assert response
+    assert response.data is None
+    assert len(response.lines) == 2
+    assert "VERSION 1" in response.lines
+    assert "AUTHINFO USER PASS" in response.lines
 
 def test_article():
     data_plain = read_plain_yenc_file("test_article.yenc")
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(data_plain))
-    assert eof
-    assert decoder.data
-    assert remaining_view is None
-    assert decoder.status_code == 220
-    assert decoder.lines is not None
-    assert len(decoder.lines) == 13
-    assert "X-Received-Bytes: 740059" in decoder.lines
-    assert len(decoder.data) == 716800
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+
+    response = next(decoder, None)
+    assert response
+    assert response.data
+    assert response.status_code == 220
+    assert response.lines is not None
+    assert len(response.lines) == 13
+    assert "X-Received-Bytes: 740059" in response.lines
+    assert len(response.data) == 716800
 
 
 def test_streaming():
     BUFFER_SIZE = 1024
-    buffer = bytearray(BUFFER_SIZE)
-    buffer_view = memoryview(buffer)
-    remaining_view = None  # unprocessed contents of the buffer
-    buffer_remaining = 0
-    has_seen_unprocessable = False
-
     yenc_files = ["test_regular_2.yenc"] * 5 + ["test_special_utf8_chars.yenc"]
     responses = []
 
     # Read in chunks like a network
-    f = io.BytesIO()
+    input = io.BytesIO()
     for filename in yenc_files:
-        f.write(read_plain_yenc_file(filename))
-    f.seek(0)
+        input.write(read_plain_yenc_file(filename))
+    input.seek(0)
 
-    decoder = sabctools.Decoder()
+    decoder = sabctools.Decoder(BUFFER_SIZE)
+    while (n := input.readinto(decoder)) != 0:
+        decoder.process(n)
 
-    while len(responses) != len(yenc_files):
-        if remaining_view is not None:
-            # Are there unprocessed bytes that we need to try first?
-            eof, remaining_view = decoder.decode(remaining_view)
-            if eof:
-                responses.append(decoder)
-                decoder = sabctools.Decoder()
-                continue
-            elif remaining_view is not None:
-                # Unprocessable; copy to start of buffer and read more
-                # Rare if the buffer is large enough to hold then end of a response and the next yenc headers
-                buffer_view[:len(remaining_view)] = remaining_view
-                buffer_remaining = len(remaining_view)
-                has_seen_unprocessable = True
-
-        if (read_bytes := f.readinto(buffer_view[buffer_remaining:])) == 0:
-            break
-
-        eof, remaining_view = decoder.decode(buffer_view[:read_bytes+buffer_remaining])
-        if eof:
-            buffer_remaining = 0
-            responses.append(decoder)
-            decoder = sabctools.Decoder()
+    for response in decoder:
+        responses.append(response)
 
     assert len(responses) == len(yenc_files)
-    assert has_seen_unprocessable is True
 
     for i, dec in enumerate(responses):
         assert dec.status_code in (220, 222)
@@ -231,15 +219,17 @@ def test_streaming():
 
 def test_uu():
     data_plain = read_uu_file("logo_full.nntp")
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(data_plain))
-    assert eof
-    assert decoder.data
-    assert remaining_view is None
-    assert decoder.lines is None
-    assert decoder.file_name == "logo-full.svg"
-    assert decoder.file_size == 2184
-    assert crc32(decoder.data) == 0x6BC2917D
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.data
+    assert response.lines is None
+    assert response.file_name == "logo-full.svg"
+    assert response.file_size == 2184
+    assert crc32(response.data) == 0x6BC2917D
 
 
 # Tests for super-invalid inputs to ensure decoder doesn't crash
@@ -273,9 +263,11 @@ def test_uu():
 def test_invalid_inputs_no_crash(filename: str):
     """Test that decoder handles super-invalid inputs gracefully without crashing."""
     data_plain = read_plain_yenc_file(filename)
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(data_plain))
-    
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+
     # Basic check: decoder should not crash
     assert decoder is not None
 
@@ -283,7 +275,10 @@ def test_invalid_inputs_no_crash(filename: str):
 def test_invalid_crc_chars():
     """Test with non-hex characters in CRC field - crc_expected should be None."""
     data_plain = read_plain_yenc_file("test_invalid_crc_chars.yenc")
-    decoder = sabctools.Decoder()
-    eof, remaining_view = decoder.decode(memoryview(data_plain))
-    assert decoder is not None
-    assert decoder.crc_expected is None
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.crc_expected is None

@@ -22,6 +22,7 @@ from zlib import crc32
 import re
 import pickle
 from typing import Tuple, Optional, Union
+from io import BytesIO
 
 import chardet
 import sabctools
@@ -71,16 +72,18 @@ def read_pickle(filename):
 
 
 def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, int, Optional[int]]:
-    decoder = sabctools.Decoder()
+    input = BytesIO(data)
+    decoder = sabctools.Decoder(len(data))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder)
+    assert response
+    assert response.status_code in (220, 222)
+    assert response.lines is None
+    assert response.format is sabctools.EncodingFormat.YENC
+    assert response.message
 
-    eof, remaining_view = decoder.decode(memoryview(data))
-    assert decoder.status_code in (220, 222)
-    assert remaining_view is None
-    assert decoder.lines is None
-    assert decoder.format is sabctools.EncodingFormat.YENC
-    assert decoder.message
-
-    return decoder.data, decoder.file_name, decoder.file_size, decoder.part_begin, decoder.part_size, decoder.crc
+    return response.data, response.file_name, response.file_size, response.part_begin, response.part_size, response.crc
 
 
 def python_yenc(data_plain):

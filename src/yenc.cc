@@ -25,7 +25,6 @@
 
 /* Global objects */
 
-static PyObject* ENCODING_FORMAT_UNKNOWN = nullptr;
 static PyObject* ENCODING_FORMAT_YENC = nullptr;
 static PyObject* ENCODING_FORMAT_UU = nullptr;
 
@@ -168,7 +167,7 @@ static PyObject* decode_utf8_with_fallback(std::string_view line) {
  * @param instance The Decoder instance to update
  * @param line The line to examine for format detection
  */
-static inline void decoder_detect_format(Decoder* instance, std::string_view line) {
+static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::string_view line) {
     // YEnc detection
 	if (starts_with(line, "=ybegin "))
 	{
@@ -232,7 +231,7 @@ static inline void decoder_detect_format(Decoder* instance, std::string_view lin
  * - =ypart: Marks start of body and extracts part begin/end positions (converts to 0-based)
  * - =yend: Extracts CRC32 (pcrc32 for multi-part, crc32 for single file)
  */
-static inline void decoder_process_yenc_header(Decoder* instance, std::string_view line) {
+static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std::string_view line) {
     if (starts_with(line, "=ybegin ")) {
         line.remove_prefix(7);
         extract_int(line, " size=", instance->file_size);
@@ -296,7 +295,7 @@ static inline void decoder_process_yenc_header(Decoder* instance, std::string_vi
  * @param instance Decoder instance whose lines list will be appended to.
  * @param line     Line contents without the trailing CRLF.
  */
-static void decoder_append_line(Decoder* instance, std::string_view line) {
+static void NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
     auto py_str = decode_utf8_with_fallback(line);
     if (!py_str) return;
 
@@ -314,33 +313,14 @@ static void decoder_append_line(Decoder* instance, std::string_view line) {
  * 
  * @param self The Decoder instance to deallocate
  */
-static void decoder_dealloc(Decoder* self)
+static void NNTPResponse_dealloc(NNTPResponse* self)
 {
+    Py_XDECREF(self->decoder);
     Py_XDECREF(self->data);
     Py_XDECREF(self->file_name);
     Py_XDECREF(self->lines);
     Py_XDECREF(self->format);
     Py_TYPE(self)->tp_free((PyObject*)self);
-}
-
-/**
- * Constructor for Decoder objects. Initializes a new streaming decoder instance.
- * 
- * @param type The type object
- * @param args Positional arguments (unused)
- * @param kwds Keyword arguments (unused)
- * @return New Decoder instance or NULL on allocation failure
- */
-static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
-{
-    Decoder* self = (Decoder*)type->tp_alloc(type, 0);
-    if (!self) return NULL;
-
-    // Initialize to starting state (tp_alloc zeros memory, but explicit for clarity)
-    self->format = ENCODING_FORMAT_UNKNOWN; Py_INCREF(ENCODING_FORMAT_UNKNOWN);
-    self->state = RapidYenc::YDEC_STATE_CRLF;
-
-    return (PyObject*)self;
 }
 
 /**
@@ -350,7 +330,7 @@ static PyObject* decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
  * @param closure Unused closure parameter
  * @return memoryview object providing access to decoded data
  */
-static PyObject* decoder_get_data(Decoder* self, void* closure)
+static PyObject* NNTPResponse_get_data(NNTPResponse* self, void* closure)
 {
     if (!self->eof || !self->bytes_decoded || self->data == NULL) {
         Py_RETURN_NONE;
@@ -366,7 +346,7 @@ static PyObject* decoder_get_data(Decoder* self, void* closure)
  * @param closure Unused closure parameter
  * @return Unicode string with filename, or None if not found
  */
-static PyObject* decoder_get_file_name(Decoder* self, void *closure)
+static PyObject* NNTPResponse_get_file_name(NNTPResponse* self, void *closure)
 {
     if (self->file_name == NULL) {
         Py_RETURN_NONE;
@@ -382,7 +362,7 @@ static PyObject* decoder_get_file_name(Decoder* self, void *closure)
  * @param closure Unused closure parameter
  * @return CRC32 value if valid and matches expected, otherwise None
  */
-static PyObject* decoder_get_crc(Decoder* self, void *closure)
+static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
 {
     if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
         Py_RETURN_NONE;
@@ -397,7 +377,7 @@ static PyObject* decoder_get_crc(Decoder* self, void *closure)
  * @param closure Unused closure parameter
  * @return Expected CRC32 value from =yend line, or None if not found
  */
-static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
+static PyObject* NNTPResponse_get_crc_expected(NNTPResponse* self, void *closure)
 {
     if (!self->crc_expected.has_value()) {
         Py_RETURN_NONE;
@@ -413,13 +393,31 @@ static PyObject* decoder_get_crc_expected(Decoder* self, void *closure)
  * @param closure Unused closure parameter
  * @return List of Unicode strings, without \r\n at the end
  */
-static PyObject* decoder_get_lines(Decoder* self, void *closure)
+static PyObject* NNTPResponse_get_lines(NNTPResponse* self, void *closure)
 {
     if (self->lines == NULL) {
         Py_RETURN_NONE;
     }
     Py_INCREF(self->lines);
     return self->lines;
+}
+
+/**
+ * Property getter for the 'format' attribute. Indicates which encoding format
+ * was detected for this NNTP response.
+ *
+ * @param self The Decoder instance
+ * @param closure Unused closure parameter
+ * @return EncodingFormat IntEnum value for the detected format, or None if
+ *         the format has not yet been determined
+ */
+static PyObject* NNTPResponse_get_format(NNTPResponse* self, void *closure)
+{
+    if (self->format == NULL) {
+        Py_RETURN_NONE;
+    }
+    Py_INCREF(self->format);
+    return self->format;
 }
 
 /**
@@ -445,7 +443,7 @@ static PyObject* decoder_get_lines(Decoder* self, void *closure)
  * - Detects end conditions (control line, article terminator) and adjusts read position
  * - Releases GIL during decoding for parallel processing
  */
-static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
+static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     // Already at the end of input
     if (read >= buf_len) return true;
 
@@ -492,7 +490,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
         if (needed > current) {
             if (needed > YENC_MAX_PART_SIZE) {
                 PyBuffer_Release(&dst_buf);
-                PyErr_SetString(PyExc_BufferError, "would exceed YENC_MAX_PART_SIZE");
+                PyErr_SetString(PyExc_BufferError, "Maximum data buffer size exceeded");
                 return false;
             }
 
@@ -573,7 +571,7 @@ static bool decoder_decode_yenc(Decoder *instance, const char *buf, const Py_ssi
  * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
  * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
  */
-constexpr unsigned char uu_decode_char(const char c) noexcept {
+constexpr unsigned char NNTPResponse_decode_uu_char(const char c) noexcept {
     return (c == '`') ? 0 : ((c - ' ') & 0x3F);
 }
 
@@ -601,7 +599,7 @@ constexpr unsigned char uu_decode_char(const char c) noexcept {
  * @param line     The current input line (without CRLF).
  * @return true on success, false on allocation/resize failure.
  */
-static bool decoder_decode_uu(Decoder* instance, std::string_view line)
+static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line)
 {
     // Allocate or resize bytearray
     if (!instance->data) {
@@ -664,19 +662,19 @@ static bool decoder_decode_uu(Decoder* instance, std::string_view line)
 
         while (effLen > 0 && std::distance(it, end) >= 4) {
             const auto chunk = std::min(effLen, static_cast<std::size_t>(3));
-            const unsigned char c0 = uu_decode_char(*it++);
-            const unsigned char c1 = uu_decode_char(*it++);
+            const unsigned char c0 = NNTPResponse_decode_uu_char(*it++);
+            const unsigned char c1 = NNTPResponse_decode_uu_char(*it++);
             unsigned char c2 = 0;
 
             *out_ptr++ = static_cast<char>(c0 << 2 | c1 >> 4);
 
             if (chunk > 1) {
-                c2 = uu_decode_char(*it++);
+                c2 = NNTPResponse_decode_uu_char(*it++);
                 *out_ptr++ = static_cast<char>(c1 << 4 | c2 >> 2);
             }
 
             if (chunk > 2) {
-                const unsigned char c3 = uu_decode_char(*it++);
+                const unsigned char c3 = NNTPResponse_decode_uu_char(*it++);
                 *out_ptr++ = static_cast<char>(c2 << 6 | c3);
             }
 
@@ -721,11 +719,12 @@ bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std:
 /**
  * Main buffer processing function for the streaming decoder.
  * Handles state transitions between line-based parsing and body decoding.
- * 
- * @param instance The Decoder instance maintaining state across calls
- * @param input_buffer The buffer to process
+ *
+ * @param instance The NNTPResponse instance maintaining state across calls
+ * @param buf The buffer to process
+ * @param buf_len The length of data in buf to process
  * @return Number of bytes consumed from buffer, or -1 on error
- * 
+ *
  * Processing flow:
  * 1. If already in body mode, decode yEnc data immediately
  * 2. Otherwise, parse line-by-line:
@@ -736,14 +735,12 @@ bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std:
  *    - Switch to body decoding when =ypart is encountered
  * 3. Return number of bytes processed (may be less than buffer length)
  */
-static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *input_buffer) {
-    const char* buf = static_cast<char*>(input_buffer->buf);
-    const Py_ssize_t buf_len = input_buffer->len;
+static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char* buf, const Py_ssize_t buf_len) {
     Py_ssize_t read = 0;
 
     // Resume body decoding if we were in the middle of it
     if (instance->body && instance->format == ENCODING_FORMAT_YENC) {
-        if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
+        if (!NNTPResponse_decode_yenc(instance, buf, buf_len, read)) return -1;
         if (instance->body) return read;  // Still in body, need more data
     }
 
@@ -756,7 +753,7 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
             return read;
         }
 
-        if (instance->format == ENCODING_FORMAT_UNKNOWN) {
+        if (instance->format == nullptr) {
             if (!instance->status_code && line.length() >= 3) {
                 // Store the full command response line
                 instance->message = decode_utf8_with_fallback(line);
@@ -770,101 +767,38 @@ static Py_ssize_t decoder_decode_buffer(Decoder *instance, const Py_buffer *inpu
                 continue;
             }
 
-            decoder_detect_format(instance, line);
+            NNTPResponse_detect_format(instance, line);
         }
 
-        if (instance->format == ENCODING_FORMAT_UNKNOWN) {
+        if (instance->format == nullptr) {
             // Format is still unknown so record lines
-            decoder_append_line(instance, line);
+            NNTPResponse_append_line(instance, line);
         } else if (instance->format == ENCODING_FORMAT_YENC) {
-            decoder_process_yenc_header(instance, line);
+            NNTPResponse_process_yenc_header(instance, line);
             if (instance->body) {
                 // =ypart was encountered, switch to body decoding
-                if (!decoder_decode_yenc(instance, buf, buf_len, read)) return -1;
+                if (!NNTPResponse_decode_yenc(instance, buf, buf_len, read)) return -1;
                 if (instance->body) return read;  // Still decoding, need more data
             }
         } else if (instance->format == ENCODING_FORMAT_UU) {
-            if (!decoder_decode_uu(instance, line)) return -1;
+            if (!NNTPResponse_decode_uu(instance, line)) return -1;
         }
     }
 
     return read;
 }
 
-/**
- * Main decode method called from Python: decoder.decode(data)
- * Processes a chunk of data in streaming fashion, maintaining state between calls.
- * 
- * @param self The Decoder instance
- * @param Py_memoryview_obj memoryview containing data to decode
- * @return Tuple of (done: bool, remaining: memoryview | None)
- * 
- * Returns:
- * - done: True if decoding is complete (saw ".\r\n" or single-line response)
- * - remaining: memoryview of unprocessed data if buffer contained multiple articles,
- *              or None if all data was consumed
- * 
- * This enables efficient streaming from network sockets:
- * ```python
- * decoder = sabctools.Decoder()
- * while data := socket.recv(8192):
- *     eof, remaining = decoder.decode(memoryview(data))
- *     if eof:
- *         break
- * ```
- */
-PyObject* decoder_decode(PyObject* self, PyObject* Py_memoryview_obj) {
-    Decoder* instance = reinterpret_cast<Decoder*>(self);
+static PyObject* NNTPResponse_iternext(NNTPResponse *instance)
+{
+    const auto deque_obj = reinterpret_cast<Decoder*>(instance->decoder);
+    if (!instance->decoder || deque_obj->deque.empty())
+        return NULL;  // StopIteration
 
-    PyObject* unprocessed_memoryview = Py_None;
+    NNTPResponse* item = deque_obj->deque.front();
+    deque_obj->deque.pop_front();
+    Py_INCREF(item);  // Return a new reference
 
-    if (instance->eof) {
-        PyErr_SetString(PyExc_ValueError, "Already finished decoding");
-        return NULL;
-    }
-
-    // Verify input type
-    if (!PyMemoryView_Check(Py_memoryview_obj)) {
-        PyErr_SetString(PyExc_TypeError, "Expected memoryview");
-        return NULL;
-    }
-
-    // Get buffer and validate
-    Py_buffer *input_buffer = PyMemoryView_GET_BUFFER(Py_memoryview_obj);
-    if (!PyBuffer_IsContiguous(input_buffer, 'C') || input_buffer->len <= 0) {
-        PyErr_SetString(PyExc_ValueError, "Invalid data length or order");
-        return NULL;
-    }
-
-    const auto read = decoder_decode_buffer(instance, input_buffer);
-    if (read == -1) return NULL;
-    instance->bytes_read += read;
-
-    if (instance->eof && instance->bytes_decoded && instance->data) {
-        // Adjust the Python-size of the bytearray-object
-        // This will only do a real resize if the data shrunk by half, so never in our case!
-        // Resizing a bytes object always does a real resize, so more costly
-        PyByteArray_Resize(instance->data, instance->bytes_decoded);
-    }
-
-    // Create memoryview for unprocessed data if any remains
-    const Py_ssize_t unprocessed_length = input_buffer->len - read;
-    if (unprocessed_length > 0) {
-        Py_buffer subbuf = *input_buffer; // shallow copy
-        subbuf.buf = static_cast<char *>(input_buffer->buf) + read;
-        subbuf.len = unprocessed_length;
-
-        // Adjust shape for 1D array
-        if (subbuf.ndim == 1 && subbuf.shape) {
-            subbuf.shape[0] = unprocessed_length;
-        }
-
-        unprocessed_memoryview = PyMemoryView_FromBuffer(&subbuf);
-    } else {
-        Py_INCREF(unprocessed_memoryview);
-    }
-
-    return Py_BuildValue("(O, O)", instance->eof ? Py_True : Py_False, unprocessed_memoryview);
+    return reinterpret_cast<PyObject*>(item);
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
@@ -929,88 +863,363 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
 }
 
 /**
+ * Initializer for NNTPResponse instances used by Decoder.
+ *
+ * Binds the NNTPResponse to its owning Decoder and resets all parsing
+ * and decoding fields to a consistent default state.
+ *
+ * @param instance Newly allocated NNTPResponse object to initialize
+ * @param parent   Decoder object that owns this response and will be
+ *                 referenced for iteration
+ */
+static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
+    // Iterator requires a reference back
+    instance->decoder = parent;
+    Py_INCREF(parent);
+
+    // Initialise all members
+    instance->data = nullptr;
+    instance->lines = nullptr;
+    instance->format = nullptr;
+    instance->file_name = nullptr;
+    instance->message = nullptr;
+    instance->bytes_decoded = 0;
+    instance->bytes_read = 0;
+    instance->file_size = 0;
+    instance->part = 0;
+    instance->part_begin = 0;
+    instance->part_size = 0;
+    instance->end_size = 0;
+    instance->total = 0;
+    instance->crc = 0;
+    instance->status_code = 0;
+    instance->crc_expected = std::nullopt;
+    instance->state = RapidYenc::YDEC_STATE_CRLF;
+    instance->eof = false;
+    instance->body = false;
+    instance->has_part = false;
+    instance->has_end = false;
+}
+
+/**
  * String representation of Decoder for debugging.
  * 
  * @param self The Decoder instance
  * @return Unicode string with decoder state summary
  */
-static PyObject* decoder_repr(Decoder* self)
+static PyObject* NNTPResponse_repr(NNTPResponse* self)
 {
     return PyUnicode_FromFormat(
-        "<Decoder: eof=%R, status_code=%d, message=%R, file_name=%R, length=%zd>",
-        self->eof ? Py_True : Py_False,
+        "<NNTPResponse: status_code=%d, message=%R, file_name=%R, length=%zd>",
         self->status_code,
         self->message ? self->message : Py_None,
         self->file_name ? self->file_name : Py_None,
         self->bytes_decoded);
 }
 
-static PyMethodDef decoder_methods[] = {
-    {"decode", decoder_decode, METH_O, ""},
-    {nullptr, nullptr, 0, nullptr}
-};
-
-static PyMemberDef decoder_members[] = {
-    {"eof", T_BOOL, offsetof(Decoder, eof), READONLY, ""},
-    {"file_size", T_PYSSIZET, offsetof(Decoder, file_size), READONLY, ""},
-    {"part_begin", T_PYSSIZET, offsetof(Decoder, part_begin), READONLY, ""},
-    {"part_size", T_PYSSIZET, offsetof(Decoder, part_size), READONLY, ""},
-    {"status_code", T_INT, offsetof(Decoder, status_code), READONLY, ""},
-    {"message", T_OBJECT_EX, offsetof(Decoder, message), READONLY, ""},
-    {"bytes_read", T_PYSSIZET, offsetof(Decoder, bytes_read), READONLY, ""},
-    {"bytes_decoded", T_PYSSIZET, offsetof(Decoder, bytes_decoded), READONLY, ""},
-    {"format", T_OBJECT_EX, offsetof(Decoder, format), READONLY, ""},
+static PyMemberDef NNTPResponse_members[] = {
+    {"status_code", T_INT, offsetof(NNTPResponse, status_code), READONLY, ""},
+    {"message", T_OBJECT_EX, offsetof(NNTPResponse, message), READONLY, ""},
+    {"file_size", T_PYSSIZET, offsetof(NNTPResponse, file_size), READONLY, ""},
+    {"part_begin", T_PYSSIZET, offsetof(NNTPResponse, part_begin), READONLY, ""},
+    {"part_size", T_PYSSIZET, offsetof(NNTPResponse, part_size), READONLY, ""},
+    {"bytes_read", T_PYSSIZET, offsetof(NNTPResponse, bytes_read), READONLY, ""},
+    {"bytes_decoded", T_PYSSIZET, offsetof(NNTPResponse, bytes_decoded), READONLY, ""},
     {nullptr, 0, 0, 0, nullptr}
 };
 
-static PyGetSetDef decoder_gets_sets[] = {
-    {"data", (getter)decoder_get_data, NULL, NULL, NULL},
-    {"file_name", (getter)decoder_get_file_name, NULL, NULL, NULL},
-    {"lines", (getter)decoder_get_lines, NULL, NULL, NULL},
-    {"crc", (getter)decoder_get_crc, NULL, NULL, NULL},
-    {"crc_expected", (getter)decoder_get_crc_expected, NULL, NULL, NULL},
+static PyGetSetDef NNTPResponse_gets_sets[] = {
+    {"data", (getter)NNTPResponse_get_data, NULL, NULL, NULL},
+    {"file_name", (getter)NNTPResponse_get_file_name, NULL, NULL, NULL},
+    {"lines", (getter)NNTPResponse_get_lines, NULL, NULL, NULL},
+    {"crc", (getter)NNTPResponse_get_crc, NULL, NULL, NULL},
+    {"crc_expected", (getter)NNTPResponse_get_crc_expected, NULL, NULL, NULL},
+    {"format", (getter)NNTPResponse_get_format, NULL, NULL, NULL},
     {nullptr, nullptr, nullptr, nullptr, nullptr}
+};
+
+PyTypeObject NNTPResponseType = {
+    PyVarObject_HEAD_INIT(nullptr, 0)
+    "sabctools.NNTPResponse",            // tp_name
+    sizeof(NNTPResponse),                // tp_basicsize
+    0,                                   // tp_itemsize
+    (destructor)NNTPResponse_dealloc,    // tp_dealloc
+    0,                                   // tp_vectorcall_offset
+    nullptr,                             // tp_getattr
+    nullptr,                             // tp_setattr
+    nullptr,                             // tp_as_async
+    (reprfunc)NNTPResponse_repr,         // tp_repr
+    nullptr,                             // tp_as_number
+    nullptr,                             // tp_as_sequence
+    nullptr,                             // tp_as_mapping
+    nullptr,                             // tp_hash
+    nullptr,                             // tp_call
+    nullptr,                             // tp_str
+    nullptr,                             // tp_getattro
+    nullptr,                             // tp_setattro
+    nullptr,                             // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,                  // tp_flags
+    PyDoc_STR("NNTPResponse"),           // tp_doc
+    nullptr,                             // tp_traverse
+    nullptr,                             // tp_clear
+    nullptr,                             // tp_richcompare
+    0,                                   // tp_weaklistoffset
+    nullptr,                             // tp_iter
+    (iternextfunc)NNTPResponse_iternext, // tp_iternext
+    nullptr,                             // tp_methods
+    NNTPResponse_members,                // tp_members
+    NNTPResponse_gets_sets,              // tp_getset
+};
+
+/**
+ * Buffer protocol getbuffer implementation for Decoder.
+ *
+ * Exposes the Decoder's internal storage as a writable, contiguous
+ * bytes buffer so callers can fill it directly (e.g. via memoryviews
+ * or I/O APIs). The buffer always starts at the beginning of the
+ * internal array and spans ``self->size`` bytes.
+ *
+ * @param self Decoder instance whose internal buffer is being exported
+ * @param view Filled-in Py_buffer describing the exported memory
+ * @param flags Standard buffer protocol request flags
+ * @return 0 on success, or -1 with an exception set on error
+ */
+static int Decoder_getbuffer(Decoder* self, Py_buffer *view, int flags)
+{
+    return PyBuffer_FillInfo(
+        view,
+        reinterpret_cast<PyObject *>(self),
+        self->data + self->position,
+        self->size - self->position,
+        0,
+        flags);
+}
+
+/**
+ * Buffer protocol releasebuffer implementation for Decoder.
+ *
+ * The Decoder does not allocate per-view resources when exporting its
+ * buffer, so there is nothing to clean up when a view is released.
+ * This function exists only to satisfy the PyBufferProcs interface.
+ *
+ * @param self Decoder instance that previously exported a buffer view
+ * @param view Py_buffer being released (unused)
+ */
+static void Decoder_releasebuffer(Decoder* self, Py_buffer *view)
+{
+    // nothing to do
+}
+
+static PyBufferProcs Decoder_bufferprocs = {
+    (getbufferproc)Decoder_getbuffer,
+    (releasebufferproc)Decoder_releasebuffer
+};
+
+static PyObject* Decoder_iter(Decoder *self)
+{
+    Py_INCREF(self);
+    return (PyObject*)self;
+}
+
+static PyObject* Decoder_iternext(Decoder *self)
+{
+    if (self->deque.empty())
+        return NULL;  // StopIteration
+
+    NNTPResponse* item = self->deque.front();
+    self->deque.pop_front();
+
+    return reinterpret_cast<PyObject*>(item);
+}
+
+static int Decoder_init(Decoder *self, PyObject *args, PyObject *kwds)
+{
+    Py_ssize_t size;
+    if (!PyArg_ParseTuple(args, "n", &size))
+        return -1;
+
+    if (size < YENC_MIN_BUFFER_SIZE)
+        size = YENC_MIN_BUFFER_SIZE;
+    if (size > YENC_MAX_PART_SIZE)
+        size = YENC_MAX_PART_SIZE;
+
+    self->response = nullptr;
+    self->data = static_cast<char *>(malloc(size));
+    self->size = size;
+    self->consumed = 0;
+    self->position = 0;
+    if (!self->data) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    new (&self->deque) std::deque<NNTPResponse*>();
+
+    return 0;
+}
+
+static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
+{
+    auto* self = reinterpret_cast<Decoder *>(type->tp_alloc(type, 0));
+    if (!self) return NULL;
+
+    return reinterpret_cast<PyObject *>(self);
+}
+
+static void Decoder_dealloc(Decoder *self)
+{
+    // DECREF all remaining items
+    for (NNTPResponse* item : self->deque)
+        Py_XDECREF(item);
+    self->deque.~deque();
+    free(self->data);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size) {
+    auto instance = self->response;
+    if (!instance) {
+        instance = PyObject_New(NNTPResponse, &NNTPResponseType);
+        if (!instance) return -1;
+        self->response = instance;
+        NNTPResponse_init(instance, reinterpret_cast<PyObject*>(self));
+    }
+
+    return NNTPResponse_decode_buffer(instance, data, size);;
+}
+
+/*
+ * Advance decoding for data previously written via the buffer protocol.
+ *
+ * Decoder instances expose the Python buffer protocol; external code (for
+ * example, a socket reader) writes raw NNTP article bytes directly into the
+ * decoder's internal buffer. ``Decoder_process`` is then called with a
+ * ``length`` indicating how many newly written bytes should be processed.
+ *
+ * The method consumes up to ``length`` bytes starting at the current
+ * ``self->position`` from the internal buffer, feeding them into the NNTP
+ * state machine and yEnc/UU decoders. Completed NNTPResponse objects are
+ * queued on the decoder and can be retrieved by iterating the Decoder.
+ *
+ * @param self Decoder instance whose internal buffer has been filled via the
+ *             buffer protocol
+ * @param arg  Python integer specifying how many bytes of newly available
+ *             data to process from the internal buffer
+ * @return None on success, or NULL with an exception set on error
+ */
+static PyObject* Decoder_process(Decoder *self, PyObject *arg)
+{
+    Py_ssize_t length = PyLong_AsSsize_t(arg);
+    if (length == -1 && PyErr_Occurred()) {
+        return NULL;
+    }
+
+    if (length <= 0) {
+        PyErr_SetString(PyExc_ValueError, "length is <= 0");
+        return NULL;
+    }
+
+    if (self->position + length > self->size) {
+        PyErr_SetString(PyExc_ValueError, "length exceeds buffer size");
+        return NULL;
+    }
+
+    self->position += length;
+
+    while (self->position > self->consumed) {
+        auto read = Decoder_decode(
+            self,
+            self->data + self->consumed,
+            self->position - self->consumed
+        );
+        if (read == -1) return NULL;
+
+        self->consumed += read;
+        self->response->bytes_read += read;
+
+        const Py_ssize_t unprocessed = self->position - self->consumed;
+
+        // Case 1: EOF for the current decoder
+        if (self->response->eof) {
+            if (self->response->bytes_decoded && self->response->data) {
+                // Adjust the Python-size of the bytearray-object
+                // This will only do a real resize if the data shrunk by half, so never in our case!
+                // Resizing a bytes object always does a real resize, so more costly
+                PyByteArray_Resize(self->response->data, self->response->bytes_decoded);
+            }
+
+            // Push completed decoder
+            self->deque.push_back(self->response);
+            self->response = nullptr;
+
+            // More data to consume which may result in another EOF
+            if (unprocessed > 0) {
+                continue;
+            }
+
+            self->position = 0;
+            self->consumed = 0;
+            break;
+        }
+
+        // Case 2: not EOF
+        if (unprocessed > 0) {
+            memmove(self->data, self->data + self->consumed, unprocessed);
+            self->position = unprocessed;
+            self->consumed = 0;
+        } else {
+            self->position = 0;
+            self->consumed = 0;
+        }
+        break;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef Decoder_methods[] = {
+    {"process", (PyCFunction)Decoder_process, METH_O, ""},
+    {NULL}
 };
 
 PyTypeObject DecoderType = {
     PyVarObject_HEAD_INIT(nullptr, 0)
-    "sabctools.Decoder",            // tp_name
-    sizeof(Decoder),                // tp_basicsize
-    0,                              // tp_itemsize
-    (destructor)decoder_dealloc,    // tp_dealloc
-    0,                              // tp_vectorcall_offset
-    nullptr,                        // tp_getattr
-    nullptr,                        // tp_setattr
-    nullptr,                        // tp_as_async
-    (reprfunc)decoder_repr,         // tp_repr
-    nullptr,                        // tp_as_number
-    nullptr,                        // tp_as_sequence
-    nullptr,                        // tp_as_mapping
-    nullptr,                        // tp_hash
-    nullptr,                        // tp_call
-    nullptr,                        // tp_str
-    nullptr,                        // tp_getattro
-    nullptr,                        // tp_setattro
-    nullptr,                        // tp_as_buffer
-    Py_TPFLAGS_DEFAULT,             // tp_flags
-    PyDoc_STR("Decoder"),           // tp_doc
-    nullptr,                        // tp_traverse
-    nullptr,                        // tp_clear
-    nullptr,                        // tp_richcompare
-    0,                              // tp_weaklistoffset
-    nullptr,                        // tp_iter
-    nullptr,                        // tp_iternext
-    decoder_methods,                // tp_methods
-    decoder_members,                // tp_members
-    decoder_gets_sets,              // tp_getset
-    nullptr,                        // tp_base
-    nullptr,                        // tp_dict
-    nullptr,                        // tp_descr_get
-    nullptr,                        // tp_descr_set
-    0,                              // tp_dictoffset
-    nullptr,                        // tp_init
-    PyType_GenericAlloc,            // tp_alloc
-    (newfunc)decoder_new,           // tp_new
+    "sabctols.Decoder",                   // tp_name
+    sizeof(Decoder),                      // tp_basicsize
+    0,                                    // tp_itemsize
+    (destructor)Decoder_dealloc,          // tp_dealloc
+    0,                                    // tp_print
+    nullptr,                              // tp_getattr
+    nullptr,                              // tp_setattr
+    nullptr,                              // tp_compare / tp_reserved
+    nullptr,                              // tp_repr
+    nullptr,                              // tp_as_number
+    nullptr,                              // tp_as_sequence
+    nullptr,                              // tp_as_mapping
+    nullptr,                              // tp_hash
+    nullptr,                              // tp_call
+    nullptr,                              // tp_str
+    nullptr,                              // tp_getattro
+    nullptr,                              // tp_setattro
+    &Decoder_bufferprocs,                 // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,                   // tp_flags
+    PyDoc_STR("Decoder"),                 // tp_doc
+    nullptr,                              // tp_traverse
+    nullptr,                              // tp_clear
+    nullptr,                              // tp_richcompare
+    0,                                    // tp_weaklistoffset
+    (getiterfunc)Decoder_iter,            // tp_iter
+    (iternextfunc)Decoder_iternext,       // tp_iternext
+    Decoder_methods,                      // tp_methods
+    nullptr,                              // tp_members
+    nullptr,                              // tp_getset
+    nullptr,                              // tp_base
+    nullptr,                              // tp_dict
+    nullptr,                              // tp_descr_get
+    nullptr,                              // tp_descr_set
+    0,                                    // tp_dictoffset
+    (initproc)Decoder_init,               // tp_init
+    PyType_GenericAlloc,                  // tp_alloc
+    Decoder_new,                          // tp_new
 };
 
 struct EnumEntry {
@@ -1063,7 +1272,7 @@ static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries
 }
 
 bool yenc_init(PyObject *m) {
-    if (PyType_Ready(&DecoderType) < 0) return false;
+    if (PyType_Ready(&DecoderType) < 0 ||  PyType_Ready(&NNTPResponseType) < 0) return false;
 
     RapidYenc::encoder_init();
     RapidYenc::decoder_init();
@@ -1071,26 +1280,27 @@ bool yenc_init(PyObject *m) {
 
     // Create EncodingFormat enum
     static EnumEntry encoding_entries[] = {
-        {"UNKNOWN", 0},
-        {"YENC", 1},
-        {"UU", 2}
+        {"YENC", 0},
+        {"UU", 1}
     };
     PyObject* encoding_enum = create_int_enum("EncodingFormat", encoding_entries, std::size(encoding_entries));
     if (!encoding_enum) return false;
 
-    ENCODING_FORMAT_UNKNOWN = PyObject_GetAttrString(encoding_enum, "UNKNOWN");
     ENCODING_FORMAT_YENC = PyObject_GetAttrString(encoding_enum, "YENC");
     ENCODING_FORMAT_UU = PyObject_GetAttrString(encoding_enum, "UU");
-    if (!ENCODING_FORMAT_UNKNOWN || !ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU) {
+    if (!ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU) {
         Py_XDECREF(encoding_enum);
         return false;
     }
 
     // Add objects to module
     Py_INCREF(&DecoderType);
+    Py_INCREF(&NNTPResponseType);
     if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0 ||
+        PyModule_AddObject(m, "NNTPResponse", reinterpret_cast<PyObject *>(&NNTPResponseType)) < 0 ||
         PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0) {
         Py_XDECREF(&DecoderType);
+        Py_XDECREF(&NNTPResponseType);
         Py_XDECREF(encoding_enum);
         return false;
     }
