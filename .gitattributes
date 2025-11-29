@@ -1,3 +1,4 @@
 # These should not be touched
 *.yenc binary
 *.pickle binary
+*.nntp binary

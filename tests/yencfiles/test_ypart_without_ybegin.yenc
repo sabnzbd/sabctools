@@ -1,0 +1,6 @@
+220 0 <message-id>
+
+=ypart begin=1 end=100
+test data
+=yend size=9 crc32=00000000
+.

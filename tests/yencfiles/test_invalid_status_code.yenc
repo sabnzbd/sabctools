@@ -1,0 +1,5 @@
+ABC Invalid status code
+=ybegin line=128 size=100 name=test.bin
+test data
+=yend size=100 crc32=00000000
+.
