@@ -160,6 +160,26 @@ static PyObject* decode_utf8_with_fallback(std::string_view line) {
 }
 
 /**
+ * Decode a single UUEncoded character to its 6-bit value.
+ *
+ * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
+ * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
+ */
+constexpr unsigned char NNTPResponse_decode_uu_char(const char c) noexcept {
+    return (c == '`') ? 0 : ((c - ' ') & 0x3F);
+}
+
+/**
+ * Decode UU line length for broken uuencoders by Fredrik Lundh
+
+ * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
+ * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
+ */
+constexpr unsigned char NNTPResponse_decode_uu_char_workaround(const char c) noexcept {
+    return (((static_cast<unsigned char>(c) - 32) & 63) * 4 + 5) / 3;
+}
+
+/**
  * Detect the encoding format of the article by examining a line.
  * Detects yEnc format (lines starting with "=ybegin ") and UUEncode format
  * (60/61 character lines starting with 'M', or "begin " header with octal permissions).
@@ -168,6 +188,10 @@ static PyObject* decode_utf8_with_fallback(std::string_view line) {
  * @param line The line to examine for format detection
  */
 static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::string_view line) {
+    if (line.empty()) {
+        return;
+    }
+
     // YEnc detection
 	if (starts_with(line, "=ybegin "))
 	{
@@ -566,16 +590,6 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
 }
 
 /**
- * Decode a single UUEncoded character to its 6-bit value.
- *
- * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
- * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
- */
-constexpr unsigned char NNTPResponse_decode_uu_char(const char c) noexcept {
-    return (c == '`') ? 0 : ((c - ' ') & 0x3F);
-}
-
-/**
  * Decode a single UUEncoded line and update the Decoder's state and buffer.
  *
  * Adapted (with modifications assisted by AI) from:
@@ -638,22 +652,34 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
     }
 
     // Detect 'end' line
-    if (instance->body && (starts_with(line, "end ") || starts_with(line, "`"))) {
+    if (instance->body && one_of(line, "`", "end")) {
         instance->body = false;
         instance->file_size = instance->bytes_decoded;
         return true;
     }
 
     // Decode body lines
-    if (instance->body && !line.empty()) {
+    if (instance->body) {
+        // Ignore junk
+        if (line.empty() || line == "-- " || starts_with(line, "Posted via ")) {
+            return true;
+        }
+
         // Remove dot stuffing
         if (starts_with(line, "..")) {
             line.remove_prefix(1);
         }
 
-        // Workaround for broken uuencoders by Fredrik Lundh
-        std::size_t effLen = (((static_cast<unsigned char>(line.front()) - 32) & 63) * 4 + 5) / 3;
-        if (effLen > line.size()) return true; // ignore invalid lines
+        std::size_t effLen = NNTPResponse_decode_uu_char(line.front());
+        if (effLen > line.size() - 1) {
+            // Workaround for broken uuencoders by Fredrik Lundh
+            effLen = NNTPResponse_decode_uu_char_workaround(line.front());
+            if (effLen > line.size() - 1) {
+                // Bad line
+                instance->has_baddata = true;
+                return true;
+            }
+        }
 
         line.remove_prefix(1); // skip length byte
         char* out_ptr = PyByteArray_AsString(instance->data) + instance->bytes_decoded;
@@ -899,6 +925,7 @@ static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
     instance->body = false;
     instance->has_part = false;
     instance->has_end = false;
+    instance->has_baddata = false;
 }
 
 /**
@@ -925,6 +952,7 @@ static PyMemberDef NNTPResponse_members[] = {
     {"part_size", T_PYSSIZET, offsetof(NNTPResponse, part_size), READONLY, ""},
     {"bytes_read", T_PYSSIZET, offsetof(NNTPResponse, bytes_read), READONLY, ""},
     {"bytes_decoded", T_PYSSIZET, offsetof(NNTPResponse, bytes_decoded), READONLY, ""},
+    {"baddata", T_BOOL, offsetof(NNTPResponse, has_baddata), READONLY, ""},
     {nullptr, 0, 0, 0, nullptr}
 };
 

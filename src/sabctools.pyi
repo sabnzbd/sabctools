@@ -44,6 +44,8 @@ class NNTPResponse:
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: Optional[EncodingFormat]
     """Decoding process used"""
+    baddata: bool
+    """Invalid UU lines were encountered, some data was lost"""
 
 class Decoder:
     def __init__(self, size: int):
