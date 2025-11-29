@@ -28,6 +28,7 @@
 #include <charconv>
 #include <optional>
 #include <deque>
+#include <algorithm>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"
