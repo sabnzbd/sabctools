@@ -48,6 +48,41 @@ constexpr bool one_of(T v, Ts... ts) {
 }
 
 /**
+ * Check whether all characters in a string view fall within a given ASCII range.
+ *
+ * Primarily used as a fast validation helper for UUEncoded data where the
+ * payload section must consist only of printable UU characters.
+ *
+ * @param sv Input string view to validate.
+ * @param lo Lowest allowed ASCII value (inclusive).
+ * @param hi Highest allowed ASCII value (inclusive).
+ * @return true if every character in sv is between lo and hi (or sv is empty),
+ *         false otherwise.
+ */
+bool all_in_ascii_range(const std::string_view& sv, char lo, char hi) {
+    return std::all_of(sv.begin(), sv.end(), [=](unsigned char c) {
+        return c >= lo && c <= hi;
+    });
+}
+
+/**
+ * Check whether a string view contains only padding characters used in UUEncode.
+ *
+ * In UUEncoded lines, any characters after the data payload should be either
+ * spaces or backticks. This helper is used when heuristically recognising
+ * multipart UU lines by validating the padding section.
+ *
+ * @param sv Input string view to validate.
+ * @return true if sv is empty or consists only of space (' ') and backtick ('`')
+ *         characters, false otherwise.
+ */
+bool only_space_or_backtick(const std::string_view& sv) {
+    return std::all_of(sv.begin(), sv.end(), [](unsigned char c) {
+        return c == ' ' || c == '`';
+    });
+}
+
+/**
  * Lightweight prefix check helper used when parsing protocol and yEnc header lines.
  *
  * Behavior:
@@ -165,7 +200,7 @@ static PyObject* decode_utf8_with_fallback(std::string_view line) {
  * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
  * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
  */
-constexpr unsigned char NNTPResponse_decode_uu_char(const char c) noexcept {
+constexpr unsigned char NNTPResponse_decode_uu_char(const unsigned char c) noexcept {
     return (c == '`') ? 0 : ((c - ' ') & 0x3F);
 }
 
@@ -175,7 +210,7 @@ constexpr unsigned char NNTPResponse_decode_uu_char(const char c) noexcept {
  * @param c The UUEncoded character (typically in range ' ' to '_', or '`').
  * @return The decoded 6-bit value (0–63), masked to ensure it stays within range.
  */
-constexpr unsigned char NNTPResponse_decode_uu_char_workaround(const char c) noexcept {
+constexpr unsigned char NNTPResponse_decode_uu_char_workaround(const unsigned char c) noexcept {
     return (((static_cast<unsigned char>(c) - 32) & 63) * 4 + 5) / 3;
 }
 
@@ -188,22 +223,27 @@ constexpr unsigned char NNTPResponse_decode_uu_char_workaround(const char c) noe
  * @param line The line to examine for format detection
  */
 static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::string_view line) {
+    if (!one_of(instance->status_code, NNTP_BODY, NNTP_ARTICLE)) {
+        return;
+    }
+
     if (line.empty()) {
+        instance->has_emptyline = true;
         return;
     }
 
     // YEnc detection
-	if (starts_with(line, "=ybegin "))
-	{
-	    Py_XDECREF(instance->format);
-		instance->format = ENCODING_FORMAT_YENC;
-		Py_INCREF(ENCODING_FORMAT_YENC);
+    if (starts_with(line, "=ybegin "))
+    {
+        Py_XDECREF(instance->format);
+        instance->format = ENCODING_FORMAT_YENC;
+        Py_INCREF(ENCODING_FORMAT_YENC);
         return;
-	}
+    }
 
     // UUEncode detection: 60 or 61 chars, starts with 'M'
     if ((line.size() == 60 || line.size() == 61) && line.front() == 'M') {
-	    Py_XDECREF(instance->format);
+        Py_XDECREF(instance->format);
         instance->format = ENCODING_FORMAT_UU;
         Py_INCREF(ENCODING_FORMAT_UU);
         return;
@@ -237,10 +277,44 @@ static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::strin
         }
 
         if (all_valid) {
-	        Py_XDECREF(instance->format);
+            Py_XDECREF(instance->format);
             instance->format = ENCODING_FORMAT_UU;
             Py_INCREF(ENCODING_FORMAT_UU);
         }
+        return;
+    }
+
+    // Multipart UU with a short final part
+    if (line.size() <= 1)
+        return;
+
+    // For Article responses only consider after the headers
+    if (!(instance->status_code == NNTP_BODY || (instance->status_code == NNTP_ARTICLE && instance->has_emptyline)))
+        return;
+
+    const unsigned char first = line.front();
+    const size_t n = line.size();
+
+    for (const size_t len : {
+            static_cast<size_t>(NNTPResponse_decode_uu_char_workaround(first)),
+            static_cast<size_t>(NNTPResponse_decode_uu_char(first))
+        })
+    {
+        if (n < len)
+            continue;
+
+        std::string_view body = line.substr(1, len - 1);
+        std::string_view padding = line.substr(len);
+
+        if (!all_in_ascii_range(body, 32, 96)) continue;
+        if (!only_space_or_backtick(padding)) continue;
+
+        // Probably UU
+        Py_XDECREF(instance->format);
+        instance->format = ENCODING_FORMAT_UU;
+        Py_INCREF(ENCODING_FORMAT_UU);
+        instance->body = true;
+        return;
     }
 }
 
@@ -925,6 +999,7 @@ static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
     instance->body = false;
     instance->has_part = false;
     instance->has_end = false;
+    instance->has_emptyline = false;
     instance->has_baddata = false;
 }
 

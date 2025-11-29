@@ -88,6 +88,7 @@ typedef struct {
 	bool body;
 	bool has_part;
 	bool has_end;
+	bool has_emptyline; // for article requests has the empty line separating headers and body been seen
 	bool has_baddata; // invalid line lengths for uu decoding; some data lost
 } NNTPResponse;
 
