@@ -462,9 +462,14 @@ static PyObject* NNTPResponse_get_file_name(NNTPResponse* self, void *closure)
  */
 static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
 {
-    if (!self->crc_expected.has_value() || self->crc != self->crc_expected.value()) {
+    if (self->format == nullptr) {
         Py_RETURN_NONE;
     }
+
+    if (self->format == ENCODING_FORMAT_YENC && (!self->crc_expected.has_value() || self->crc != self->crc_expected.value())) {
+        Py_RETURN_NONE;
+    }
+
     return PyLong_FromUnsignedLong(self->crc);
 }
 
@@ -756,7 +761,8 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
         }
 
         line.remove_prefix(1); // skip length byte
-        char* out_ptr = PyByteArray_AsString(instance->data) + instance->bytes_decoded;
+        char* dst = PyByteArray_AsString(instance->data) + instance->bytes_decoded;
+        char* dst_start = dst;
         auto it = line.begin();
         const auto end = line.end();
 
@@ -766,22 +772,26 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
             const unsigned char c1 = NNTPResponse_decode_uu_char(*it++);
             unsigned char c2 = 0;
 
-            *out_ptr++ = static_cast<char>(c0 << 2 | c1 >> 4);
+            *dst++ = static_cast<char>(c0 << 2 | c1 >> 4);
 
             if (chunk > 1) {
                 c2 = NNTPResponse_decode_uu_char(*it++);
-                *out_ptr++ = static_cast<char>(c1 << 4 | c2 >> 2);
+                *dst++ = static_cast<char>(c1 << 4 | c2 >> 2);
             }
 
             if (chunk > 2) {
                 const unsigned char c3 = NNTPResponse_decode_uu_char(*it++);
-                *out_ptr++ = static_cast<char>(c2 << 6 | c3);
+                *dst++ = static_cast<char>(c2 << 6 | c3);
             }
 
             effLen -= 3;
         }
 
-        instance->bytes_decoded = out_ptr - PyByteArray_AsString(instance->data);
+        Py_ssize_t produced = dst - dst_start;
+        instance->bytes_decoded += produced;
+        if (produced > 0) {
+            instance->crc = RapidYenc::crc32(dst_start, produced, instance->crc);
+        }
     }
 
     return true;

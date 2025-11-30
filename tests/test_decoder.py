@@ -229,7 +229,7 @@ def test_uu():
     assert response.lines is None
     assert response.file_name == "logo-full.svg"
     assert response.file_size == 2184
-    assert crc32(response.data) == 0x6BC2917D
+    assert response.crc == 0x6BC2917D
 
 
 # Tests for super-invalid inputs to ensure decoder doesn't crash
