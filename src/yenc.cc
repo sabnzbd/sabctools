@@ -152,6 +152,8 @@ static inline bool extract_int(std::string_view line, const char* needle, T& des
  * @return Optional uint32_t with the parsed CRC, or nullopt if parsing fails
  */
 std::optional<uint32_t> parse_crc32(std::string_view crc32) {
+    if (crc32.empty()) return 0;
+
     uint64_t value = 0;
     auto [ptr, ec] = std::from_chars(crc32.data(), crc32.data() + crc32.size(), value, 16);
 
@@ -364,6 +366,7 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->has_end = true;
         line.remove_prefix(5);
         std::string_view crc32;
+        bool crc32_found = false;
         // Multi-part files use pcrc32 (part CRC), single files use crc32
         constexpr std::string_view prefixes[] = { " pcrc32=", " crc32=" };
 
@@ -371,11 +374,12 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
             auto pos = line.find(prefix, 5);
             if (pos != std::string::npos) {
                 crc32 = line.substr(pos + prefix.size());
+                crc32_found = true;
                 break;
             }
         }
 
-        if (crc32.size() >= 8) {
+        if (crc32_found) {
             instance->crc_expected = parse_crc32(crc32);
         }
 

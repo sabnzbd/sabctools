@@ -282,3 +282,44 @@ def test_invalid_crc_chars():
     response = next(decoder, None)
     assert response
     assert response.crc_expected is None
+
+@pytest.mark.parametrize(
+    "hex,expected",
+    [
+        ["ffffffffa95d3e50", 0xa95d3e50],
+        ["fffffffa95d3e50", 0xa95d3e50],
+        ["ffffffa95d3e50", 0xa95d3e50],
+        ["fffffa95d3e50", 0xa95d3e50],
+        ["ffffa95d3e50", 0xa95d3e50],
+        ["fffa95d3e50", 0xa95d3e50],
+        ["ffa95d3e50", 0xa95d3e50],
+        ["fa95d3e50", 0xa95d3e50],
+        ["a95d3e50", 0xa95d3e50],
+        ["a95d3e5", 0xa95d3e5],
+        ["a95d3e", 0xa95d3e],
+        ["a95d3", 0xa95d3],
+        ["a95d", 0xa95d],
+        ["a95", 0xa95],
+        ["a9", 0xa9],
+        ["a", 0xa],
+        ["", 0],
+        ["12345678 ", 0x12345678],  # space at end
+    ],
+)
+def test_parsing_crc(hex: str, expected: int):
+    parts = [
+        b"222 0 <foo@bar>\r\n"
+        b"=ybegin part=1 total=1 line=128 size=12 name=helloworld\r\n"
+        b"=ypart begin=1 end=12\r\n"
+        b"r\x8f\x96\x96\x99J\xa1\x99\x9c\x96\x8eK\r\n"
+        b"=yend size=12 pcrc32=%s\r\n" % hex.encode(),
+        b".\r\n"
+    ]
+    data_plain = b"".join(parts)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.crc_expected == expected
