@@ -1,4 +1,5 @@
 import io
+import os
 import sys
 
 import pytest
@@ -231,6 +232,29 @@ def test_uu():
     assert response.file_size == 2184
     assert response.crc == 0x6BC2917D
 
+
+@pytest.mark.parametrize(
+    "length",
+    range(1, 46),
+)
+def test_uu_length(length: int):
+    expected = os.urandom(length)
+    parts = [
+        b"222 0 <foo@bar>\r\n",
+        uu(expected),
+        b"\r\n"
+        b".\r\n"
+    ]
+    data_plain = b"".join(parts)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.format is sabctools.EncodingFormat.UU
+    assert response.bytes_decoded
+    assert response.data == expected
 
 # Tests for super-invalid inputs to ensure decoder doesn't crash
 

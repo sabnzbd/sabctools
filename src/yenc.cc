@@ -286,6 +286,11 @@ static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::strin
         return;
     }
 
+    // Remove dot stuffing
+    if (starts_with(line, "..")) {
+        line.remove_prefix(1);
+    }
+
     // Multipart UU with a short final part
     if (line.size() <= 1)
         return;
