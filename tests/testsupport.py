@@ -23,6 +23,7 @@ import re
 import pickle
 from typing import Tuple, Optional, Union
 from io import BytesIO
+import binascii
 
 import chardet
 import sabctools
@@ -198,3 +199,14 @@ def yenc_subtract(char, subtract):
     if char_diff < 0:
         return 256 + char_diff
     return char_diff
+
+
+def uu(data: bytes):
+    """Uuencode data and insert a period if necessary"""
+    line = binascii.b2a_uu(data).rstrip(b"\n")
+
+    # Dot stuffing
+    if line.startswith(b"."):
+        return b"." + line
+
+    return line
