@@ -1,0 +1,6 @@
+220 0 <message-id>
+
+=ybegin line=128 size=9 name=测试文件.bin
+test data with 中文 characters
+=yend size=9 crc32=00000000
+.
