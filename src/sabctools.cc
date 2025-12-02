@@ -29,12 +29,6 @@ PyMODINIT_FUNC PyInit_sabctools(void);
 /* Python API requirements */
 static PyMethodDef sabctools_methods[] = {
     {
-        "yenc_decode",
-        yenc_decode,
-        METH_O,
-        "yenc_decode(raw_data)"
-    },
-    {
         "yenc_encode",
         yenc_encode,
         METH_O,
@@ -134,15 +128,17 @@ static const char* simd_detected(void) {
 }
 
 PyMODINIT_FUNC PyInit_sabctools(void) {
+    PyObject* m = PyModule_Create(&sabctools_definition);
+    if (m == NULL) return NULL;
+
     // Initialize and add version / SIMD information
-    Py_Initialize();
-    RapidYenc::encoder_init();
-    RapidYenc::decoder_init();
-    RapidYenc::crc32_init();
+    if (!yenc_init(m)) {
+        Py_DECREF(m);
+        return NULL;
+    }
     openssl_init();
     sparse_init();
 
-    PyObject* m = PyModule_Create(&sabctools_definition);
     PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);
     PyModule_AddStringConstant(m, "simd", simd_detected());
 

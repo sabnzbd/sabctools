@@ -18,16 +18,17 @@
 ###################
 # SUPPORT FUNCTIONS
 ###################
-import binascii
+from zlib import crc32
 import re
 import pickle
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
+from io import BytesIO
 
 import chardet
 import sabctools
 
 
-def correct_unknown_encoding(str_or_bytes_in):
+def correct_unknown_encoding(str_or_bytes_in: Union[str, bytes]) -> str:
     """Files created on Windows but unpacked/repaired on
     linux can result in invalid filenames. Try to fix this
     encoding by going to bytes and then back to unicode again.
@@ -54,6 +55,11 @@ def read_plain_yenc_file(filename: str) -> bytearray:
         return bytearray(yencfile.read())
 
 
+def read_uu_file(filename: str) -> bytearray:
+    with open("tests/uufiles/%s" % filename, "rb") as uufile:
+        return bytearray(uufile.read())
+
+
 def read_pickle(filename):
     with open(filename, "rb") as yencfile:
         try:
@@ -66,8 +72,18 @@ def read_pickle(filename):
 
 
 def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, int, Optional[int]]:
-    decoded_data, filename, filesize, begin, size, crc_correct = sabctools.yenc_decode(memoryview(data))
-    return decoded_data, correct_unknown_encoding(filename), filesize, begin, size, crc_correct
+    input = BytesIO(data)
+    decoder = sabctools.Decoder(len(data))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder)
+    assert response
+    assert response.status_code in (220, 222)
+    assert response.lines is None
+    assert response.format is sabctools.EncodingFormat.YENC
+    assert response.message
+
+    return response.data, response.file_name, response.file_size, response.part_begin, response.part_size, response.crc
 
 
 def python_yenc(data_plain):
@@ -112,7 +128,7 @@ def python_yenc(data_plain):
             size = end - begin + 1
             begin -= 1
 
-    return decoded_data, ybegin["name"], int(ybegin["size"]), begin, size, binascii.crc32(decoded_data)
+    return decoded_data, ybegin["name"], int(ybegin["size"]), begin, size, crc32(decoded_data)
 
 
 def parse_yenc_data(data):
