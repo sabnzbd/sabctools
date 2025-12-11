@@ -1,4 +1,0 @@
-pytest
-chardet
-jaraco.functools
-portend
