@@ -18,6 +18,7 @@ def test_sparse():
         file.close()
         os.unlink(file.name)
 
+
 @pytest.mark.parametrize(
     "length,position",
     [
@@ -32,14 +33,15 @@ def test_sparse_position_expected(length, position):
         sabctools.sparse(file, length)
         assert file.tell() == position
 
+
 def is_sparse(file: IO) -> bool:
     """Is the file sparse?
     On Windows this closes the file"""
     if sys.platform == "win32":
         file.close()
-        return b"This file is set as sparse" in subprocess.run(
-            ["fsutil", "sparse", "queryflag", file.name],
-            capture_output=True
-        ).stdout
+        return (
+            b"This file is set as sparse"
+            in subprocess.run(["fsutil", "sparse", "queryflag", file.name], capture_output=True).stdout
+        )
 
     return os.stat(file.name).st_blocks * 512 < os.path.getsize(file.name)

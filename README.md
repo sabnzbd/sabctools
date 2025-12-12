@@ -59,7 +59,7 @@ python -c "import sabctools; print(sabctools.openssl_linked);"
 
 # Testing
 
-For testing we use `pytest` (install via `pip install -r tests/requirements.txt`) and test can simply be executed by browsing to the `sabctools` directory and running:
+For testing we use `pytest` (install via `pip install --group test`) and test can simply be executed by browsing to the `sabctools` directory and running:
 ```
 pytest
 ```

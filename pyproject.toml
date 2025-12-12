@@ -1,3 +1,61 @@
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "sabctools"
+dynamic = ["version"]
+description = "C implementations of functions for use within SABnzbd"
+readme = "README.md"
+authors = [
+    {name = "Safihre", email = "safihre@sabnzbd.org"},
+]
+requires-python = ">=3.9"
+license = "GPL-2.0-or-later"
+license-files = ["LICENSE.md"]
+classifiers = [
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: C",
+    'Operating System :: Microsoft :: Windows',
+    'Operating System :: Unix',
+    'Operating System :: MacOS',
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Plugins",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Communications :: Usenet News",
+]
+
+[project.urls]
+Homepage = "https://github.com/sabnzbd/sabctools/"
+
+[dependency-groups]
+test = [
+    "pytest",
+    "chardet",
+    "jaraco.functools",
+    "portend"
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py39']
+include = '(?:src|tests)\/.*\.pyi?'
+
+[tool.cibuildwheel]
+skip = "*i686*"
+test-skip = "*"
+
+[tool.cibuildwheel.linux]
+archs = ["native"]
+
+[tool.cibuildwheel.macos]
+archs = ["universal2"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64", "ARM64"]
+
+[tool.setuptools]
+packages = ["sabctools"]
+package-dir = {"sabctools" = "src"}
+include-package-data = false

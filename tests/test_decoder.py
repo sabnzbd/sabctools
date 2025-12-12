@@ -162,6 +162,7 @@ def test_head():
     assert len(response.lines) == 13
     assert "X-Received-Bytes: 740059" in response.lines
 
+
 def test_capabilities():
     data_plain = read_plain_yenc_file("capabilities.yenc")
     input = BytesIO(data_plain)
@@ -175,6 +176,7 @@ def test_capabilities():
     assert len(response.lines) == 2
     assert "VERSION 1" in response.lines
     assert "AUTHINFO USER PASS" in response.lines
+
 
 def test_article():
     data_plain = read_plain_yenc_file("test_article.yenc")
@@ -215,7 +217,14 @@ def test_streaming():
 
     for i, dec in enumerate(responses):
         assert dec.status_code in (220, 222)
-        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (dec.data, correct_unknown_encoding(dec.file_name), dec.file_size, dec.part_begin, dec.part_size, dec.crc)
+        assert python_yenc(read_plain_yenc_file(yenc_files[i])) == (
+            dec.data,
+            correct_unknown_encoding(dec.file_name),
+            dec.file_size,
+            dec.part_begin,
+            dec.part_size,
+            dec.crc,
+        )
 
 
 def test_uu():
@@ -239,12 +248,7 @@ def test_uu():
 )
 def test_uu_length(length: int):
     expected = os.urandom(length)
-    parts = [
-        b"222 0 <foo@bar>\r\n",
-        uu(expected),
-        b"\r\n"
-        b".\r\n"
-    ]
+    parts = [b"222 0 <foo@bar>\r\n", uu(expected), b"\r\n" b".\r\n"]
     data_plain = b"".join(parts)
     input = BytesIO(data_plain)
     decoder = sabctools.Decoder(len(data_plain))
@@ -256,7 +260,9 @@ def test_uu_length(length: int):
     assert response.bytes_decoded
     assert response.data == expected
 
+
 # Tests for super-invalid inputs to ensure decoder doesn't crash
+
 
 @pytest.mark.parametrize(
     "filename",
@@ -307,25 +313,26 @@ def test_invalid_crc_chars():
     assert response
     assert response.crc_expected is None
 
+
 @pytest.mark.parametrize(
     "hex,expected",
     [
-        ["ffffffffa95d3e50", 0xa95d3e50],
-        ["fffffffa95d3e50", 0xa95d3e50],
-        ["ffffffa95d3e50", 0xa95d3e50],
-        ["fffffa95d3e50", 0xa95d3e50],
-        ["ffffa95d3e50", 0xa95d3e50],
-        ["fffa95d3e50", 0xa95d3e50],
-        ["ffa95d3e50", 0xa95d3e50],
-        ["fa95d3e50", 0xa95d3e50],
-        ["a95d3e50", 0xa95d3e50],
-        ["a95d3e5", 0xa95d3e5],
-        ["a95d3e", 0xa95d3e],
-        ["a95d3", 0xa95d3],
-        ["a95d", 0xa95d],
-        ["a95", 0xa95],
-        ["a9", 0xa9],
-        ["a", 0xa],
+        ["ffffffffa95d3e50", 0xA95D3E50],
+        ["fffffffa95d3e50", 0xA95D3E50],
+        ["ffffffa95d3e50", 0xA95D3E50],
+        ["fffffa95d3e50", 0xA95D3E50],
+        ["ffffa95d3e50", 0xA95D3E50],
+        ["fffa95d3e50", 0xA95D3E50],
+        ["ffa95d3e50", 0xA95D3E50],
+        ["fa95d3e50", 0xA95D3E50],
+        ["a95d3e50", 0xA95D3E50],
+        ["a95d3e5", 0xA95D3E5],
+        ["a95d3e", 0xA95D3E],
+        ["a95d3", 0xA95D3],
+        ["a95d", 0xA95D],
+        ["a95", 0xA95],
+        ["a9", 0xA9],
+        ["a", 0xA],
         ["", 0],
         ["12345678 ", 0x12345678],  # space at end
     ],
@@ -337,7 +344,7 @@ def test_parsing_crc(hex: str, expected: int):
         b"=ypart begin=1 end=12\r\n"
         b"r\x8f\x96\x96\x99J\xa1\x99\x9c\x96\x8eK\r\n"
         b"=yend size=12 pcrc32=%s\r\n" % hex.encode(),
-        b".\r\n"
+        b".\r\n",
     ]
     data_plain = b"".join(parts)
     input = BytesIO(data_plain)

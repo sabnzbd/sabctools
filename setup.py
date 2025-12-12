@@ -39,9 +39,9 @@ def autoconf_check(
     with ExitStack() as stack:
         tmpdir = tempfile.mkdtemp()
         stack.callback(shutil.rmtree, tmpdir)
-        (tmp_fd, tmp_path) = tempfile.mkstemp(suffix='.cc', prefix='sabctools_', dir=tmpdir)
+        (tmp_fd, tmp_path) = tempfile.mkstemp(suffix=".cc", prefix="sabctools_", dir=tmpdir)
 
-        with closing(os.fdopen(tmp_fd, 'w')) as f:
+        with closing(os.fdopen(tmp_fd, "w")) as f:
             if include_check:
                 log.info("==> Checking support for include: %s", include_check)
                 f.write(f"#include <{include_check}>\n")
@@ -177,10 +177,10 @@ class SABCToolsBuild(build_ext):
 
             if machine.startswith("riscv"):
                 arch_flag = "-march=rv" + ("32" if machine.startswith("riscv32") else "64") + "gc"
-                if autoconf_check(self.compiler, flag_check=arch_flag+"v"):
-                    gcc_rvv_flags = [arch_flag+"v"]
-                if autoconf_check(self.compiler, flag_check=arch_flag+"_zbkc"):
-                    gcc_rvzbkc_flags = [arch_flag+"_zbkc"]
+                if autoconf_check(self.compiler, flag_check=arch_flag + "v"):
+                    gcc_rvv_flags = [arch_flag + "v"]
+                if autoconf_check(self.compiler, flag_check=arch_flag + "_zbkc"):
+                    gcc_rvzbkc_flags = [arch_flag + "_zbkc"]
 
         srcdeps_crc_common = ["src/yencode/common.h", "src/yencode/crc_common.h", "src/yencode/crc.h"]
         srcdeps_dec_common = ["src/yencode/common.h", "src/yencode/decoder_common.h", "src/yencode/decoder.h"]
@@ -378,24 +378,15 @@ class SABCToolsBuild(build_ext):
         super(SABCToolsBuild, self).build_extension(ext)
 
 
-# Load description
-with open("README.md", "r") as file_long_description:
-    long_description = file_long_description.read()
+def get_version():
+    """Parse the version from the C sources"""
+    with open("src/sabctools.h", "r") as sabctools_h:
+        version = re.findall('#define SABCTOOLS_VERSION +"([0-9xA-Z_.]+)"?', sabctools_h.read())[0]
+        return version
 
-# Parse the version from the C sources
-with open("src/sabctools.h", "r") as sabctools_h:
-    version = re.findall('#define SABCTOOLS_VERSION +"([0-9xA-Z_.]+)"?', sabctools_h.read())[0]
 
 setup(
-    name="sabctools",
-    version=version,
-    author="Safihre",
-    author_email="safihre@sabnzbd.org",
-    url="https://github.com/sabnzbd/sabctools/",
-    license="GPLv2+",
-    packages=["sabctools"],
-    package_dir={"sabctools": "src"},
-    package_data={"sabctools": ["py.typed", "sabctools.pyi"]},
+    version=get_version(),
     ext_modules=[
         Extension(
             "sabctools.sabctools",
@@ -403,18 +394,4 @@ setup(
         )
     ],
     cmdclass={"build_ext": SABCToolsBuild},
-    classifiers=[
-        "Programming Language :: Python",
-        "Programming Language :: Python :: 3 :: Only",
-        "Programming Language :: C",
-        "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
-        "Operating System :: Unix",
-        "Development Status :: 5 - Production/Stable",
-        "Environment :: Plugins",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-        "Topic :: Communications :: Usenet News",
-    ],
-    description="C implementations of functions for use within SABnzbd",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
 )
