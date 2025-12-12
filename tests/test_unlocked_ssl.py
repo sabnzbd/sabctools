@@ -292,7 +292,7 @@ def test_unlocked_ssl_recv_into_bulk_response(client):
     size = 131072
     buffer = bytearray(size)
 
-    client.sendall(b"\xFF" * size)
+    client.sendall(b"\xff" * size)
 
     select.select([client], [], [])
 
