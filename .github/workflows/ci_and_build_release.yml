@@ -65,7 +65,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.3.0
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
@@ -76,7 +76,7 @@ jobs:
           pip install build
           python -m build --sdist
       - name: Upload source distribution artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: runner.os == 'macOS'
         with:
           path: ./dist/*.tar.gz
