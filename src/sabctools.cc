@@ -20,7 +20,7 @@
 #include "yenc.h"
 #include "unlocked_ssl.h"
 #include "crc32.h"
-#include "sparse.h"
+#include "filesystem.h"
 #include "utils.h"
 
 /* Function and exception declarations */
@@ -71,10 +71,10 @@ static PyMethodDef sabctools_methods[] = {
         "crc32_xpow8n(n)"
     },
     {
-        "sparse",
-        sparse,
-        METH_VARARGS,
-        "sparse(handle, length)"
+        "allocate_file",
+        (PyCFunction)allocate_file,
+        METH_VARARGS | METH_KEYWORDS,
+        "allocate_file(file, length, sparse=True, preallocate=True)"
     },
     {
         "bytearray_malloc",
@@ -137,7 +137,7 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
         return NULL;
     }
     openssl_init();
-    sparse_init();
+    filesystem_init();
 
     PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);
     PyModule_AddStringConstant(m, "simd", simd_detected());

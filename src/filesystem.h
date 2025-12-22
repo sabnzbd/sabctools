@@ -16,18 +16,22 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef SABCTOOLS_SPARSE_H
-#define SABCTOOLS_SPARSE_H
+#ifndef SABCTOOLS_FILESYSTEM_H
+#define SABCTOOLS_FILESYSTEM_H
 
 #include <Python.h>
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #include <Windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #endif
 
-void sparse_init();
-PyObject *sparse(PyObject *, PyObject *);
+void filesystem_init();
+PyObject *allocate_file(PyObject *, PyObject *, PyObject *);
 
-#endif //SABCTOOLS_SPARSE_H
+#define ZERO_CHUNK_SIZE (16 * 1024)
+
+#endif //SABCTOOLS_FILESYSTEM_H

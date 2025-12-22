@@ -332,7 +332,7 @@ class SABCToolsBuild(build_ext):
             },
             {
                 "sources": [
-                    "src/sparse.cc",
+                    "src/filesystem.cc",
                 ],
                 "gcc_flags": ["-Wno-unused-parameter"],
             },

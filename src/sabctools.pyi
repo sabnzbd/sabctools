@@ -1,7 +1,7 @@
 from enum import IntEnum
 from typing import Tuple, Optional, IO, List, Iterator, Union
 from ssl import SSLSocket
-from _typeshed import WriteableBuffer
+from _typeshed import WriteableBuffer, FileDescriptorOrPath
 
 __version__: str
 openssl_linked: bool
@@ -14,7 +14,17 @@ def crc32_multiply(crc1: int, crc2: int) -> int: ...
 def crc32_xpow8n(n: int) -> int: ...
 def crc32_xpown(n: int) -> int: ...
 def crc32_zero_unpad(crc1: int, length: int) -> int: ...
-def sparse(file: Union[IO, int], length: int) -> None: ...
+def allocate_file(file: Union[IO, int], length: int, sparse: bool = True, preallocate: bool = True) -> None:
+    """Preallocate a file of given size, optionally make it sparse on Windows.
+
+    Args:
+        file: File object or integer file descriptor.
+        length: Target size in bytes.
+        sparse: On Windows, attempt to mark the file as sparse before resizing.
+        preallocate: On POSIX, attempt posix_fallocate, fall back to ftruncate, optionally fall back to writing zeros.
+    """
+
+def is_sparse(path: FileDescriptorOrPath) -> bool: ...
 def bytearray_malloc(size: int) -> bytearray: ...
 
 class EncodingFormat(IntEnum):
