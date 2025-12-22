@@ -23,6 +23,8 @@
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #include <Windows.h>
+#else
+#include <unistd.h>
 #endif
 
 void sparse_init();

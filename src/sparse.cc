@@ -38,6 +38,7 @@ PyObject *sparse(PyObject *self, PyObject *args)
     PyObject *Py_file_handle = NULL;
     PyObject *Py_file_truncate = NULL;
 
+    // Accept either a file object (with fileno()) or an integer file descriptor directly
     if (!PyArg_ParseTuple(args, "OL:sparse", &Py_file, &length))
     {
         return NULL;
@@ -54,7 +55,12 @@ PyObject *sparse(PyObject *self, PyObject *args)
         goto error;
     }
 
-    if (!(Py_file_fileno = PyObject_CallMethod(Py_file, "fileno", NULL)))
+    if (PyLong_Check(Py_file))
+    {
+        Py_file_fileno = Py_file;
+        Py_INCREF(Py_file_fileno);
+    }
+    else if (!(Py_file_fileno = PyObject_CallMethod(Py_file, "fileno", NULL)))
     {
         PyErr_SetString(PyExc_SystemError, "Error calling fileno function.");
         goto error;
@@ -68,25 +74,51 @@ PyObject *sparse(PyObject *self, PyObject *args)
 
     handle = reinterpret_cast<HANDLE>(PyLong_AsLongLong(Py_file_handle));
 
-    // Creating a sparse file may fail but that's OK
+    // Creating a sparse file may fail; only change the file size if it succeeds
     DWORD bytesReturned;
     if (DeviceIoControl(handle, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesReturned, nullptr))
     {
-        // Increase the file length without writing any data and seek back to the original position
+        // Set the file length to `length` and restore the original position
         LARGE_INTEGER li_size;
         li_size.QuadPart = length;
-        LARGE_INTEGER li_start = {0};
-        if (!SetFilePointerEx(handle, {0}, &li_start, FILE_CURRENT) || !SetFilePointerEx(handle, li_size, nullptr, FILE_END) || !SetEndOfFile(handle) || !SetFilePointerEx(handle, li_start, nullptr, FILE_BEGIN))
+        LARGE_INTEGER li_start;
+        if (!SetFilePointerEx(handle, {}, &li_start, FILE_CURRENT) ||
+            !SetFilePointerEx(handle, li_size, nullptr, FILE_BEGIN) ||
+            !SetEndOfFile(handle) ||
+            !SetFilePointerEx(handle, li_start, nullptr, FILE_BEGIN))
         {
             PyErr_SetFromWindowsErr(0);
             goto error;
         }
     }
 #else
-    // Call file.truncate(length)
-
-    if (!(Py_file_truncate = PyObject_CallMethod(Py_file, "truncate", "(L)", length)))
+    int fd;
+    if (PyLong_Check(Py_file))
     {
+        fd = (int)PyLong_AsLong(Py_file);
+        if (fd == -1 && PyErr_Occurred())
+        {
+            goto error;
+        }
+    }
+    else
+    {
+        if (!(Py_file_fileno = PyObject_CallMethod(Py_file, "fileno", NULL)))
+        {
+            PyErr_SetString(PyExc_SystemError, "Error calling fileno function.");
+            goto error;
+        }
+
+        fd = (int)PyLong_AsLong(Py_file_fileno);
+        if (fd == -1 && PyErr_Occurred())
+        {
+            goto error;
+        }
+    }
+
+    if (ftruncate(fd, (off_t)length) == -1)
+    {
+        PyErr_SetFromErrno(PyExc_OSError);
         goto error;
     }
 #endif
