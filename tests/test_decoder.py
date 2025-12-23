@@ -302,6 +302,26 @@ def test_invalid_inputs_no_crash(filename: str):
     assert decoder is not None
 
 
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "test_ypart_invalid_range.yenc",  # ypart begin > end
+        "test_part_exceeds_limit.yenc",  # Part size > 10MB limit
+    ],
+)
+def test_invalid_size(filename: str):
+    data_plain = read_plain_yenc_file(filename)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.part_begin == 0
+    assert response.part_end == 0
+    assert response.part_size == 0
+
+
 def test_invalid_crc_chars():
     """Test with non-hex characters in CRC field - crc_expected should be None."""
     data_plain = read_plain_yenc_file("test_invalid_crc_chars.yenc")
