@@ -1012,6 +1012,7 @@ static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
     instance->file_size = 0;
     instance->part = 0;
     instance->part_begin = 0;
+    instance->part_end = 0;
     instance->part_size = 0;
     instance->end_size = 0;
     instance->total = 0;
