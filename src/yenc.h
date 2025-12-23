@@ -76,6 +76,7 @@ typedef struct {
 	Py_ssize_t file_size;
 	Py_ssize_t part;
 	Py_ssize_t part_begin;
+	Py_ssize_t part_end;
 	Py_ssize_t part_size;
 	Py_ssize_t end_size;
 	Py_ssize_t total;

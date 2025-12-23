@@ -359,13 +359,18 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->has_part = true;
         instance->body = true;
         line.remove_prefix(6);
-        // Convert from 1-based to 0-based indexing
-        if (extract_int(line, " begin=", instance->part_begin) && instance->part_begin > 0) {
+        extract_int(line, " begin=", instance->part_begin);
+        extract_int(line, " end=", instance->part_end);
+        // Get the size and sanity check the values
+        instance->part_size = instance->part_end - instance->part_begin + 1;
+        if (instance->part_size > 0 && instance->part_size <= YENC_MAX_PART_SIZE) {
+            // Convert from 1-based to 0-based indexing
             instance->part_begin--;
-        }
-        // Calculate part size as (end - begin)
-        if (extract_int(line, " end=", instance->part_size) && instance->part_size >= instance->part_begin) {
-            instance->part_size -= instance->part_begin;
+        } else {
+            // Reset values; invalid metadata
+            instance->part_begin = 0;
+            instance->part_end = 0;
+            instance->part_size = 0;
         }
     } else if (starts_with(line, "=yend ")) {
         instance->has_end = true;
@@ -1043,7 +1048,9 @@ static PyMemberDef NNTPResponse_members[] = {
     {"message", T_OBJECT_EX, offsetof(NNTPResponse, message), READONLY, ""},
     {"file_size", T_PYSSIZET, offsetof(NNTPResponse, file_size), READONLY, ""},
     {"part_begin", T_PYSSIZET, offsetof(NNTPResponse, part_begin), READONLY, ""},
+    {"part_end", T_PYSSIZET, offsetof(NNTPResponse, part_end), READONLY, ""},
     {"part_size", T_PYSSIZET, offsetof(NNTPResponse, part_size), READONLY, ""},
+    {"end_size", T_PYSSIZET, offsetof(NNTPResponse, end_size), READONLY, ""},
     {"bytes_read", T_PYSSIZET, offsetof(NNTPResponse, bytes_read), READONLY, ""},
     {"bytes_decoded", T_PYSSIZET, offsetof(NNTPResponse, bytes_decoded), READONLY, ""},
     {"baddata", T_BOOL, offsetof(NNTPResponse, has_baddata), READONLY, ""},
