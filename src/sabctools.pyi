@@ -33,7 +33,9 @@ class NNTPResponse:
     file_name: Optional[str]
     file_size: int
     part_begin: int
+    part_end: int
     part_size: int
+    end_size: int
     data: Optional[bytearray]
     """Decoded data"""
     crc: Optional[int]
