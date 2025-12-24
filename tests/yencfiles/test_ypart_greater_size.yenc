@@ -1,0 +1,7 @@
+220 0 <message-id>
+
+=ybegin part=1 line=128 size=1000 name=test.bin
+=ypart begin=10001 end=10009
+test data
+=yend size=9 part=1 pcrc32=00000000
+.

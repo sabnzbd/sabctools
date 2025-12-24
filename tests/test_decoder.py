@@ -276,6 +276,7 @@ def test_uu_length(length: int):
         "test_malformed_ybegin.yenc",  # ybegin missing required fields
         "test_negative_size.yenc",  # Negative size value
         "test_huge_size.yenc",  # Extremely large size
+        "test_huge_size_1TiB.yenc",  # Extremely large size (1 TB)
         "test_double_ybegin.yenc",  # Two ybegin lines
         # Structure violations
         "test_missing_yend.yenc",  # ybegin without yend
@@ -305,8 +306,12 @@ def test_invalid_inputs_no_crash(filename: str):
 @pytest.mark.parametrize(
     "filename",
     [
+        "test_huge_size.yenc",  # Larger than type allows
+        "test_huge_size_1TiB.yenc",  # Extremely large size (1 TiB)
+        "test_huge_size_1TiB_ypart.yenc",  # Offsets greater than file size
         "test_ypart_invalid_range.yenc",  # ypart begin > end
         "test_part_exceeds_limit.yenc",  # Part size > 10MB limit
+        "test_ypart_greater_size.yenc",  # Offsets greater than file size
     ],
 )
 def test_invalid_size(filename: str):

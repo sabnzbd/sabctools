@@ -340,6 +340,9 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
     if (starts_with(line, "=ybegin ")) {
         line.remove_prefix(7);
         extract_int(line, " size=", instance->file_size);
+        if (instance->file_size > YENC_MAX_FILE_SIZE) {
+            instance->file_size = 0;
+        }
         if (!extract_int(line, " part=", instance->part)) {
             // Not multi-part, so body starts immediately after =ybegin
             instance->body = true;
@@ -363,7 +366,9 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         extract_int(line, " end=", instance->part_end);
         // Get the size and sanity check the values
         instance->part_size = instance->part_end - instance->part_begin + 1;
-        if (instance->part_size > 0 && instance->part_size <= YENC_MAX_PART_SIZE) {
+        if (instance->part_size > 0 &&
+            instance->part_size <= YENC_MAX_PART_SIZE &&
+            instance->part_end <= instance->file_size ) {
             // Convert from 1-based to 0-based indexing
             instance->part_begin--;
         } else {
