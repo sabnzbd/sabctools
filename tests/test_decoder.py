@@ -276,6 +276,7 @@ def test_uu_length(length: int):
         "test_malformed_ybegin.yenc",  # ybegin missing required fields
         "test_negative_size.yenc",  # Negative size value
         "test_huge_size.yenc",  # Extremely large size
+        "test_huge_size_1TiB.yenc",  # Extremely large size (1 TB)
         "test_double_ybegin.yenc",  # Two ybegin lines
         # Structure violations
         "test_missing_yend.yenc",  # ybegin without yend
@@ -300,6 +301,30 @@ def test_invalid_inputs_no_crash(filename: str):
 
     # Basic check: decoder should not crash
     assert decoder is not None
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "test_huge_size.yenc",  # Larger than type allows
+        "test_huge_size_1TiB.yenc",  # Extremely large size (1 TiB)
+        "test_huge_size_1TiB_ypart.yenc",  # Offsets greater than file size
+        "test_ypart_invalid_range.yenc",  # ypart begin > end
+        "test_part_exceeds_limit.yenc",  # Part size > 10MB limit
+        "test_ypart_greater_size.yenc",  # Offsets greater than file size
+    ],
+)
+def test_invalid_size(filename: str):
+    data_plain = read_plain_yenc_file(filename)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.part_begin == 0
+    assert response.part_end == 0
+    assert response.part_size == 0
 
 
 def test_invalid_crc_chars():

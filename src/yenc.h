@@ -52,7 +52,8 @@
 #define YENC_MAX_TAIL_BYTES 256
 
 /* Prevent strange yEnc sizes */
-#define YENC_MAX_PART_SIZE (10*1024*1024)
+#define YENC_MAX_PART_SIZE (UINT64_C(10) * UINT64_C(1024) * UINT64_C(1024))
+#define YENC_MAX_FILE_SIZE (UINT64_C(500) * UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024))
 
 /* Minimum decoder internal buffer size */
 #define YENC_MIN_BUFFER_SIZE 1024
@@ -76,6 +77,7 @@ typedef struct {
 	Py_ssize_t file_size;
 	Py_ssize_t part;
 	Py_ssize_t part_begin;
+	Py_ssize_t part_end;
 	Py_ssize_t part_size;
 	Py_ssize_t end_size;
 	Py_ssize_t total;
