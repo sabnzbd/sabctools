@@ -75,8 +75,12 @@ def read_pickle(filename):
 def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, int, Optional[int]]:
     input = BytesIO(data)
     decoder = sabctools.Decoder(len(data))
+    assert not decoder
+    assert not len(decoder)
     n = input.readinto(decoder)
     decoder.process(n)
+    assert decoder
+    assert len(decoder)
     response = next(decoder)
     assert response
     assert response.status_code in (220, 222)
