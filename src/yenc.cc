@@ -1210,6 +1210,41 @@ static void Decoder_dealloc(Decoder *self)
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
+/**
+ * Boolean protocol implementation for Decoder.
+ *
+ * Returns true if there are any queued NNTPResponse objects in the
+ * internal deque, and false otherwise. This allows Decoder instances
+ * to be used in boolean contexts (e.g. if decoder:) in the same way
+ * as other Python collection types.
+ *
+ * @param self Decoder instance whose truth value is being queried.
+ * @return 1 if the internal deque is non-empty, 0 otherwise.
+ */
+static int Decoder_nb_bool(Decoder *self)
+{
+    if (!self->deque.empty()) {
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * Sequence protocol length implementation for Decoder.
+ *
+ * Reports the number of queued NNTPResponse objects currently stored
+ * in the internal deque, making len(decoder) behave like other Python
+ * collection types that expose their logical size via __len__.
+ *
+ * @param self Decoder instance whose length is being queried.
+ * @return Number of queued NNTPResponse objects as a Py_ssize_t.
+ */
+static Py_ssize_t Decoder_len(Decoder *self)
+{
+    return static_cast<Py_ssize_t>(self->deque.size());
+}
+
 Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size) {
     auto instance = self->response;
     if (!instance) {
@@ -1316,6 +1351,32 @@ static PyMethodDef Decoder_methods[] = {
     {NULL}
 };
 
+static PyNumberMethods Decoder_as_number = {
+    nullptr,                              // nb_add
+    nullptr,                              // nb_subtract
+    nullptr,                              // nb_multiply
+    nullptr,                              // nb_remainder
+    nullptr,                              // nb_divmod
+    nullptr,                              // nb_power
+    nullptr,                              // nb_negative
+    nullptr,                              // nb_positive
+    nullptr,                              // nb_absolute
+    (inquiry)Decoder_nb_bool,             // nb_bool
+};
+
+static PySequenceMethods Decoder_as_sequence = {
+    (lenfunc)Decoder_len,                 // sq_length
+    nullptr,                              // sq_concat
+    nullptr,                              // sq_repeat
+    nullptr,                              // sq_item
+    nullptr,                              // sq_slice
+    nullptr,                              // sq_ass_item
+    nullptr,                              // sq_ass_slice
+    nullptr,                              // sq_contains
+    nullptr,                              // sq_inplace_concat
+    nullptr,                              // sq_inplace_repeat
+};
+
 PyTypeObject DecoderType = {
     PyVarObject_HEAD_INIT(nullptr, 0)
     "sabctols.Decoder",                   // tp_name
@@ -1327,8 +1388,8 @@ PyTypeObject DecoderType = {
     nullptr,                              // tp_setattr
     nullptr,                              // tp_compare / tp_reserved
     nullptr,                              // tp_repr
-    nullptr,                              // tp_as_number
-    nullptr,                              // tp_as_sequence
+    &Decoder_as_number,                   // tp_as_number
+    &Decoder_as_sequence,                 // tp_as_sequence
     nullptr,                              // tp_as_mapping
     nullptr,                              // tp_hash
     nullptr,                              // tp_call
