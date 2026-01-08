@@ -1210,6 +1210,17 @@ static void Decoder_dealloc(Decoder *self)
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
+/**
+ * Boolean protocol implementation for Decoder.
+ *
+ * Returns true if there are any queued NNTPResponse objects in the
+ * internal deque, and false otherwise. This allows Decoder instances
+ * to be used in boolean contexts (e.g. if decoder:) in the same way
+ * as other Python collection types.
+ *
+ * @param self Decoder instance whose truth value is being queried.
+ * @return 1 if the internal deque is non-empty, 0 otherwise.
+ */
 static int Decoder_nb_bool(Decoder *self)
 {
     if (!self->deque.empty()) {
@@ -1219,6 +1230,16 @@ static int Decoder_nb_bool(Decoder *self)
     return 0;
 }
 
+/**
+ * Sequence protocol length implementation for Decoder.
+ *
+ * Reports the number of queued NNTPResponse objects currently stored
+ * in the internal deque, making len(decoder) behave like other Python
+ * collection types that expose their logical size via __len__.
+ *
+ * @param self Decoder instance whose length is being queried.
+ * @return Number of queued NNTPResponse objects as a Py_ssize_t.
+ */
 static Py_ssize_t Decoder_len(Decoder *self)
 {
     return static_cast<Py_ssize_t>(self->deque.size());
