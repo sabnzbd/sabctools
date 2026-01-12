@@ -63,7 +63,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.0
+        uses: pypa/cibuildwheel@v3.3.1
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v6
         with:
