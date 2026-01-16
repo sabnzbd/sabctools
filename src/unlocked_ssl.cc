@@ -29,6 +29,7 @@ static int (*SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
 static int (*SSL_get_error)(void*, int) = NULL;
 static int (*SSL_get_shutdown)(void*) = NULL;
 static PyObject *SSLWantReadError = NULL;
+static PyObject *SSLWantWriteError = NULL;
 static PyObject *SSLSocketType = NULL;
 
 typedef struct {
@@ -102,6 +103,9 @@ void openssl_init() {
     SSLWantReadError = PyObject_GetAttrString(_ssl_module, "SSLWantReadError");
     if(!SSLWantReadError) goto cleanup;
 
+    SSLWantWriteError = PyObject_GetAttrString(_ssl_module, "SSLWantWriteError");
+    if(!SSLWantWriteError) goto cleanup;
+
 #if defined(_WIN32) || defined(__CYGWIN__)
 #ifdef _M_ARM64
     openssl_handle = GetModuleHandle(TEXT("libssl-3-arm64.dll"));
@@ -139,6 +143,7 @@ cleanup:
     Py_XDECREF(_ssl_module);
     if (!openssl_linked()) {
         Py_XDECREF(SSLWantReadError);
+        Py_XDECREF(SSLWantWriteError);
         Py_XDECREF(SSLSocketType);
     }
 }
@@ -148,6 +153,7 @@ bool openssl_linked() {
         SSL_get_error &&
         SSL_get_shutdown &&
         SSLWantReadError &&
+        SSLWantWriteError &&
         SSLSocketType;
 }
 
@@ -224,7 +230,10 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
 
     if (count == 0) {
         if (err.ssl == SSL_ERROR_WANT_READ) {
-            PyErr_SetString(SSLWantReadError, "Need more data");
+            PyErr_SetString(SSLWantReadError, "The operation did not complete (read)");
+        }
+        else if (err.ssl == SSL_ERROR_WANT_WRITE) {
+            PyErr_SetString(SSLWantWriteError, "The operation did not complete (write)");
         } else {
             // Raise general error, as all errors that are left indicate fatal errors
             // The calling code will have to establish a new connection
