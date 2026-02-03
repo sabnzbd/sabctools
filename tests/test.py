@@ -4,7 +4,6 @@ import sabctools
 import socket
 import time
 
-
 hostname = "eunews.frugalusenet.com"
 context = ssl.create_default_context()
 
