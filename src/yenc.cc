@@ -362,10 +362,11 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->has_part = true;
         instance->body = true;
         line.remove_prefix(6);
-        extract_int(line, " begin=", instance->part_begin);
-        extract_int(line, " end=", instance->part_end);
-        // Get the size and sanity check the values
-        instance->part_size = instance->part_end - instance->part_begin + 1;
+        if (extract_int(line, " begin=", instance->part_begin) &&
+            extract_int(line, " end=", instance->part_end)) {
+            // Get the size and sanity check the values
+            instance->part_size = instance->part_end - instance->part_begin + 1;
+        }
         if (instance->part_size > 0 &&
             instance->part_size <= YENC_MAX_PART_SIZE &&
             instance->part_end <= instance->file_size ) {

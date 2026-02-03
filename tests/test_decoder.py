@@ -45,13 +45,13 @@ def test_bad_crc():
 
 def test_bad_crc_end():
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")
-    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain)
+    _, _, _, _, _, crc = sabctools_yenc_wrapper(data_plain)
     assert crc is None
 
 
 def test_no_filename():
     data_plain = read_plain_yenc_file("test_no_name.yenc")
-    (_, filename, _, _, _, _) = sabctools_yenc_wrapper(data_plain)
+    _, filename, _, _, _, _ = sabctools_yenc_wrapper(data_plain)
     assert filename is None
 
 
@@ -91,7 +91,7 @@ def test_ref_counts():
 
     # Test further processing
     data_plain = read_plain_yenc_file("test_bad_crc_end.yenc")
-    (_, _, _, _, _, crc) = sabctools_yenc_wrapper(data_plain)
+    _, _, _, _, _, crc = sabctools_yenc_wrapper(data_plain)
     assert crc is None
     assert sys.getrefcount(data_plain) == expected_refcount
 
