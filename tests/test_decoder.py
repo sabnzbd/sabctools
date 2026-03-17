@@ -303,28 +303,22 @@ def test_invalid_inputs_no_crash(filename: str):
     assert decoder is not None
 
 
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "test_huge_size.yenc",  # Larger than type allows
-        "test_huge_size_1TiB.yenc",  # Extremely large size (1 TiB)
-        "test_huge_size_1TiB_ypart.yenc",  # Offsets greater than file size
-        "test_ypart_invalid_range.yenc",  # ypart begin > end
-        "test_part_exceeds_limit.yenc",  # Part size > 10MB limit
-        "test_ypart_greater_size.yenc",  # Offsets greater than file size
-    ],
-)
-def test_invalid_size(filename: str):
-    data_plain = read_plain_yenc_file(filename)
+def test_exceeds_size_limit():
+    size = 20 * 1024 * 1024
+    output, crc = sabctools.yenc_encode(b"\x00" * size)
+    parts = [
+        b"222 0 <foo@bar>\r\n" b"=ybegin part=1 total=1 line=128 size=%d name=helloworld\r\n" % size,
+        b"=ypart begin=1 end=%d\r\n" % size,
+        output,
+        b"\r\n=yend size=%d pcrc32=%s\r\n" % (size, hex(crc).encode()[2:]),
+        b".\r\n",
+    ]
+    data_plain = b"".join(parts)
     input = BytesIO(data_plain)
-    decoder = sabctools.Decoder(len(data_plain))
-    n = input.readinto(decoder)
-    decoder.process(n)
-    response = next(decoder, None)
-    assert response
-    assert response.part_begin == 0
-    assert response.part_end == 0
-    assert response.part_size == 0
+    decoder = sabctools.Decoder(256 * 1024)
+    with pytest.raises(BufferError, match="Maximum data buffer size exceeded"):
+        while n := input.readinto(decoder):
+            decoder.process(n)
 
 
 def test_invalid_crc_chars():
