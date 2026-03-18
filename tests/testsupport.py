@@ -124,6 +124,10 @@ def python_yenc(data_plain):
 
     # Detect begin and ending
     begin = end = size = 0
+    if ybegin:
+        # not multi-part
+        if not ybegin.get("part"):
+            size = int(ybegin.get("size"))
     if ypart:
         if begin := ypart.get("begin"):
             begin = int(begin)
