@@ -64,6 +64,11 @@ jobs:
         with:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
+      - name: Install Python
+        uses: actions/setup-python@v6
+        if: runner.os == 'macOS'
+        with:
+          python-version: "3.13"
       - name: Build source distribution
         if: runner.os == 'macOS'
         run: |
