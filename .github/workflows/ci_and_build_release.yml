@@ -8,13 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Black Code Formatter
-        uses: lgeiger/black-action@master
-        with:
-          args: >
-            .
-            --check
-            --diff
+      - run: pip install black
+      - run: >
+          black
+          .
+          --check
+          --diff
 
   ci:
     name: Tests ${{ matrix.os }} - Python ${{ matrix.python-version }}
@@ -58,40 +57,59 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        name: Install Python
-        with:
-          python-version: "3.13"
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4.0
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.0
         with:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
-      # The action/upload-artifact only allows unique filenames for whole run
-      # Need to build it on every arch otherwise twine fails
       - name: Build source distribution
+        if: runner.os == 'macOS'
         run: |
           pip install build
           python -m build --sdist
       - name: Upload source distribution artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.0
         if: runner.os == 'macOS'
         with:
           path: ./dist/*.tar.gz
           name: Source distribution
+
+  publish:
+    name: Publish release to PyPI
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7.0.0
+        with:
+          path: dist/
+          merge-multiple: true
       - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: '__token__'
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_KEY }}
-        if: env.TWINE_PASSWORD && startsWith(github.ref, 'refs/tags/')
-        run: |
-          pip install twine
-          twine upload --skip-existing ./dist/*.tar.gz ./wheelhouse/*.whl
+        uses: pypa/gh-action-pypi-publish@v1.12.3
+        with:
+          skip-existing: true
+
+  github_release:
+    name: Publish release to GitHub
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download source distribution artifact
+        uses: actions/download-artifact@v7.0.0
+        with:
+          name: Source distribution
+          path: dist/
       - name: Publish release to GitHub
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: false
