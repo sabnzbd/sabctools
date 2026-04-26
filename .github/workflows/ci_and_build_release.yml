@@ -114,7 +114,7 @@ jobs:
           name: Source distribution
           path: dist/
       - name: Publish release to GitHub
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: false
