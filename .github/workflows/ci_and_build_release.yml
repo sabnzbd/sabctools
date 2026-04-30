@@ -1,6 +1,7 @@
 name: Tests and build wheels
 
 on: [push, pull_request]
+permissions: read-all
 
 jobs:
   black:
@@ -108,14 +109,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
       - name: Download source distribution artifact
         uses: actions/download-artifact@v8.0.1
         with:
           name: Source distribution
           path: dist/
-      - name: Publish release to GitHub
-        uses: softprops/action-gh-release@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: false
-          files: ./dist/*.tar.gz
+      - name: Publish release to GitHub (gh)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" ./dist/*.tar.gz \
+            --title "${{ github.ref_name }}" \
+            --notes "Release ${{ github.ref_name }}"
