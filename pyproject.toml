@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -28,6 +28,8 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/sabnzbd/sabctools/"
+Source = "https://github.com/sabnzbd/sabctools/"
+Issues = "https://github.com/sabnzbd/sabctools/issues"
 
 [dependency-groups]
 test = [
