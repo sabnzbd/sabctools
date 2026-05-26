@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     {name = "Safihre", email = "safihre@sabnzbd.org"},
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "GPL-2.0-or-later"
 license-files = ["LICENSE.md"]
 classifiers = [
@@ -41,7 +41,7 @@ test = [
 
 [tool.black]
 line-length = 120
-target-version = ['py39']
+target-version = ['py310']
 include = '(?:src|tests)\/.*\.pyi?'
 
 [tool.cibuildwheel]
