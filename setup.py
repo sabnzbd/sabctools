@@ -21,25 +21,37 @@ import platform
 import re
 import tempfile
 import shutil
-from setuptools import distutils
-from distutils.ccompiler import CCompiler
-from distutils.errors import CompileError
+import logging
 from typing import Type
 from contextlib import closing, ExitStack
 
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
-from distutils import log
+
+# distutils was removed from the stdlib in Python 3.12; use the setuptools-vendored copy.
+from setuptools._distutils.ccompiler import CCompiler
+
+# Depending on SETUPTOOLS_USE_DISTUTILS, the compiler may raise either the vendored or
+# the stdlib CompileError (distinct classes), so catch both in the probes below.
+from setuptools._distutils.errors import CompileError as VendoredCompileError
+from distutils.errors import CompileError as StdlibCompileError
+
+# Plain INFO-level logger
+log = logging.getLogger("sabctools.setup")
+log.setLevel(logging.INFO)
 
 
 def autoconf_check(
-    compiler: Type[CCompiler], include_check: str = None, define_check: str = None, flag_check: str = None
+    compiler: Type[CCompiler],
+    include_check: str = None,
+    define_check: str = None,
+    flag_check: str = None,
 ):
     """A makeshift Python version of the autoconf checks"""
     with ExitStack() as stack:
         tmpdir = tempfile.mkdtemp()
         stack.callback(shutil.rmtree, tmpdir)
-        (tmp_fd, tmp_path) = tempfile.mkstemp(suffix=".cc", prefix="sabctools_", dir=tmpdir)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".cc", prefix="sabctools_", dir=tmpdir)
 
         with closing(os.fdopen(tmp_fd, "w")) as f:
             if include_check:
@@ -64,7 +76,7 @@ def autoconf_check(
             log.info("==> Please ignore any errors shown below!")
             compiler.compile([tmp_path], output_dir=tmpdir, extra_postargs=extra_postargs)
             log.info("==> Success!")
-        except CompileError:
+        except (VendoredCompileError, StdlibCompileError):
             log.info("==> Not available!")
             return False
 
