@@ -56,8 +56,10 @@ archs = ["universal2"]
 build = "cp314-*"
 
 [tool.cibuildwheel.windows]
-archs = ["AMD64", "ARM64"]
+archs = ["native"]
 build = "cp314-*"
+# Skip wheel repair: SABnzbd already bundles the required runtime DLLs
+repair-wheel-command = ""
 
 [tool.setuptools]
 packages = ["sabctools"]
