@@ -45,7 +45,7 @@ target-version = ['py310']
 include = '(?:src|tests)\/.*\.pyi?'
 
 [tool.cibuildwheel]
-skip = "*i686*"
+skip = "*i686* *t-*"
 test-skip = "*"
 
 [tool.cibuildwheel.linux]
@@ -53,9 +53,11 @@ archs = ["native"]
 
 [tool.cibuildwheel.macos]
 archs = ["universal2"]
+build = "cp314-*"
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64", "ARM64"]
+build = "cp314-*"
 
 [tool.setuptools]
 packages = ["sabctools"]
