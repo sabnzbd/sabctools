@@ -82,6 +82,12 @@ static PyMethodDef sabctools_methods[] = {
         METH_O,
         "bytearray_malloc(size)"
     },
+    {
+        "rarfile_rar3sha1_corrupt",
+        rarfile_rar3sha1_corrupt,
+        METH_VARARGS,
+        "rarfile_rar3sha1_corrupt(data, dpos)"
+    },
     {NULL, NULL, 0, NULL}
 };
 

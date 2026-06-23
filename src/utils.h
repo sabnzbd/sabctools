@@ -23,4 +23,6 @@
 
 PyObject* bytearray_malloc(PyObject *, PyObject*);
 
+PyObject* rarfile_rar3sha1_corrupt(PyObject *self, PyObject *args);
+
 #endif //SABCTOOLS_UTILS_H
