@@ -17,13 +17,6 @@ def crc32_zero_unpad(crc1: int, length: int) -> int: ...
 def sparse(file: Union[IO, int], length: int) -> None: ...
 def bytearray_malloc(size: int) -> bytearray: ...
 def rarfile_rar3_s2k(pwd, salt) -> tuple[bytes, bytes]: ...
-def rarfile_rar3_loop(sha1, seed: bytearray, base: int) -> int:
-    """Process one RAR3 string-to-key outer loop (0x4000 iterations).
-
-    Feeds `seed` and a 3-byte little-endian counter into `sha1.update` 0x4000
-    times, applying the buggy RAR3 SHA1 block corruption to `seed` in place,
-    and returns the IV byte (`sha1.digest()[19]`) captured on the first iteration.
-    """
 
 class EncodingFormat(IntEnum):
     YENC = 1
