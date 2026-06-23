@@ -36,8 +36,7 @@ test = [
     "pytest",
     "chardet",
     "jaraco.functools",
-    "portend",
-    "rarfile"
+    "portend"
 ]
 
 [tool.black]
