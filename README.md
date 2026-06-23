@@ -29,8 +29,8 @@ On other platforms the same is achieved by calling `truncate`.
 Use `sabctools.bytearray_malloc(size)` to get an `bytearray` that is uninitialized (not set to `0`'s). 
 This is much faster than the built-in `bytearray(size)` because the data inside the new `bytearray` will be whatever is present in the memory block.
 
-Use `sabctools.rarfile_rar3sha1_corrupt` as a native replacement for `rarfile` via `rarfile.Rar3Sha1._corrupt = lambda self, data, dpos: sabctools.rarfile_rar3sha1_corrupt(data, dpos)`.   
-It provides a significant speed increase for verifying RAR3 passwords when the length exceeds 28 characters.
+Use `sabctools.rarfile_rar3_s2k` as a native replacement for `rarfile` via `rarfile.rar3_s2k = sabctools.rarfile_rar3_s2k`.   
+It provides a significant speed increase for decrypting RAR4 headers when the password length exceeds 28 characters.
 
 # Installing
 
