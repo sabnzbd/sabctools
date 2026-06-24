@@ -148,11 +148,13 @@ PyObject* rarfile_rar3_loop(PyObject *self, PyObject *args)
         unsigned long bufpos = nbytes & 63;
         nbytes += static_cast<unsigned long long>(seed_len);
         if (seed_len > 64) {
+            Py_BEGIN_ALLOW_THREADS
             Py_ssize_t dpos = 64 - static_cast<Py_ssize_t>(bufpos);
             while (dpos + 64 <= seed_len) {
                 rar3_corrupt_block(seed_ptr + dpos);
                 dpos += 64;
             }
+            Py_END_ALLOW_THREADS
         }
 
         const unsigned int x = base + j;
