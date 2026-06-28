@@ -109,13 +109,13 @@ PyObject* rarfile_rar3_loop(PyObject *self, PyObject *args)
     Py_ssize_t seed_len = seed_view.len;
 
     /* reusable 3-byte object */
-    PyObject *cnt = PyBytes_FromStringAndSize(NULL, 3);
+    PyObject *cnt = PyByteArray_FromStringAndSize(NULL, 3);
     if (!cnt) {
         PyBuffer_Release(&seed_view);
         return NULL;
     }
 
-    char *cnt_ptr = PyBytes_AS_STRING(cnt);
+    char *cnt_ptr = PyByteArray_AS_STRING(cnt);
     unsigned char iv = 0;
     PyObject *result;
     PyObject *d;
