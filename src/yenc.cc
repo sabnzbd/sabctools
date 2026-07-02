@@ -357,6 +357,7 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
 	        line.remove_prefix(pos + 6);
             // Strip trailing whitespace/null from filename
             if ((pos = line.find_last_not_of('\0')) != std::string::npos) {
+                Py_XDECREF(instance->file_name);
                 instance->file_name = decode_utf8_with_fallback(line.substr(0, pos + 1));
             }
 	    }
@@ -420,7 +421,6 @@ static void NNTPResponse_append_line(NNTPResponse* instance, std::string_view li
 
     if (instance->lines == nullptr) {
         instance->lines = PyList_New(0);
-        Py_INCREF(instance->lines);
     }
 
     PyList_Append(instance->lines, py_str);
@@ -436,9 +436,10 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
 {
     Py_XDECREF(self->decoder);
     Py_XDECREF(self->data);
-    Py_XDECREF(self->file_name);
     Py_XDECREF(self->lines);
     Py_XDECREF(self->format);
+    Py_XDECREF(self->file_name);
+    Py_XDECREF(self->message);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -739,6 +740,7 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
             trim_while(line, [](const unsigned char c){ return std::isspace(c); }); // skip spaces after permissions
 
             // The rest of the line is the filename
+            Py_XDECREF(instance->file_name);
             instance->file_name = decode_utf8_with_fallback(line);
 
             instance->body = true;
@@ -887,6 +889,7 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
         if (instance->format == nullptr) {
             if (!instance->status_code && line.length() >= 3) {
                 // Store the full command response line
+                Py_XDECREF(instance->message);
                 instance->message = decode_utf8_with_fallback(line);
                 // First line should be NNTP status code (220, 222, 223, etc.)
                 if (!extract_int(line, "", instance->status_code)
@@ -1180,16 +1183,17 @@ static int Decoder_init(Decoder *self, PyObject *args, PyObject *kwds)
     if (size > YENC_MAX_PART_SIZE)
         size = YENC_MAX_PART_SIZE;
 
+    new (&self->deque) std::deque<NNTPResponse*>();
     self->response = nullptr;
     self->data = static_cast<char *>(malloc(size));
     self->size = size;
     self->consumed = 0;
     self->position = 0;
     if (!self->data) {
+        self->deque.~deque();
         PyErr_NoMemory();
         return -1;
     }
-    new (&self->deque) std::deque<NNTPResponse*>();
 
     return 0;
 }
@@ -1207,6 +1211,7 @@ static void Decoder_dealloc(Decoder *self)
     // DECREF all remaining items
     for (NNTPResponse* item : self->deque)
         Py_XDECREF(item);
+    Py_XDECREF(self->response);
     self->deque.~deque();
     free(self->data);
     Py_TYPE(self)->tp_free((PyObject*)self);
