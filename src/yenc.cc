@@ -631,7 +631,6 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
             // Release buffer to resize
             PyBuffer_Release(&dst_buf);
             if (PyByteArray_Resize(instance->data, needed) == -1) {
-                PyBuffer_Release(&dst_buf);
                 return false;
             }
 
