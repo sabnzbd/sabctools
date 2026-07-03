@@ -30,7 +30,7 @@ static int (*SSL_get_error)(void*, int) = NULL;
 static int (*SSL_get_shutdown)(void*) = NULL;
 static PyObject *SSLWantReadError = NULL;
 static PyObject *SSLWantWriteError = NULL;
-static PyObject *SSLSocketType = NULL;
+static PyTypeObject *SSLSocketType = NULL;
 
 typedef struct {
     int ssl; /* last seen error from SSL */
@@ -156,6 +156,7 @@ void openssl_init() {
     PyObject *ssl_module = NULL;
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
+    PyObject *ssl_socket_type = NULL;
     #if defined(_WIN32) || defined(__CYGWIN__)
     HMODULE openssl_handle = NULL;
     #else
@@ -168,8 +169,9 @@ void openssl_init() {
     _ssl_module = PyImport_ImportModule("_ssl");
     if(!_ssl_module) goto cleanup;
 
-    SSLSocketType = PyObject_GetAttrString(ssl_module, "SSLSocket");
-    if(!SSLSocketType) goto cleanup;
+    ssl_socket_type = PyObject_GetAttrString(ssl_module, "SSLSocket");
+    if(!PyType_Check(ssl_socket_type)) goto cleanup;
+    SSLSocketType = reinterpret_cast<PyTypeObject *>(ssl_socket_type);
 
     SSLWantReadError = PyObject_GetAttrString(_ssl_module, "SSLWantReadError");
     if(!SSLWantReadError) goto cleanup;
@@ -343,6 +345,11 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
 
     // Parse input
     if (!PyArg_ParseTuple(args, "O!w*:unlocked_ssl_recv_into", SSLSocketType, &ssl_socket, &Py_buffer)) {
+        return NULL;
+    }
+
+    if (!PyObject_TypeCheck(ssl_socket, SSLSocketType)) {
+        PyErr_Format(PyExc_TypeError, "argument 1 must be %s", SSLSocketType->tp_name);
         return NULL;
     }
 
