@@ -377,6 +377,5 @@ def test_parsing_crc(hex: str, expected: int):
 
 def test_no_reinitialization():
     decoder = sabctools.Decoder(0)
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(RuntimeError, match="Decoder cannot be reinitialized"):
         decoder.__init__(100)
-    assert "Decoder cannot be reinitialized" in str(excinfo.value)
