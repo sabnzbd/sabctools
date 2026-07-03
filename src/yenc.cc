@@ -1159,6 +1159,12 @@ static PyObject* Decoder_iternext(Decoder *self)
 
 static int Decoder_init(Decoder *self, PyObject *args, PyObject *kwds)
 {
+    // __init__ may be called more than once. This object is not reinitializable.
+    if (self->data != nullptr) {
+        PyErr_SetString(PyExc_RuntimeError, "Decoder cannot be reinitialized");
+        return -1;
+    }
+
     Py_ssize_t size;
     if (!PyArg_ParseTuple(args, "n", &size))
         return -1;
@@ -1168,17 +1174,15 @@ static int Decoder_init(Decoder *self, PyObject *args, PyObject *kwds)
     if (size > YENC_MAX_PART_SIZE)
         size = YENC_MAX_PART_SIZE;
 
-    new (&self->deque) std::deque<NNTPResponse*>();
-    self->response = nullptr;
-    self->data = static_cast<char *>(malloc(size));
-    self->size = size;
-    self->consumed = 0;
-    self->position = 0;
+    self->data = static_cast<char*>(malloc(size));
     if (!self->data) {
-        self->deque.~deque();
         PyErr_NoMemory();
         return -1;
     }
+
+    self->size = size;
+    self->consumed = 0;
+    self->position = 0;
 
     return 0;
 }
@@ -1187,6 +1191,13 @@ static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 {
     auto* self = reinterpret_cast<Decoder *>(type->tp_alloc(type, 0));
     if (!self) return NULL;
+
+    new (&self->deque) std::deque<NNTPResponse*>();
+    self->response = nullptr;
+    self->data = nullptr;
+    self->size = 0;
+    self->consumed = 0;
+    self->position = 0;
 
     return reinterpret_cast<PyObject *>(self);
 }
