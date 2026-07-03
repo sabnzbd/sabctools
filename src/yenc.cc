@@ -1494,26 +1494,39 @@ bool yenc_init(PyObject *m) {
         {"UU", 1}
     };
     PyObject* encoding_enum = create_int_enum("EncodingFormat", encoding_entries, std::size(encoding_entries));
-    if (!encoding_enum) return false;
+    if (!encoding_enum)
+        goto error;
 
     ENCODING_FORMAT_YENC = PyObject_GetAttrString(encoding_enum, "YENC");
     ENCODING_FORMAT_UU = PyObject_GetAttrString(encoding_enum, "UU");
-    if (!ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU) {
-        Py_XDECREF(encoding_enum);
-        return false;
-    }
+    if (!ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU)
+        goto error;
 
     // Add objects to module
     Py_INCREF(&DecoderType);
+    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0) {
+        Py_DECREF(&DecoderType);
+        goto error;
+    }
+
     Py_INCREF(&NNTPResponseType);
-    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0 ||
-        PyModule_AddObject(m, "NNTPResponse", reinterpret_cast<PyObject *>(&NNTPResponseType)) < 0 ||
-        PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0) {
-        Py_XDECREF(&DecoderType);
-        Py_XDECREF(&NNTPResponseType);
-        Py_XDECREF(encoding_enum);
-        return false;
+    if (PyModule_AddObject(m, "NNTPResponse", reinterpret_cast<PyObject *>(&NNTPResponseType)) < 0) {
+        Py_DECREF(&NNTPResponseType);
+        goto error;
+    }
+
+    // Steals reference to encoding_enum
+    if (PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0) {
+        goto error;
     }
 
     return true;
+
+error:
+    Py_XDECREF(encoding_enum);
+    Py_XDECREF(ENCODING_FORMAT_YENC);
+    Py_XDECREF(ENCODING_FORMAT_UU);
+    ENCODING_FORMAT_YENC = nullptr;
+    ENCODING_FORMAT_UU = nullptr;
+    return false;
 }
