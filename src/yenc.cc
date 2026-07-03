@@ -415,16 +415,26 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
  * @param instance Decoder instance whose lines list will be appended to.
  * @param line     Line contents without the trailing CRLF.
  */
-static void NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
+static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
     auto py_str = decode_utf8_with_fallback(line);
-    if (!py_str) return;
+    if (!py_str)
+        return 0; // empty lines are ignored
 
     if (instance->lines == nullptr) {
         instance->lines = PyList_New(0);
+        if (!instance->lines) {
+            Py_DECREF(py_str);
+            return -1;
+        }
     }
 
-    PyList_Append(instance->lines, py_str);
+    if (PyList_Append(instance->lines, py_str) < 0) {
+        Py_DECREF(py_str);
+        return -1;
+    }
+
     Py_DECREF(py_str);
+    return 0;
 }
 
 /**
@@ -905,7 +915,8 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
 
         if (instance->format == nullptr) {
             // Format is still unknown so record lines
-            NNTPResponse_append_line(instance, line);
+            if (NNTPResponse_append_line(instance, line) < 0)
+                return -1;
         } else if (instance->format == ENCODING_FORMAT_YENC) {
             NNTPResponse_process_yenc_header(instance, line);
             if (instance->body) {
