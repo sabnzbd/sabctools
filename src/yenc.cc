@@ -1437,20 +1437,6 @@ struct EnumEntry {
     long value;
 };
 
-// Add a key, value to a dictionary
-static bool add_member(PyObject* dict, const char* name, PyObject* value) {
-    if (!dict || !name || !value) return false;
-
-    Py_INCREF(value);
-    if (PyDict_SetItemString(dict, name, value) < 0) {
-        Py_DECREF(value);
-        return false;
-    }
-    Py_DECREF(value);
-
-    return true;
-}
-
 // Create an int enum for a list of entries
 static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries, std::size_t count) {
     if (!enum_name || !entries) return nullptr;
@@ -1461,10 +1447,20 @@ static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries
     // Range over the entries
     for (std::size_t i = 0; i < count; ++i) {
         const auto& e = entries[i];
-        if (!add_member(members, e.name, PyLong_FromLong(e.value))) {
+
+        PyObject* value = PyLong_FromLong(e.value);
+        if (!value) {
             Py_DECREF(members);
             return nullptr;
         }
+
+        if (PyDict_SetItemString(members, e.name, value) < 0) {
+            Py_DECREF(value);
+            Py_DECREF(members);
+            return nullptr;
+        }
+
+        Py_DECREF(value);
     }
 
     PyObject* enum_module = PyImport_ImportModule("enum");
