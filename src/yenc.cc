@@ -414,6 +414,7 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
  *
  * @param instance Decoder instance whose lines list will be appended to.
  * @param line     Line contents without the trailing CRLF.
+ * @return 0 on success, or -1 on error
  */
 static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
     auto py_str = decode_utf8_with_fallback(line);
