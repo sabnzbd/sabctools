@@ -215,9 +215,13 @@ cleanup:
     Py_XDECREF(ssl_module);
     Py_XDECREF(_ssl_module);
     if (!openssl_linked()) {
-        Py_XDECREF(SSLWantReadError);
-        Py_XDECREF(SSLWantWriteError);
-        Py_XDECREF(SSLSocketType);
+        Py_CLEAR(SSLWantReadError);
+        Py_CLEAR(SSLWantWriteError);
+        Py_CLEAR(SSLSocketType);
+        SSL_read_ex = NULL;
+        SSL_get_error = NULL;
+        SSL_get_shutdown = NULL;
+        PyErr_Clear(); // linking is optional; any failure results in openssl_linked=False
     }
 }
 
