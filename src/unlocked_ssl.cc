@@ -99,36 +99,56 @@ typedef enum {
     SOCKET_OPERATION_OK
 } timeout_state;
 
-static int
-get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
+static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 {
     *out_sock = NULL;
+
     if (!obj->Socket) {
         return 0;
     }
-    PySocketSockObject *sock;
-#if PY_VERSION_HEX >= 0x030D0000 /* 3.13 */
+
+#if PY_VERSION_HEX >= 0x030D0000 // 3.13+
+    PySocketSockObject *sock = NULL;
+
     int res = PyWeakref_GetRef(obj->Socket, (PyObject **)&sock);
     if (res < 0) {
-        return -1; /* exception already set */
+        return -1; // exception already set
     }
     if (res == 0) {
-        return -1; /* dead weakref */
+        return -1; // dead weakref
     }
+
+    // sock is a now a NEW reference
+
     if (sock->sock_fd == INVALID_SOCKET) {
         Py_DECREF(sock);
+        PyErr_SetString(PyExc_ValueError, "Socket already closed");
         return -1;
     }
-#else
-    sock = (PySocketSockObject *)PyWeakref_GetObject(obj->Socket);
-    if ((PyObject *)sock == Py_None || sock->sock_fd == INVALID_SOCKET) {
-        *out_sock = NULL;
-        return -1;
-    }
-    Py_INCREF(sock);
-#endif
+
     *out_sock = sock;
     return 1;
+#else
+    PyObject *tmp = PyWeakref_GetObject(obj->Socket);
+
+    if (tmp == Py_None) {
+        return -1;
+    }
+
+    PySocketSockObject *sock = (PySocketSockObject *)tmp;
+
+    // Promote to an owned reference
+    Py_INCREF(sock);
+
+    if (sock->sock_fd == INVALID_SOCKET) {
+        Py_DECREF(sock);
+        PyErr_SetString(PyExc_ValueError, "Socket already closed");
+        return -1;
+    }
+
+    *out_sock = sock;
+    return 1;
+#endif
 }
 
 /* Linking to OpenSSL function used by Python */
