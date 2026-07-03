@@ -153,8 +153,6 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 
 /* Linking to OpenSSL function used by Python */
 void openssl_init() {
-    // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
-
     PyObject *ssl_module = NULL;
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
@@ -197,7 +195,9 @@ void openssl_init() {
     if (PyObject_HasAttrString(_ssl_module, "__file__")) {
         _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
         if(!_ssl_module_path) goto error;
-        openssl_handle = dlopen(PyUnicode_AsUTF8(_ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
+        const char *path = PyUnicode_AsUTF8(_ssl_module_path);
+        if(!path) goto error;
+        openssl_handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
     }
 
     if(!openssl_handle) goto error;
