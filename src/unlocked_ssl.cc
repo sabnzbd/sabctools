@@ -330,6 +330,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     Py_buffer Py_buffer;
     PyObject *retval = NULL;
     PyObject *blocking = NULL;
+    int is_blocking;
 
     if(!openssl_linked()) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
@@ -348,7 +349,12 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     }
 
     blocking = PyObject_CallMethod(ssl_socket, "getblocking", NULL);
-    if (blocking == Py_True) {
+    if (!blocking)
+        goto error; // call failed
+    is_blocking = PyObject_IsTrue(blocking);
+    if (is_blocking < 0)
+        goto error;
+    if (is_blocking) {
         PyErr_SetString(PyExc_ValueError, "Only non-blocking sockets are supported");
         goto error;
     }
