@@ -434,7 +434,6 @@ static void NNTPResponse_append_line(NNTPResponse* instance, std::string_view li
  */
 static void NNTPResponse_dealloc(NNTPResponse* self)
 {
-    Py_XDECREF(self->decoder);
     Py_XDECREF(self->data);
     Py_XDECREF(self->lines);
     Py_XDECREF(self->format);
@@ -922,19 +921,6 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
     return read;
 }
 
-static PyObject* NNTPResponse_iternext(NNTPResponse *instance)
-{
-    const auto deque_obj = reinterpret_cast<Decoder*>(instance->decoder);
-    if (!instance->decoder || deque_obj->deque.empty())
-        return NULL;  // StopIteration
-
-    NNTPResponse* item = deque_obj->deque.front();
-    deque_obj->deque.pop_front();
-    Py_INCREF(item);  // Return a new reference
-
-    return reinterpret_cast<PyObject*>(item);
-}
-
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
     size_t ret = len * 2    /* all characters escaped */
         + 2 /* allocation for offset and that a newline may occur early */
@@ -1007,10 +993,6 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
  *                 referenced for iteration
  */
 static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
-    // Iterator requires a reference back
-    instance->decoder = parent;
-    Py_INCREF(parent);
-
     // Initialise all members
     instance->data = nullptr;
     instance->lines = nullptr;
@@ -1105,7 +1087,7 @@ PyTypeObject NNTPResponseType = {
     nullptr,                             // tp_richcompare
     0,                                   // tp_weaklistoffset
     nullptr,                             // tp_iter
-    (iternextfunc)NNTPResponse_iternext, // tp_iternext
+    nullptr,                             // tp_iternext
     nullptr,                             // tp_methods
     NNTPResponse_members,                // tp_members
     NNTPResponse_gets_sets,              // tp_getset
@@ -1163,12 +1145,15 @@ static PyObject* Decoder_iter(Decoder *self)
 
 static PyObject* Decoder_iternext(Decoder *self)
 {
-    if (self->deque.empty())
-        return NULL;  // StopIteration
+    if (self->deque.empty()) {
+        PyErr_SetNone(PyExc_StopIteration);
+        return NULL;
+    }
 
     NNTPResponse* item = self->deque.front();
     self->deque.pop_front();
 
+    // Transfer ownership from deque to Python.
     return reinterpret_cast<PyObject*>(item);
 }
 
