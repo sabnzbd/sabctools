@@ -19,6 +19,8 @@
 #ifndef SABCTOOLS_UNLOCKED_SSL_H
 #define SABCTOOLS_UNLOCKED_SSL_H
 
+#define SABCTOOLS_PY_HEX(major, minor) (((major) << 24) | ((minor) << 16))
+
 #include <Python.h>
 #include <stdio.h>
 #include <fcntl.h>

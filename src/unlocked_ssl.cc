@@ -49,7 +49,7 @@ typedef struct {
     int socket_type;
     PyObject *owner; /* Python level "owner" passed to servername callback */
     PyObject *server_hostname;
-#if PY_VERSION_HEX >= 0x030F0000 /* 3.15 */
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 15)
     int got_eof_error;
 #else
     _PySSLError err; /* last seen error from various sources */
@@ -107,7 +107,7 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
         return 0;
     }
 
-#if PY_VERSION_HEX >= 0x030D0000 // 3.13+
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 13)
     PySocketSockObject *sock = NULL;
 
     int res = PyWeakref_GetRef(obj->Socket, (PyObject **)&sock);
@@ -276,7 +276,7 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
         } while (len > 0);
         err = _PySSL_errno(retval == 0, self->ssl, retval);
         Py_END_ALLOW_THREADS;
-#if PY_VERSION_HEX < 0x030F0000  /* 3.15 */
+#if PY_VERSION_HEX < SABCTOOLS_PY_HEX(3, 15)
         self->err = err;
 #endif
 
