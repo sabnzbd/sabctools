@@ -156,7 +156,6 @@ void openssl_init() {
     PyObject *ssl_module = NULL;
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
-    PyObject *ssl_socket_type = NULL;
     #if defined(_WIN32) || defined(__CYGWIN__)
     HMODULE openssl_handle = NULL;
     #else
@@ -169,9 +168,8 @@ void openssl_init() {
     _ssl_module = PyImport_ImportModule("_ssl");
     if(!_ssl_module) goto cleanup;
 
-    ssl_socket_type = PyObject_GetAttrString(ssl_module, "SSLSocket");
-    if(!PyType_Check(ssl_socket_type)) goto cleanup;
-    SSLSocketType = reinterpret_cast<PyTypeObject *>(ssl_socket_type);
+    SSLSocketType = reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(ssl_module, "SSLSocket"));
+    if(!SSLSocketType || !PyType_Check(SSLSocketType)) goto cleanup;
 
     SSLWantReadError = PyObject_GetAttrString(_ssl_module, "SSLWantReadError");
     if(!SSLWantReadError) goto cleanup;
@@ -196,30 +194,31 @@ void openssl_init() {
 
     if (PyObject_HasAttrString(_ssl_module, "__file__")) {
         _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
-        if(!_ssl_module_path) goto error;
+        if(!_ssl_module_path) goto cleanup;
         const char *path = PyUnicode_AsUTF8(_ssl_module_path);
-        if(!path) goto error;
+        if(!path) goto cleanup;
         openssl_handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
     }
 
-    if(!openssl_handle) goto error;
+    if(!openssl_handle) goto cleanup;
 
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
     *(void**)&SSL_get_shutdown = dlsym(openssl_handle, "SSL_get_shutdown");
-
-error:
-    if (!openssl_linked() && openssl_handle) dlclose(openssl_handle);
-    Py_XDECREF(_ssl_module_path);
 #endif
 
 cleanup:
     Py_XDECREF(ssl_module);
     Py_XDECREF(_ssl_module);
+    Py_XDECREF(_ssl_module_path);
     if (!openssl_linked()) {
-        Py_CLEAR(SSLWantReadError);
-        Py_CLEAR(SSLWantWriteError);
-        Py_CLEAR(SSLSocketType);
+        Py_XDECREF(SSLWantReadError);
+        Py_XDECREF(SSLWantWriteError);
+        Py_XDECREF(SSLSocketType);
+        SSLWantReadError = NULL;
+        SSLWantWriteError = NULL;
+        SSLSocketType = NULL;
+        openssl_handle = NULL;
         SSL_read_ex = NULL;
         SSL_get_error = NULL;
         SSL_get_shutdown = NULL;
