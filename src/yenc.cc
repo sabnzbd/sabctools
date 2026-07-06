@@ -1393,7 +1393,7 @@ static PySequenceMethods Decoder_as_sequence = {
 
 PyTypeObject DecoderType = {
     PyVarObject_HEAD_INIT(nullptr, 0)
-    "sabctols.Decoder",                   // tp_name
+    "sabctools.Decoder",                  // tp_name
     sizeof(Decoder),                      // tp_basicsize
     0,                                    // tp_itemsize
     (destructor)Decoder_dealloc,          // tp_dealloc
