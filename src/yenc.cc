@@ -993,18 +993,10 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
     return retval;
 }
 
-/**
- * Initializer for NNTPResponse instances used by Decoder.
- *
- * Binds the NNTPResponse to its owning Decoder and resets all parsing
- * and decoding fields to a consistent default state.
- *
- * @param instance Newly allocated NNTPResponse object to initialize
- * @param parent   Decoder object that owns this response and will be
- *                 referenced for iteration
- */
-static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
-    // Initialise all members
+static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+    auto* instance = reinterpret_cast<NNTPResponse *>(type->tp_alloc(type, 0));
+    if (!instance) return nullptr;
+
     instance->data = nullptr;
     instance->lines = nullptr;
     instance->format = nullptr;
@@ -1029,6 +1021,8 @@ static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
     instance->has_end = false;
     instance->has_emptyline = false;
     instance->has_baddata = false;
+
+    return reinterpret_cast<PyObject *>(instance);
 }
 
 /**
@@ -1102,6 +1096,14 @@ PyTypeObject NNTPResponseType = {
     nullptr,                             // tp_methods
     NNTPResponse_members,                // tp_members
     NNTPResponse_gets_sets,              // tp_getset
+    nullptr,                             // tp_base
+    nullptr,                             // tp_dict
+    nullptr,                             // tp_descr_get
+    nullptr,                             // tp_descr_set
+    0,                                   // tp_dictoffset
+    nullptr,                             // tp_init
+    PyType_GenericAlloc,                 // tp_alloc
+    NNTPResponse_new,                    // tp_new
 };
 
 /**
@@ -1262,10 +1264,9 @@ static Py_ssize_t Decoder_len(Decoder *self)
 Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size) {
     auto instance = self->response;
     if (!instance) {
-        instance = PyObject_New(NNTPResponse, &NNTPResponseType);
+        instance = reinterpret_cast<NNTPResponse *>(PyObject_CallObject(reinterpret_cast<PyObject *>(&NNTPResponseType), NULL));
         if (!instance) return -1;
         self->response = instance;
-        NNTPResponse_init(instance, reinterpret_cast<PyObject*>(self));
     }
 
     return NNTPResponse_decode_buffer(instance, data, size);;
