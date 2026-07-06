@@ -1520,9 +1520,7 @@ bool yenc_init(PyObject *m) {
 
 error:
     Py_XDECREF(encoding_enum);
-    Py_XDECREF(ENCODING_FORMAT_YENC);
-    Py_XDECREF(ENCODING_FORMAT_UU);
-    ENCODING_FORMAT_YENC = nullptr;
-    ENCODING_FORMAT_UU = nullptr;
+    Py_CLEAR(ENCODING_FORMAT_YENC);
+    Py_CLEAR(ENCODING_FORMAT_UU);
     return false;
 }
