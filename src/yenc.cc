@@ -420,7 +420,7 @@ static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view lin
 
     auto py_str = decode_utf8_with_fallback(line);
     if (!py_str)
-        return -1;
+        return 0; // lines which fail to decode are ignored
 
     if (instance->lines == nullptr) {
         instance->lines = PyList_New(0);
