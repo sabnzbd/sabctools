@@ -175,13 +175,11 @@ std::optional<uint32_t> parse_crc32(std::string_view crc32) {
  * because it can decode any byte sequence without error.
  * 
  * @param line String view containing the text to decode
- * @return PyObject* Unicode string, or nullptr if line is empty or all decoding attempts fail
+ * @return PyObject* Unicode string, or nullptr if all decoding attempts fail
  * 
  * Note: Clears Python errors internally when decoding fails.
  */
 static PyObject* decode_utf8_with_fallback(std::string_view line) {
-    if (line.empty()) return nullptr; // Ignore empty lines
-
     auto try_decode = [&](auto decoder, const char* errors = nullptr) -> PyObject* {
         PyObject* result = decoder(line.data(), line.size(), errors);
         if (!result) PyErr_Clear();
@@ -417,9 +415,12 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
  * @return 0 on success, or -1 on error
  */
 static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
+    if (line.empty())
+        return 0; // empty lines are ignored but not a failure
+
     auto py_str = decode_utf8_with_fallback(line);
     if (!py_str)
-        return 0; // empty lines are ignored
+        return -1;
 
     if (instance->lines == nullptr) {
         instance->lines = PyList_New(0);
