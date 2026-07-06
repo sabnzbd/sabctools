@@ -1159,7 +1159,6 @@ static PyObject* Decoder_iter(Decoder *self)
 static PyObject* Decoder_iternext(Decoder *self)
 {
     if (self->deque.empty()) {
-        PyErr_SetNone(PyExc_StopIteration);
         return NULL;
     }
 
