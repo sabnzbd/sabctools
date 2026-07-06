@@ -1500,22 +1500,15 @@ bool yenc_init(PyObject *m) {
         goto error;
 
     // Add objects to module
-    Py_INCREF(&DecoderType);
-    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0) {
-        Py_DECREF(&DecoderType);
+    if (PyModule_AddType(m, &DecoderType) < 0)
         goto error;
-    }
 
-    Py_INCREF(&NNTPResponseType);
-    if (PyModule_AddObject(m, "NNTPResponse", reinterpret_cast<PyObject *>(&NNTPResponseType)) < 0) {
-        Py_DECREF(&NNTPResponseType);
+    if (PyModule_AddType(m, &NNTPResponseType) < 0)
         goto error;
-    }
 
     // Steals reference to encoding_enum
-    if (PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0) {
+    if (PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0)
         goto error;
-    }
 
     return true;
 
