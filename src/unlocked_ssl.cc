@@ -208,16 +208,13 @@ void openssl_init() {
 #endif
 
 cleanup:
-    Py_XDECREF(ssl_module);
-    Py_XDECREF(_ssl_module);
-    Py_XDECREF(_ssl_module_path);
+    Py_CLEAR(ssl_module);
+    Py_CLEAR(_ssl_module);
+    Py_CLEAR(_ssl_module_path);
     if (!openssl_linked()) {
-        Py_XDECREF(SSLWantReadError);
-        Py_XDECREF(SSLWantWriteError);
-        Py_XDECREF(SSLSocketType);
-        SSLWantReadError = NULL;
-        SSLWantWriteError = NULL;
-        SSLSocketType = NULL;
+        Py_CLEAR(SSLWantReadError);
+        Py_CLEAR(SSLWantWriteError);
+        Py_CLEAR(SSLSocketType);
         openssl_handle = NULL;
         SSL_read_ex = NULL;
         SSL_get_error = NULL;
