@@ -36,7 +36,6 @@ PyObject *sparse(PyObject *self, PyObject *args)
 
     PyObject *Py_file_fileno = NULL;
     PyObject *Py_file_handle = NULL;
-    PyObject *Py_file_truncate = NULL;
 
     // Accept either a file object (with fileno()) or an integer file descriptor directly
     if (!PyArg_ParseTuple(args, "OL:sparse", &Py_file, &length))
@@ -125,12 +124,10 @@ PyObject *sparse(PyObject *self, PyObject *args)
 
     Py_XDECREF(Py_file_fileno);
     Py_XDECREF(Py_file_handle);
-    Py_XDECREF(Py_file_truncate);
     Py_RETURN_NONE;
 
 error:
     Py_XDECREF(Py_file_fileno);
     Py_XDECREF(Py_file_handle);
-    Py_XDECREF(Py_file_truncate);
     return NULL;
 }

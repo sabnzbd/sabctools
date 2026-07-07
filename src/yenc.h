@@ -67,7 +67,6 @@ PyObject* yenc_encode(PyObject *, PyObject*);
 typedef struct {
     PyObject_HEAD
 
-	PyObject *decoder; // reference to parent decoder
 	PyObject* data;
 	Py_ssize_t bytes_decoded;
 	Py_ssize_t bytes_read;
