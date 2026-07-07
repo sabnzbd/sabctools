@@ -242,6 +242,18 @@ def test_uu():
     assert response.crc == 0x6BC2917D
 
 
+def test_uu_no_filename():
+    data_plain = read_uu_file("logo_full.nntp")
+    data_plain = data_plain.replace(b"begin 644 logo-full.svg", b"begin 644")
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.file_name is None
+
+
 @pytest.mark.parametrize(
     "length",
     range(1, 46),

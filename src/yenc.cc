@@ -354,7 +354,7 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
 	    if ((pos = line.find(" name=")) != std::string::npos) {
 	        line.remove_prefix(pos + 6);
             // Strip trailing whitespace/null from filename
-            if ((pos = line.find_last_not_of('\0')) != std::string::npos) {
+            if ((pos = line.find_last_not_of(" \t\r\n\0")) != std::string::npos) {
                 Py_XDECREF(instance->file_name);
                 instance->file_name = decode_utf8_with_fallback(line.substr(0, pos + 1));
             }
@@ -749,9 +749,11 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
             trim_while(line, [](const unsigned char c){ return std::isdigit(c); }); // skip permissions
             trim_while(line, [](const unsigned char c){ return std::isspace(c); }); // skip spaces after permissions
 
-            // The rest of the line is the filename
-            Py_XDECREF(instance->file_name);
-            instance->file_name = decode_utf8_with_fallback(line);
+            // The rest of the line is the filename, strip trailing whitespace/null
+            if (std::string::size_type pos; (pos = line.find_last_not_of(" \t\r\n\0")) != std::string::npos) {
+                Py_XDECREF(instance->file_name);
+                instance->file_name = decode_utf8_with_fallback(line.substr(0, pos + 1));
+            }
 
             instance->body = true;
             return true;
