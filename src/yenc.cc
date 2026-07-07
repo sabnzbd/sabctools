@@ -175,13 +175,11 @@ std::optional<uint32_t> parse_crc32(std::string_view crc32) {
  * because it can decode any byte sequence without error.
  * 
  * @param line String view containing the text to decode
- * @return PyObject* Unicode string, or nullptr if line is empty or all decoding attempts fail
+ * @return PyObject* Unicode string, or nullptr if all decoding attempts fail
  * 
  * Note: Clears Python errors internally when decoding fails.
  */
 static PyObject* decode_utf8_with_fallback(std::string_view line) {
-    if (line.empty()) return nullptr; // Ignore empty lines
-
     auto try_decode = [&](auto decoder, const char* errors = nullptr) -> PyObject* {
         PyObject* result = decoder(line.data(), line.size(), errors);
         if (!result) PyErr_Clear();
@@ -414,17 +412,31 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
  *
  * @param instance Decoder instance whose lines list will be appended to.
  * @param line     Line contents without the trailing CRLF.
+ * @return 0 on success, or -1 on error
  */
-static void NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
+static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view line) {
+    if (line.empty())
+        return 0; // empty lines are ignored but not a failure
+
     auto py_str = decode_utf8_with_fallback(line);
-    if (!py_str) return;
+    if (!py_str)
+        return 0; // lines which fail to decode are ignored
 
     if (instance->lines == nullptr) {
         instance->lines = PyList_New(0);
+        if (!instance->lines) {
+            Py_DECREF(py_str);
+            return -1;
+        }
     }
 
-    PyList_Append(instance->lines, py_str);
+    if (PyList_Append(instance->lines, py_str) < 0) {
+        Py_DECREF(py_str);
+        return -1;
+    }
+
     Py_DECREF(py_str);
+    return 0;
 }
 
 /**
@@ -434,7 +446,6 @@ static void NNTPResponse_append_line(NNTPResponse* instance, std::string_view li
  */
 static void NNTPResponse_dealloc(NNTPResponse* self)
 {
-    Py_XDECREF(self->decoder);
     Py_XDECREF(self->data);
     Py_XDECREF(self->lines);
     Py_XDECREF(self->format);
@@ -622,7 +633,6 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
             // Release buffer to resize
             PyBuffer_Release(&dst_buf);
             if (PyByteArray_Resize(instance->data, needed) == -1) {
-                PyBuffer_Release(&dst_buf);
                 return false;
             }
 
@@ -906,7 +916,8 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
 
         if (instance->format == nullptr) {
             // Format is still unknown so record lines
-            NNTPResponse_append_line(instance, line);
+            if (NNTPResponse_append_line(instance, line) < 0)
+                return -1;
         } else if (instance->format == ENCODING_FORMAT_YENC) {
             NNTPResponse_process_yenc_header(instance, line);
             if (instance->body) {
@@ -920,19 +931,6 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
     }
 
     return read;
-}
-
-static PyObject* NNTPResponse_iternext(NNTPResponse *instance)
-{
-    const auto deque_obj = reinterpret_cast<Decoder*>(instance->decoder);
-    if (!instance->decoder || deque_obj->deque.empty())
-        return NULL;  // StopIteration
-
-    NNTPResponse* item = deque_obj->deque.front();
-    deque_obj->deque.pop_front();
-    Py_INCREF(item);  // Return a new reference
-
-    return reinterpret_cast<PyObject*>(item);
 }
 
 static inline size_t YENC_MAX_SIZE(size_t len, size_t line_size) {
@@ -996,22 +994,10 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
     return retval;
 }
 
-/**
- * Initializer for NNTPResponse instances used by Decoder.
- *
- * Binds the NNTPResponse to its owning Decoder and resets all parsing
- * and decoding fields to a consistent default state.
- *
- * @param instance Newly allocated NNTPResponse object to initialize
- * @param parent   Decoder object that owns this response and will be
- *                 referenced for iteration
- */
-static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
-    // Iterator requires a reference back
-    instance->decoder = parent;
-    Py_INCREF(parent);
+static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+    auto* instance = reinterpret_cast<NNTPResponse *>(type->tp_alloc(type, 0));
+    if (!instance) return nullptr;
 
-    // Initialise all members
     instance->data = nullptr;
     instance->lines = nullptr;
     instance->format = nullptr;
@@ -1036,6 +1022,8 @@ static void NNTPResponse_init(NNTPResponse* instance, PyObject* parent) {
     instance->has_end = false;
     instance->has_emptyline = false;
     instance->has_baddata = false;
+
+    return reinterpret_cast<PyObject *>(instance);
 }
 
 /**
@@ -1105,10 +1093,18 @@ PyTypeObject NNTPResponseType = {
     nullptr,                             // tp_richcompare
     0,                                   // tp_weaklistoffset
     nullptr,                             // tp_iter
-    (iternextfunc)NNTPResponse_iternext, // tp_iternext
+    nullptr,                             // tp_iternext
     nullptr,                             // tp_methods
     NNTPResponse_members,                // tp_members
     NNTPResponse_gets_sets,              // tp_getset
+    nullptr,                             // tp_base
+    nullptr,                             // tp_dict
+    nullptr,                             // tp_descr_get
+    nullptr,                             // tp_descr_set
+    0,                                   // tp_dictoffset
+    nullptr,                             // tp_init
+    PyType_GenericAlloc,                 // tp_alloc
+    NNTPResponse_new,                    // tp_new
 };
 
 /**
@@ -1163,17 +1159,25 @@ static PyObject* Decoder_iter(Decoder *self)
 
 static PyObject* Decoder_iternext(Decoder *self)
 {
-    if (self->deque.empty())
-        return NULL;  // StopIteration
+    if (self->deque.empty()) {
+        return NULL;
+    }
 
     NNTPResponse* item = self->deque.front();
     self->deque.pop_front();
 
+    // Transfer ownership from deque to Python.
     return reinterpret_cast<PyObject*>(item);
 }
 
 static int Decoder_init(Decoder *self, PyObject *args, PyObject *kwds)
 {
+    // __init__ may be called more than once. This object is not reinitializable.
+    if (self->data != nullptr) {
+        PyErr_SetString(PyExc_RuntimeError, "Decoder cannot be reinitialized");
+        return -1;
+    }
+
     Py_ssize_t size;
     if (!PyArg_ParseTuple(args, "n", &size))
         return -1;
@@ -1183,17 +1187,15 @@ static int Decoder_init(Decoder *self, PyObject *args, PyObject *kwds)
     if (size > YENC_MAX_PART_SIZE)
         size = YENC_MAX_PART_SIZE;
 
-    new (&self->deque) std::deque<NNTPResponse*>();
-    self->response = nullptr;
-    self->data = static_cast<char *>(malloc(size));
-    self->size = size;
-    self->consumed = 0;
-    self->position = 0;
+    self->data = static_cast<char*>(malloc(size));
     if (!self->data) {
-        self->deque.~deque();
         PyErr_NoMemory();
         return -1;
     }
+
+    self->size = size;
+    self->consumed = 0;
+    self->position = 0;
 
     return 0;
 }
@@ -1202,6 +1204,13 @@ static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 {
     auto* self = reinterpret_cast<Decoder *>(type->tp_alloc(type, 0));
     if (!self) return NULL;
+
+    new (&self->deque) std::deque<NNTPResponse*>();
+    self->response = nullptr;
+    self->data = nullptr;
+    self->size = 0;
+    self->consumed = 0;
+    self->position = 0;
 
     return reinterpret_cast<PyObject *>(self);
 }
@@ -1255,10 +1264,9 @@ static Py_ssize_t Decoder_len(Decoder *self)
 Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size) {
     auto instance = self->response;
     if (!instance) {
-        instance = PyObject_New(NNTPResponse, &NNTPResponseType);
+        instance = reinterpret_cast<NNTPResponse *>(PyObject_CallObject(reinterpret_cast<PyObject *>(&NNTPResponseType), NULL));
         if (!instance) return -1;
         self->response = instance;
-        NNTPResponse_init(instance, reinterpret_cast<PyObject*>(self));
     }
 
     return NNTPResponse_decode_buffer(instance, data, size);;
@@ -1386,7 +1394,7 @@ static PySequenceMethods Decoder_as_sequence = {
 
 PyTypeObject DecoderType = {
     PyVarObject_HEAD_INIT(nullptr, 0)
-    "sabctols.Decoder",                   // tp_name
+    "sabctools.Decoder",                  // tp_name
     sizeof(Decoder),                      // tp_basicsize
     0,                                    // tp_itemsize
     (destructor)Decoder_dealloc,          // tp_dealloc
@@ -1430,20 +1438,6 @@ struct EnumEntry {
     long value;
 };
 
-// Add a key, value to a dictionary
-static bool add_member(PyObject* dict, const char* name, PyObject* value) {
-    if (!dict || !name || !value) return false;
-
-    Py_INCREF(value);
-    if (PyDict_SetItemString(dict, name, value) < 0) {
-        Py_DECREF(value);
-        return false;
-    }
-    Py_DECREF(value);
-
-    return true;
-}
-
 // Create an int enum for a list of entries
 static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries, std::size_t count) {
     if (!enum_name || !entries) return nullptr;
@@ -1454,10 +1448,20 @@ static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries
     // Range over the entries
     for (std::size_t i = 0; i < count; ++i) {
         const auto& e = entries[i];
-        if (!add_member(members, e.name, PyLong_FromLong(e.value))) {
+
+        PyObject* value = PyLong_FromLong(e.value);
+        if (!value) {
             Py_DECREF(members);
             return nullptr;
         }
+
+        if (PyDict_SetItemString(members, e.name, value) < 0) {
+            Py_DECREF(value);
+            Py_DECREF(members);
+            return nullptr;
+        }
+
+        Py_DECREF(value);
     }
 
     PyObject* enum_module = PyImport_ImportModule("enum");
@@ -1487,26 +1491,30 @@ bool yenc_init(PyObject *m) {
         {"UU", 1}
     };
     PyObject* encoding_enum = create_int_enum("EncodingFormat", encoding_entries, std::size(encoding_entries));
-    if (!encoding_enum) return false;
+    if (!encoding_enum)
+        goto error;
 
     ENCODING_FORMAT_YENC = PyObject_GetAttrString(encoding_enum, "YENC");
     ENCODING_FORMAT_UU = PyObject_GetAttrString(encoding_enum, "UU");
-    if (!ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU) {
-        Py_XDECREF(encoding_enum);
-        return false;
-    }
+    if (!ENCODING_FORMAT_YENC || !ENCODING_FORMAT_UU)
+        goto error;
 
     // Add objects to module
-    Py_INCREF(&DecoderType);
-    Py_INCREF(&NNTPResponseType);
-    if (PyModule_AddObject(m, "Decoder", reinterpret_cast<PyObject *>(&DecoderType)) < 0 ||
-        PyModule_AddObject(m, "NNTPResponse", reinterpret_cast<PyObject *>(&NNTPResponseType)) < 0 ||
-        PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0) {
-        Py_XDECREF(&DecoderType);
-        Py_XDECREF(&NNTPResponseType);
-        Py_XDECREF(encoding_enum);
-        return false;
-    }
+    if (PyModule_AddType(m, &DecoderType) < 0)
+        goto error;
+
+    if (PyModule_AddType(m, &NNTPResponseType) < 0)
+        goto error;
+
+    // Steals reference to encoding_enum
+    if (PyModule_AddObject(m, "EncodingFormat", encoding_enum) < 0)
+        goto error;
 
     return true;
+
+error:
+    Py_XDECREF(encoding_enum);
+    Py_CLEAR(ENCODING_FORMAT_YENC);
+    Py_CLEAR(ENCODING_FORMAT_UU);
+    return false;
 }

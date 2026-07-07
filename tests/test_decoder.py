@@ -373,3 +373,9 @@ def test_parsing_crc(hex: str, expected: int):
     response = next(decoder, None)
     assert response
     assert response.crc_expected == expected
+
+
+def test_no_reinitialization():
+    decoder = sabctools.Decoder(0)
+    with pytest.raises(RuntimeError, match="Decoder cannot be reinitialized"):
+        decoder.__init__(100)
