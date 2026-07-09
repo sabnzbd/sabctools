@@ -311,6 +311,18 @@ def test_unlocked_ssl_recv_into_bulk_response(client):
     pytest.fail("All TLS reads were smaller than 16KB")
 
 
+def test_read_after_close(client):
+    size = 131072
+    buffer = bytearray(8192)
+
+    client.sendall(b"\xff" * size)
+
+    select.select([client], [], [])
+    client.close()
+    with pytest.raises(ValueError, match="Could not find _sslobj attribute"):
+        sabctools.unlocked_ssl_recv_into(client, buffer)
+
+
 #
 def test_unlocked_ssl_recv_into_blocking_socket_fails(client, buffer):
     with pytest.raises(ValueError, match="Only non-blocking sockets are supported"):

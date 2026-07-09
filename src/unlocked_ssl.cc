@@ -30,7 +30,7 @@ static int (*SSL_get_error)(void*, int) = NULL;
 static int (*SSL_get_shutdown)(void*) = NULL;
 static PyObject *SSLWantReadError = NULL;
 static PyObject *SSLWantWriteError = NULL;
-static PyObject *SSLSocketType = NULL;
+static PyTypeObject *SSLSocketType = NULL;
 
 typedef struct {
     int ssl; /* last seen error from SSL */
@@ -49,8 +49,27 @@ typedef struct {
     int socket_type;
     PyObject *owner; /* Python level "owner" passed to servername callback */
     PyObject *server_hostname;
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 15)
+    int got_eof_error;
+#else
     _PySSLError err; /* last seen error from various sources */
+#endif
 } PySSLSocket;
+
+#ifndef INVALID_SOCKET /* MS defines this */
+#define INVALID_SOCKET (-1)
+#endif
+
+#ifdef MS_WINDOWS
+typedef SOCKET SOCKET_T;
+#else
+typedef int SOCKET_T;
+#endif
+
+typedef struct {
+    PyObject_HEAD
+    SOCKET_T sock_fd;           /* Socket file descriptor */
+} PySocketSockObject;
 
 static inline _PySSLError _PySSL_errno(int failed, void *ssl, int retcode)
 {
@@ -74,14 +93,48 @@ typedef enum {
     SOCKET_OPERATION_OK
 } timeout_state;
 
-/* Get the socket from a PySSLSocket, if it has one */
-#define GET_SOCKET(obj) ((obj)->Socket ? \
-    (PyObject *) PyWeakref_GetObject((obj)->Socket) : NULL)
+static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
+{
+    if (!obj->Socket) {
+        *out_sock = NULL;
+        return 0;
+    }
+
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 13)
+    PySocketSockObject *sock;
+    int res = PyWeakref_GetRef(obj->Socket, (PyObject **)&sock);
+    if (res < 0) return -1;
+    if (res == 0 || sock->sock_fd == INVALID_SOCKET) {
+        Py_XDECREF(sock);
+        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        return -1;
+    }
+    // sock is a now a NEW reference
+    *out_sock = sock;
+    return res;
+#else
+    PyObject *tmp = PyWeakref_GetObject(obj->Socket);
+    if (!tmp || Py_IsNone(tmp)) {
+        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        return -1;
+    }
+
+    PySocketSockObject *sock = (PySocketSockObject *)tmp;
+    if (sock->sock_fd == INVALID_SOCKET) {
+        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        return -1;
+    }
+
+    // Promote to an owned reference
+    Py_INCREF(sock);
+
+    *out_sock = sock;
+    return 1;
+#endif
+}
 
 /* Linking to OpenSSL function used by Python */
 void openssl_init() {
-    // TODO: consider adding an extra version check to avoid possible future changes to SSL_read_ex
-
     PyObject *ssl_module = NULL;
     PyObject *_ssl_module = NULL;
     PyObject *_ssl_module_path = NULL;
@@ -97,8 +150,8 @@ void openssl_init() {
     _ssl_module = PyImport_ImportModule("_ssl");
     if(!_ssl_module) goto cleanup;
 
-    SSLSocketType = PyObject_GetAttrString(ssl_module, "SSLSocket");
-    if(!SSLSocketType) goto cleanup;
+    SSLSocketType = reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(ssl_module, "SSLSocket"));
+    if(!SSLSocketType || !PyType_Check(SSLSocketType)) goto cleanup;
 
     SSLWantReadError = PyObject_GetAttrString(_ssl_module, "SSLWantReadError");
     if(!SSLWantReadError) goto cleanup;
@@ -123,28 +176,31 @@ void openssl_init() {
 
     if (PyObject_HasAttrString(_ssl_module, "__file__")) {
         _ssl_module_path = PyObject_GetAttrString(_ssl_module, "__file__");
-        if(!_ssl_module_path) goto error;
-        openssl_handle = dlopen(PyUnicode_AsUTF8(_ssl_module_path), RTLD_LAZY | RTLD_NOLOAD);
+        if(!_ssl_module_path) goto cleanup;
+        const char *path = PyUnicode_AsUTF8(_ssl_module_path);
+        if(!path) goto cleanup;
+        openssl_handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
     }
 
-    if(!openssl_handle) goto error;
+    if(!openssl_handle) goto cleanup;
 
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
     *(void**)&SSL_get_shutdown = dlsym(openssl_handle, "SSL_get_shutdown");
-
-error:
-    if (!openssl_linked() && openssl_handle) dlclose(openssl_handle);
-    Py_XDECREF(_ssl_module_path);
 #endif
 
 cleanup:
-    Py_XDECREF(ssl_module);
-    Py_XDECREF(_ssl_module);
+    Py_CLEAR(ssl_module);
+    Py_CLEAR(_ssl_module);
+    Py_CLEAR(_ssl_module_path);
     if (!openssl_linked()) {
-        Py_XDECREF(SSLWantReadError);
-        Py_XDECREF(SSLWantWriteError);
-        Py_XDECREF(SSLSocketType);
+        Py_CLEAR(SSLWantReadError);
+        Py_CLEAR(SSLWantWriteError);
+        Py_CLEAR(SSLSocketType);
+        SSL_read_ex = NULL;
+        SSL_get_error = NULL;
+        SSL_get_shutdown = NULL;
+        PyErr_Clear(); // linking is optional; any failure results in openssl_linked=False
     }
 }
 
@@ -164,7 +220,11 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
     int retval;
     int sockstate;
     _PySSLError err;
-    PyObject *sock = GET_SOCKET(self);
+
+    PySocketSockObject *sock = NULL;
+    if (get_socket(self, &sock) < 0) {
+        return NULL;
+    }
 
     mem = (char *)buffer->buf;
     if (len <= 0 || len > buffer->len) {
@@ -180,14 +240,6 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
         }
     }
 
-    if (sock != NULL) {
-        if (((PyObject*)sock) == Py_None) {
-            PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
-            return NULL;
-        }
-        Py_INCREF(sock);
-    }
-
     do {
         Py_BEGIN_ALLOW_THREADS;
         do {
@@ -200,7 +252,9 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
         } while (len > 0);
         err = _PySSL_errno(retval == 0, self->ssl, retval);
         Py_END_ALLOW_THREADS;
+#if PY_VERSION_HEX < SABCTOOLS_PY_HEX(3, 15)
         self->err = err;
+#endif
 
         if (count > 0) {
             break;
@@ -258,6 +312,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     Py_buffer Py_buffer;
     PyObject *retval = NULL;
     PyObject *blocking = NULL;
+    int is_blocking;
 
     if(!openssl_linked()) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
@@ -270,13 +325,18 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     }
 
     Py_ssl_socket = PyObject_GetAttrString(ssl_socket, "_sslobj");
-    if (!Py_ssl_socket) {
+    if (!Py_ssl_socket || Py_IsNone(Py_ssl_socket)) {
         PyErr_SetString(PyExc_ValueError, "Could not find _sslobj attribute");
         goto error;
     }
 
     blocking = PyObject_CallMethod(ssl_socket, "getblocking", NULL);
-    if (blocking == Py_True) {
+    if (!blocking)
+        goto error; // call failed
+    is_blocking = PyObject_IsTrue(blocking);
+    if (is_blocking < 0)
+        goto error;
+    if (is_blocking) {
         PyErr_SetString(PyExc_ValueError, "Only non-blocking sockets are supported");
         goto error;
     }
