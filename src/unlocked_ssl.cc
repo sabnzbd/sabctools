@@ -95,7 +95,6 @@ typedef enum {
 
 static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 {
-    return 0;
     if (!obj->Socket) {
         *out_sock = NULL;
         return 0;
