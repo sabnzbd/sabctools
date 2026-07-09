@@ -311,6 +311,28 @@ def test_unlocked_ssl_recv_into_bulk_response(client):
     pytest.fail("All TLS reads were smaller than 16KB")
 
 
+def test_read_after_close(client):
+    # 131072 bytes divide up into 8 TLS records (16 KB each)
+    # In nonblocking mode, we should be able to read all eight in a single
+    # drop of the GIL.
+    size = 131072
+    buffer = bytearray(8192)
+
+    client.sendall(b"\xff" * size)
+
+    select.select([client], [], [])
+    try:
+        size -= sabctools.unlocked_ssl_recv_into(client, buffer)
+    except ssl.SSLWantReadError:
+        select.select([client], [], [])
+        # Give the sender some more time to complete sending.
+        time.sleep(0.1)
+    client.close()
+    assert size > 0
+    with pytest.raises(ValueError, match="Could not find _sslobj attribute"):
+        sabctools.unlocked_ssl_recv_into(client, buffer)
+
+
 #
 def test_unlocked_ssl_recv_into_blocking_socket_fails(client, buffer):
     with pytest.raises(ValueError, match="Only non-blocking sockets are supported"):
