@@ -11,7 +11,8 @@ def rarfile_rar3_s2k(pwd, salt):
     """String-to-key hash for RAR3."""
     if not isinstance(pwd, str):
         pwd = pwd.decode("utf8")
-    seed = bytearray(pwd.encode("utf-16le") + salt)
+    wstr = pwd.encode("utf-16le")[: 127 * 2]
+    seed = bytearray(wstr + salt)
     h = hashlib.sha1()
     iv = bytearray(16)
     for i in range(16):
