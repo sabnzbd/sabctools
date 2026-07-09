@@ -9,9 +9,10 @@ __version__ = version
 
 def rarfile_rar3_s2k(pwd, salt):
     """String-to-key hash for RAR3."""
+    rar_max_password = 127
     if not isinstance(pwd, str):
         pwd = pwd.decode("utf8")
-    wstr = pwd.encode("utf-16le")[: 127 * 2]
+    wstr = pwd.encode("utf-16le")[: rar_max_password * 2]
     seed = bytearray(wstr + salt)
     h = hashlib.sha1()
     iv = bytearray(16)
