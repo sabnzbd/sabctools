@@ -209,7 +209,6 @@ cleanup:
         Py_CLEAR(SSLWantReadError);
         Py_CLEAR(SSLWantWriteError);
         Py_CLEAR(SSLSocketType);
-        openssl_handle = NULL;
         SSL_read_ex = NULL;
         SSL_get_error = NULL;
         SSL_get_shutdown = NULL;
