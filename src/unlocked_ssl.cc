@@ -337,11 +337,6 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    if (!PyObject_TypeCheck(ssl_socket, SSLSocketType)) {
-        PyErr_Format(PyExc_TypeError, "argument 1 must be %s", SSLSocketType->tp_name);
-        return NULL;
-    }
-
     Py_ssl_socket = PyObject_GetAttrString(ssl_socket, "_sslobj");
     if (!Py_ssl_socket) {
         PyErr_SetString(PyExc_ValueError, "Could not find _sslobj attribute");
