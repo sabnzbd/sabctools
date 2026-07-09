@@ -115,6 +115,7 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 #else
     PyObject *tmp = PyWeakref_GetObject(obj->Socket);
     if (!tmp || Py_IsNone(tmp)) {
+        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
         return -1;
     }
 
