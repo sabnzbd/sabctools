@@ -62,14 +62,8 @@ typedef struct {
 
 #ifdef MS_WINDOWS
 typedef SOCKET SOCKET_T;
-#       ifdef MS_WIN64
-#               define SIZEOF_SOCKET_T 8
-#       else
-#               define SIZEOF_SOCKET_T 4
-#       endif
 #else
 typedef int SOCKET_T;
-#       define SIZEOF_SOCKET_T SIZEOF_INT
 #endif
 
 typedef struct {
