@@ -84,38 +84,21 @@ jobs:
           name: Source distribution
 
   publish:
-    name: Publish release to PyPI
+    name: Publish release to GitHub and PyPI
     needs: build_wheels
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     environment: pypi
     permissions:
+      contents: write
       id-token: write
     steps:
+      - uses: actions/checkout@v7
       - name: Download all artifacts
         uses: actions/download-artifact@v8.0.1
         with:
           path: dist/
           merge-multiple: true
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.14.0
-        with:
-          skip-existing: true
-
-  github_release:
-    name: Publish release to GitHub
-    needs: build_wheels
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - name: Download source distribution artifact
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: Source distribution
-          path: dist/
       - name: Publish release to GitHub (gh)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -123,3 +106,7 @@ jobs:
           gh release create "${{ github.ref_name }}" ./dist/*.tar.gz \
             --title "${{ github.ref_name }}" \
             --notes "Release ${{ github.ref_name }}"
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.0
+        with:
+          skip-existing: true
