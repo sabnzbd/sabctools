@@ -103,6 +103,7 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 #if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 13)
     PySocketSockObject *sock;
     int res = PyWeakref_GetRef(obj->Socket, (PyObject **)&sock);
+    if (res < 0) return -1;
     if (res == 0 || sock->sock_fd == INVALID_SOCKET) {
         Py_XDECREF(sock);
         PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
