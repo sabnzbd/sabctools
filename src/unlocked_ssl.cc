@@ -95,50 +95,37 @@ typedef enum {
 
 static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 {
-    *out_sock = NULL;
-
+    return 0;
     if (!obj->Socket) {
+        *out_sock = NULL;
         return 0;
     }
 
 #if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 13)
-    PySocketSockObject *sock = NULL;
-
+    PySocketSockObject *sock;
     int res = PyWeakref_GetRef(obj->Socket, (PyObject **)&sock);
-    if (res < 0) {
-        return -1; // exception already set
-    }
-    if (res == 0) {
-        return -1; // dead weakref
-    }
-
-    // sock is a now a NEW reference
-
-    if (sock->sock_fd == INVALID_SOCKET) {
-        Py_DECREF(sock);
-        PyErr_SetString(PyExc_ValueError, "Socket already closed");
+    if (res == 0 || sock->sock_fd == INVALID_SOCKET) {
+        Py_XDECREF(sock);
+        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
         return -1;
     }
-
+    // sock is a now a NEW reference
     *out_sock = sock;
-    return 1;
+    return res;
 #else
     PyObject *tmp = PyWeakref_GetObject(obj->Socket);
-
-    if (tmp == Py_None) {
+    if (!tmp || Py_IsNone(tmp)) {
         return -1;
     }
 
     PySocketSockObject *sock = (PySocketSockObject *)tmp;
+    if (sock->sock_fd == INVALID_SOCKET) {
+        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        return -1;
+    }
 
     // Promote to an owned reference
     Py_INCREF(sock);
-
-    if (sock->sock_fd == INVALID_SOCKET) {
-        Py_DECREF(sock);
-        PyErr_SetString(PyExc_ValueError, "Socket already closed");
-        return -1;
-    }
 
     *out_sock = sock;
     return 1;
@@ -235,7 +222,6 @@ static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, 
 
     PySocketSockObject *sock = NULL;
     if (get_socket(self, &sock) < 0) {
-        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
         return NULL;
     }
 
