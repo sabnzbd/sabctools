@@ -87,7 +87,7 @@ class SABCToolsBuild(build_ext):
     def build_extension(self, ext: Extension):
         # Try to determine the architecture to build for
         machine = platform.machine().lower()
-        IS_X86 = machine in ["i386", "i686", "x86", "x86_64", "x64", "amd64"]
+        IS_X86 = machine in ["i386", "i686", "x86", "i86pc", "x86_64", "x64", "amd64"]
         IS_MACOS = sys.platform == "darwin"
         IS_ARM = machine.startswith("arm") or machine.startswith("aarch64")
         IS_AARCH64 = True
