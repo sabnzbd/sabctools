@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         name: Install Python
         with:
           python-version: ${{ matrix.python-version }}
@@ -67,7 +67,7 @@ jobs:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         if: runner.os == 'macOS'
         with:
           python-version: "3.13"
