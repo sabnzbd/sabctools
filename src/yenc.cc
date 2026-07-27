@@ -587,13 +587,14 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
 
     if (instance->data == nullptr) {
         // Allocate output buffer on first decode call
-        // Use size from headers, capped at YENC_MAX_PART_SIZE for safety
+        // Use size from headers, capped at YENC_MAX_PART_SIZE for safety.
+        // Size this as tightly as the headers allow: the buffer is handed to the
+        // caller as-is and can never be shrunk afterwards, because
+        // PyByteArray_Resize only reallocates on a downsize below half the
+        // allocation. Anything allocated beyond bytes_decoded is retained for
+        // the lifetime of the article.
         Py_ssize_t base = instance->part_size > 0 ? instance->part_size : instance->file_size;
         Py_ssize_t expected = base + 64;  // small margin to see the end of yEnc data
-        // Round up to next multiple of CHUNK
-        expected = ((expected + CHUNK - 1) / CHUNK) * CHUNK;
-        // Add an extra CHUNK so we should never need to resize
-        expected += CHUNK;
 
         if (expected < YENC_MIN_BUFFER_SIZE)
             expected = YENC_MIN_BUFFER_SIZE;
@@ -618,28 +619,40 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
     // Main decode loop
     while (read < buf_len) {
         Py_ssize_t chunk_in = std::min(CHUNK, buf_len - read);
+        Py_ssize_t space = PyByteArray_GET_SIZE(instance->data) - instance->bytes_decoded;
 
-        // Ensure buffer has enough space
-        Py_ssize_t needed = instance->bytes_decoded + chunk_in;
-        Py_ssize_t current = PyByteArray_GET_SIZE(instance->data);
+        if (space < chunk_in) {
+            // The decoder never writes more bytes than it reads, so any chunk
+            // that fits in the remaining space can be decoded in place. Prefer
+            // trimming the chunk over growing the buffer: growing over-allocates
+            // and that slack can never be handed back (see above), so it would
+            // become permanent overhead on every decoded article.
+            if (space > 0) {
+                chunk_in = space;
+            } else {
+                // Out of room: the article holds more data than its headers declared.
+                // chunk_in is the tightest cheap bound on what this response can still
+                // produce, since the decoder never writes more bytes than it reads. It
+                // may over-shoot when the buffer also holds later responses, but only
+                // ever by less than one chunk.
+                Py_ssize_t needed = instance->bytes_decoded + chunk_in;
+                if (needed > YENC_MAX_PART_SIZE) {
+                    PyBuffer_Release(&dst_buf);
+                    PyErr_SetString(PyExc_BufferError, "Maximum data buffer size exceeded");
+                    return false;
+                }
 
-        if (needed > current) {
-            if (needed > YENC_MAX_PART_SIZE) {
+                // Release buffer to resize
                 PyBuffer_Release(&dst_buf);
-                PyErr_SetString(PyExc_BufferError, "Maximum data buffer size exceeded");
-                return false;
-            }
+                if (PyByteArray_Resize(instance->data, needed) == -1) {
+                    return false;
+                }
 
-            // Release buffer to resize
-            PyBuffer_Release(&dst_buf);
-            if (PyByteArray_Resize(instance->data, needed) == -1) {
-                return false;
+                // Re-pin buffer after resize
+                if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
+                    return false;
+                data_ptr = static_cast<char*>(dst_buf.buf);
             }
-
-            // Re-pin buffer after resize
-            if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
-                return false;
-            data_ptr = static_cast<char*>(dst_buf.buf);
         }
 
         const char *src = buf + read;
