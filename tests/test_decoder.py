@@ -391,3 +391,65 @@ def test_no_reinitialization():
     decoder = sabctools.Decoder(0)
     with pytest.raises(RuntimeError, match="Decoder cannot be reinitialized"):
         decoder.__init__(100)
+
+
+def sizeof_allocated_once(size: int) -> int:
+    """sys.getsizeof of a bytearray that went through the same allocation sequence the
+    decoder performs for a well-formed article, and nothing else: allocated at
+    part_size + 64 by decode_yenc, then resized to bytes_decoded by Decoder_process.
+
+    Reproducing the sequence rather than computing a capacity from the object header
+    keeps this independent of how a given CPython lays out or over-allocates bytearrays.
+    A buffer that was grown along the way ends up a different size."""
+    reference = bytearray(size + 64)
+    del reference[size:]
+    return sys.getsizeof(reference)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "test_regular.yenc",
+        "test_regular_2.yenc",
+        "test_bad_crc.yenc",
+        "test_padded_crc.yenc",
+        "test_article.yenc",
+    ],
+)
+def test_no_excess_allocation(filename: str):
+    """The decoded bytearray is handed straight to the caller and kept for the lifetime
+    of the article, so it must not hold on to a large over-allocation. It can never be
+    given back later: PyByteArray_Resize only reallocates on a downsize below half the
+    allocation, so anything allocated beyond bytes_decoded is retained permanently."""
+    data_plain = read_plain_yenc_file(filename)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+
+    response = next(decoder, None)
+    assert response
+    assert response.data
+    assert sys.getsizeof(response.data) == sizeof_allocated_once(len(response.data)), filename
+
+
+@pytest.mark.parametrize("buffer_size", [1024, 64 * 1024, 512 * 1024, None])
+def test_no_excess_allocation_multiple_responses(buffer_size):
+    """Input regularly spans several responses, so the tail of one response sits in the
+    same buffer as the whole of the next. That trailing data must not drive the size of
+    this response's buffer: each response is allocated once, at part_size + 64, and
+    never grown."""
+    filenames = ["test_regular.yenc", "test_regular_2.yenc", "test_bad_crc.yenc", "test_padded_crc.yenc"]
+    payload = b"".join(read_plain_yenc_file(f) for f in filenames)
+
+    input = BytesIO(payload)
+    decoder = sabctools.Decoder(buffer_size or len(payload))
+    responses = []
+    while (n := input.readinto(decoder)) != 0:
+        decoder.process(n)
+        responses.extend(decoder)
+
+    assert len(responses) == len(filenames)
+    for response, filename in zip(responses, filenames):
+        assert response.data
+        assert sys.getsizeof(response.data) == sizeof_allocated_once(len(response.data)), f"{filename} was reallocated"
