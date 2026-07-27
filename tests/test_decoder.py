@@ -391,3 +391,59 @@ def test_no_reinitialization():
     decoder = sabctools.Decoder(0)
     with pytest.raises(RuntimeError, match="Decoder cannot be reinitialized"):
         decoder.__init__(100)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "test_regular.yenc",
+        "test_regular_2.yenc",
+        "test_bad_crc.yenc",
+        "test_padded_crc.yenc",
+        "test_article.yenc",
+    ],
+)
+def test_no_excess_allocation(filename: str):
+    """The decoded bytearray is handed straight to the caller and kept for the lifetime
+    of the article, so it must not hold on to a large over-allocation. It can never be
+    given back later: PyByteArray_Resize only reallocates on a downsize below half the
+    allocation, so anything allocated beyond bytes_decoded is retained permanently."""
+    data_plain = read_plain_yenc_file(filename)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+
+    response = next(decoder, None)
+    assert response
+    assert response.data
+
+    # Capacity of the bytearray, excluding the fixed object header
+    capacity = sys.getsizeof(response.data) - sys.getsizeof(bytearray())
+    slack = capacity - len(response.data)
+    assert slack <= 1024, f"{filename}: {slack} bytes over-allocated for {len(response.data)} bytes of data"
+
+
+@pytest.mark.parametrize("buffer_size", [1024, 64 * 1024, 512 * 1024, None])
+def test_no_excess_allocation_multiple_responses(buffer_size):
+    """Input regularly spans several responses, so the tail of one response sits in the
+    same buffer as the whole of the next. That trailing data must not drive the size of
+    this response's buffer: each response is allocated once, at part_size + 64, and
+    never resized. A slack of exactly 64 proves no reallocation happened, since growth
+    over-allocates ~12.5% and a grow-then-shrink would land on an exact fit instead."""
+    filenames = ["test_regular.yenc", "test_regular_2.yenc", "test_bad_crc.yenc", "test_padded_crc.yenc"]
+    payload = b"".join(read_plain_yenc_file(f) for f in filenames)
+
+    input = BytesIO(payload)
+    decoder = sabctools.Decoder(buffer_size or len(payload))
+    responses = []
+    while (n := input.readinto(decoder)) != 0:
+        decoder.process(n)
+        responses.extend(decoder)
+
+    assert len(responses) == len(filenames)
+    for response, filename in zip(responses, filenames):
+        assert response.data
+        capacity = sys.getsizeof(response.data) - sys.getsizeof(bytearray())
+        # +1 for the NUL byte bytearray always keeps
+        assert capacity == len(response.data) + 65, f"{filename} was reallocated"
