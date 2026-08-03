@@ -701,12 +701,19 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
         case RapidYenc::YDEC_END_CONTROL:
             // Found "\r\n=y" - likely =yend line, exit body mode
             instance->body = false;
-            read -= 2; // Back up to include "=y" for header processing
+            // Back up to include "=y" for header processing. Safe because the
+            // CRLFEQ case above leaves the "=" unconsumed, so a call can never
+            // resume on the 'y' alone: both bytes are always in this buffer.
+            read -= 2;
             break;
         case RapidYenc::YDEC_END_ARTICLE:
-            // Found ".\r\n" - NNTP article terminator, exit body mode
+            // Found "\r\n.\r\n" - NNTP article terminator, read already points
+            // past it. Nothing is gained by backing up so the line parser can
+            // rediscover the "." line; end the response here. Backing up is also
+            // not always possible, as the terminator may have started in a
+            // previous call whose bytes have since left the buffer.
             instance->body = false;
-            read -= 3; // Back up to include ".\r\n" for terminator detection
+            instance->eof = true;
             break;
     }
 
@@ -900,6 +907,7 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
     if (instance->body && instance->format == ENCODING_FORMAT_YENC) {
         if (!NNTPResponse_decode_yenc(instance, buf, buf_len, read)) return -1;
         if (instance->body) return read;  // Still in body, need more data
+        if (instance->eof) return read;   // Decoder consumed the article terminator
     }
 
     // Parse headers and footers line-by-line
@@ -939,6 +947,7 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
                 // =ypart was encountered, switch to body decoding
                 if (!NNTPResponse_decode_yenc(instance, buf, buf_len, read)) return -1;
                 if (instance->body) return read;  // Still decoding, need more data
+                if (instance->eof) return read;   // Decoder consumed the article terminator
             }
         } else if (instance->format == ENCODING_FORMAT_UU) {
             if (!NNTPResponse_decode_uu(instance, line)) return -1;

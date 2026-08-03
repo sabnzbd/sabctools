@@ -453,3 +453,33 @@ def test_no_excess_allocation_multiple_responses(buffer_size):
     for response, filename in zip(responses, filenames):
         assert response.data
         assert sys.getsizeof(response.data) == sizeof_allocated_once(len(response.data)), f"{filename} was reallocated"
+
+
+@pytest.mark.parametrize("split_at", range(1, 8))
+def test_article_terminator_split(split_at: int):
+    """The yEnc decoder consumes the ".\\r\\n" terminator itself when the body runs to the
+    end of the article without a =yend line. A network read may split the input part-way
+    through that terminator, in which case the leading bytes are no longer in the buffer
+    and cannot be backed up over. The response must still be completed."""
+    data_plain = read_plain_yenc_file("test_missing_yend.yenc")
+
+    # Reference: the whole article in a single read
+    decoder = sabctools.Decoder(len(data_plain))
+    decoder.process(BytesIO(data_plain).readinto(decoder))
+    expected = next(decoder, None)
+    assert expected
+    assert expected.data
+
+    decoder = sabctools.Decoder(len(data_plain))
+    responses = []
+    for part in (data_plain[:-split_at], data_plain[-split_at:]):
+        input = BytesIO(part)
+        n = input.readinto(decoder)
+        decoder.process(n)
+        responses.extend(decoder)
+
+    # Splitting the read must not change the outcome
+    assert len(responses) == 1
+    assert responses[0].status_code == expected.status_code
+    assert responses[0].data == expected.data
+    assert responses[0].bytes_read == expected.bytes_read == len(data_plain)
