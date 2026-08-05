@@ -17,7 +17,7 @@
  */
 
 #include "crc32.h"
-#include "yencode/crc.h"
+#include "rapidyenc/rapidyenc.h"
 
 PyObject* crc32_combine(PyObject *self, PyObject *args) {
     unsigned long crc1, crc2;
@@ -27,7 +27,7 @@ PyObject* crc32_combine(PyObject *self, PyObject *args) {
         return NULL;
     }
 
-    crc1 = RapidYenc::crc32_combine(crc1, crc2, length);
+    crc1 = rapidyenc_crc_combine(crc1, crc2, length);
 
     return PyLong_FromUnsignedLong(crc1);
 }
@@ -39,7 +39,7 @@ PyObject* crc32_multiply(PyObject *self, PyObject *args) {
         return NULL;
     }
 
-    crc1 = RapidYenc::crc32_multiply(crc1, crc2);
+    crc1 = rapidyenc_crc_multiply(crc1, crc2);
 
     return PyLong_FromUnsignedLong(crc1);
 }
@@ -52,7 +52,7 @@ PyObject* crc32_zero_unpad(PyObject *self, PyObject *args) {
         return NULL;
     }
 
-    crc1 = RapidYenc::crc32_unzero(crc1, length);
+    crc1 = rapidyenc_crc_unzero(crc1, length);
 
     return PyLong_FromUnsignedLong(crc1);
 }
@@ -64,7 +64,7 @@ PyObject* crc32_xpown(PyObject* self, PyObject* arg) {
         return NULL;
     }
 
-    unsigned long result = RapidYenc::crc32_2pow(n);
+    unsigned long result = rapidyenc_crc_2pow(n);
 
     return PyLong_FromUnsignedLong(result);
 }
@@ -76,7 +76,7 @@ PyObject* crc32_xpow8n(PyObject* self, PyObject* arg) {
         return NULL;
     }
 
-    unsigned long result = RapidYenc::crc32_256pow(n);
+    unsigned long result = rapidyenc_crc_256pow(n);
 
     return PyLong_FromUnsignedLong(result);
 }

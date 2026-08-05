@@ -198,15 +198,13 @@ namespace RapidYenc {
 # include <Windows.h>
 #endif
 #ifdef PLATFORM_ARM
-# ifdef __ANDROID__
-#  include <cpu-features.h>
-# elif defined(__APPLE__)
+# if defined(__APPLE__)
 #  include <sys/types.h>
 #  include <sys/sysctl.h>
 # elif defined(__has_include)
 #  if __has_include(<sys/auxv.h>)
 #   include <sys/auxv.h>
-#   ifdef __FreeBSD__
+#   if defined(__FreeBSD__) || defined(__OpenBSD__)
 static unsigned long getauxval(unsigned long cap) {
 	unsigned long ret;
 	elf_aux_info(cap, &ret, sizeof(ret));
@@ -216,6 +214,9 @@ static unsigned long getauxval(unsigned long cap) {
 #   if __has_include(<asm/hwcap.h>)
 #    include <asm/hwcap.h>
 #   endif
+#  endif
+#  if defined(__ANDROID__) && __has_include(<cpu-features.h>)
+#   include <cpu-features.h>
 #  endif
 # endif
 #endif

@@ -100,36 +100,25 @@ static struct PyModuleDef sabctools_definition = {
 };
 
 static const char* simd_detected(void) {
-    int level = RapidYenc::decode_isa_level();
-#ifdef PLATFORM_X86
-    if(level >= ISA_LEVEL_VBMI2)
-        return "AVX512VL+VBMI2";
-    if(level >= ISA_LEVEL_AVX3)
-        return "AVX512VL";
-    if(level >= ISA_LEVEL_AVX2)
-        return "AVX2";
-    if(level >= ISA_LEVEL_AVX)
-        return "AVX";
-    if(level >= ISA_LEVEL_SSE4_POPCNT)
-        return "SSE4.1+POPCNT";
-    if(level >= ISA_LEVEL_SSE41)
-        return "SSE4.1";
-    if(level >= ISA_LEVEL_SSSE3)
-        return "SSSE3";
-    if(level >= (ISA_LEVEL_SSE2 | ISA_FEATURE_POPCNT | ISA_FEATURE_LZCNT))
-        return "SSE2+ABM";
-    return "SSE2";
-#endif
-#ifdef PLATFORM_ARM
-    if(level >= ISA_LEVEL_NEON) {
-        return "NEON";
-    }
-#endif
-#ifdef __riscv
-    if(level >= ISA_LEVEL_RVV) {
+    // Which decoder kernel rapidyenc picked for this CPU. The RYKERN_* values are
+    // ordered within an architecture and disjoint between architectures, so no
+    // platform ifdefs are needed - a given build only ever selects from one family.
+    int level = rapidyenc_decode_kernel();
+
+    if(level >= RYKERN_RVV)
         return "RVV";
-    }
-#endif
+    if(level >= RYKERN_NEON)
+        return "NEON";
+    if(level >= RYKERN_VBMI2)
+        return "AVX512VL+VBMI2";
+    if(level >= RYKERN_AVX2)
+        return "AVX2";
+    if(level >= RYKERN_AVX)
+        return "AVX";
+    if(level >= RYKERN_SSSE3)
+        return "SSSE3";
+    if(level >= RYKERN_SSE2)
+        return "SSE2";
     return "";
 }
 

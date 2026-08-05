@@ -30,10 +30,7 @@
 #include <deque>
 #include <algorithm>
 
-#include "yencode/common.h"
-#include "yencode/encoder.h"
-#include "yencode/decoder.h"
-#include "yencode/crc.h"
+#include "rapidyenc/rapidyenc.h"
 
 /* Constants */
 #define YENC_LINESIZE    128
@@ -82,7 +79,7 @@ typedef struct {
 	Py_ssize_t total;
 	std::optional<uint32_t> crc_expected;
 	PyObject* message;
-	RapidYenc::YencDecoderState state;
+	RapidYencDecoderState state;
 	int status_code;
 	uint32_t crc;
 

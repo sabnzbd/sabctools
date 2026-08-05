@@ -53,6 +53,9 @@ build
 test
 dist
 *.whl
+*.so
+*.pyd
+*.dylib
 
 # Visual studio
 cmake*/

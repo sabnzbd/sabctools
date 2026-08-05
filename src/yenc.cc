@@ -18,10 +18,7 @@
 
 #include "yenc.h"
 
-#include "yencode/common.h"
-#include "yencode/encoder.h"
-#include "yencode/decoder.h"
-#include "yencode/crc.h"
+#include "rapidyenc/rapidyenc.h"
 
 /* Global objects */
 
@@ -614,7 +611,7 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
 
     char *data_ptr = static_cast<char*>(dst_buf.buf);
 
-    RapidYenc::YencDecoderEnd end = RapidYenc::YDEC_END_NONE;
+    RapidYencDecoderEnd end = RYDEC_END_NONE;
 
     // Main decode loop
     while (read < buf_len) {
@@ -664,7 +661,7 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
         // Release GIL during CPU-intensive decode operation for better parallelism
         Py_BEGIN_ALLOW_THREADS;
 
-        end = RapidYenc::decode_end(
+        end = rapidyenc_decode_incremental(
             reinterpret_cast<const void **>(&src),
             reinterpret_cast<void **>(&dst),
             chunk_in,
@@ -675,7 +672,7 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
         produced = dst - dst_start;
 
         if (produced > 0) {
-            instance->crc = RapidYenc::crc32(dst_start, produced, instance->crc);
+            instance->crc = rapidyenc_crc(dst_start, produced, instance->crc);
         }
 
         Py_END_ALLOW_THREADS;
@@ -683,7 +680,7 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
         read += consumed;
         instance->bytes_decoded += produced;
 
-        if (end != RapidYenc::YDEC_END_NONE || (consumed == 0 && produced == 0))
+        if (end != RYDEC_END_NONE || (consumed == 0 && produced == 0))
             break;
     }
 
@@ -691,14 +688,14 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
 
     // Handle different end conditions from the decoder
     switch (end) {
-        case RapidYenc::YDEC_END_NONE:
-            if (instance->state == RapidYenc::YDEC_STATE_CRLFEQ) {
+        case RYDEC_END_NONE:
+            if (instance->state == RYDEC_STATE_CRLFEQ) {
                 // Special case: found "\r\n=" but no more data - might be start of =yend
-                instance->state = RapidYenc::YDEC_STATE_CRLF;
+                instance->state = RYDEC_STATE_CRLF;
                 read -= 1; // Back up to allow =yend detection
             }
             break;
-        case RapidYenc::YDEC_END_CONTROL:
+        case RYDEC_END_CONTROL:
             // Found "\r\n=y" - likely =yend line, exit body mode
             instance->body = false;
             // Back up to include "=y" for header processing. Safe because the
@@ -706,7 +703,7 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
             // resume on the 'y' alone: both bytes are always in this buffer.
             read -= 2;
             break;
-        case RapidYenc::YDEC_END_ARTICLE:
+        case RYDEC_END_ARTICLE:
             // Found "\r\n.\r\n" - NNTP article terminator, read already points
             // past it. Nothing is gained by backing up so the line parser can
             // rediscover the "." line; end the response here. Backing up is also
@@ -845,7 +842,7 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
         Py_ssize_t produced = dst - dst_start;
         instance->bytes_decoded += produced;
         if (produced > 0) {
-            instance->crc = RapidYenc::crc32(dst_start, produced, instance->crc);
+            instance->crc = rapidyenc_crc(dst_start, produced, instance->crc);
         }
     }
 
@@ -1002,8 +999,8 @@ PyObject* yenc_encode(PyObject* self, PyObject* Py_input_string)
 
     // Encode result
     int column = 0;
-    output_len = RapidYenc::encode(YENC_LINESIZE, &column, input_buffer, output_buffer, input_len, 1);
-    crc = RapidYenc::crc32(input_buffer, input_len, 0);
+    output_len = rapidyenc_encode_ex(YENC_LINESIZE, &column, input_buffer, output_buffer, input_len, 1);
+    crc = rapidyenc_crc(input_buffer, input_len, 0);
 
     // Restore GIL so we can build Python strings
     Py_END_ALLOW_THREADS;
@@ -1039,7 +1036,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->crc = 0;
     instance->status_code = 0;
     instance->crc_expected = std::nullopt;
-    instance->state = RapidYenc::YDEC_STATE_CRLF;
+    instance->state = RYDEC_STATE_CRLF;
     instance->eof = false;
     instance->body = false;
     instance->has_part = false;
@@ -1505,9 +1502,9 @@ static PyObject* create_int_enum(const char* enum_name, const EnumEntry* entries
 bool yenc_init(PyObject *m) {
     if (PyType_Ready(&DecoderType) < 0 ||  PyType_Ready(&NNTPResponseType) < 0) return false;
 
-    RapidYenc::encoder_init();
-    RapidYenc::decoder_init();
-    RapidYenc::crc32_init();
+    rapidyenc_encode_init();
+    rapidyenc_decode_init();
+    rapidyenc_crc_init();
 
     // Create EncodingFormat enum
     static EnumEntry encoding_entries[] = {
