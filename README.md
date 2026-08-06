@@ -56,6 +56,14 @@ To see which SIMD set was detected on your system, run:
 python -c "import sabctools; print(sabctools.simd);"
 ```
 
+The CRC32 routines are selected independently of the yEnc ones, so they can report a
+different set:
+```
+python -c "import sabctools; print(sabctools.crc_simd);"
+```
+Either is empty when no accelerated implementation was available for this CPU and a
+generic one is in use.
+
 ## OpenSSL detection
 
 To see if we could link to OpenSSL library on your system, run:
