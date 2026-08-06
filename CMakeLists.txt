@@ -36,7 +36,21 @@ if(SABCTOOLS_COMPILER_CACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
     endif()
 endif()
 
-# The version lives in src/sabctools.h; pyproject.toml reads it from there too.
+# The version is declared in pyproject.toml and compiled in below, so there is
+# only ever one to bump. scikit-build-core hands us the metadata version it
+# resolved; a bare cmake invocation has to read the same file itself. Anchored at
+# the line start so it cannot match cmake.version or target-version.
+if(DEFINED SKBUILD_PROJECT_VERSION)
+    set(SABCTOOLS_VERSION "${SKBUILD_PROJECT_VERSION}")
+else()
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml" PYPROJECT)
+    string(REGEX MATCH "[\r\n]version = \"([^\"]+)\"" _ "${PYPROJECT}")
+    set(SABCTOOLS_VERSION "${CMAKE_MATCH_1}")
+endif()
+if(NOT SABCTOOLS_VERSION)
+    message(FATAL_ERROR "could not determine the version from pyproject.toml")
+endif()
+message(STATUS "sabctools version: ${SABCTOOLS_VERSION}")
 
 # ---------------------------------------------------------------------------
 # Vendored dependencies
@@ -280,6 +294,7 @@ add_dependencies(sabctools rapidyenc_built)
 
 target_include_directories(sabctools PRIVATE src)
 target_compile_options(sabctools PRIVATE ${SABCTOOLS_FLAGS})
+target_compile_definitions(sabctools PRIVATE SABCTOOLS_VERSION="${SABCTOOLS_VERSION}")
 
 if(NOT MSVC)
     target_compile_options(sabctools PRIVATE -Wno-missing-field-initializers)

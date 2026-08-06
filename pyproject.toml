@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "sabctools"
-dynamic = ["version"]
+version = "9.6.3"
 description = "C implementations of functions for use within SABnzbd"
 readme = "README.md"
 authors = [
@@ -69,9 +69,3 @@ cmake.version = ">=3.15"
 build-dir = "build/{wheel_tag}"
 # CMakeLists.txt installs the package files explicitly; src/ is mostly C++.
 wheel.packages = []
-
-# The version is defined once, in the C sources
-[tool.scikit-build.metadata.version]
-provider = "scikit_build_core.metadata.regex"
-input = "src/sabctools.h"
-regex = '#define SABCTOOLS_VERSION +"(?P<value>[0-9xA-Z_.]+)"'
