@@ -20,6 +20,22 @@ project(sabctools LANGUAGES CXX)
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 include(ExternalProject)
 
+# Use a compiler cache if one is on PATH. Worth having: the vendored tree below
+# is 32 source files that do not depend on Python at all, so every extra Python
+# version built in the same CI job recompiles exactly the same objects.
+#
+# Note this has no effect under the Visual Studio generators, which ignore
+# CMAKE_<LANG>_COMPILER_LAUNCHER - only the Makefile and Ninja generators use it.
+option(SABCTOOLS_COMPILER_CACHE "Use ccache/sccache when one is available" ON)
+if(SABCTOOLS_COMPILER_CACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    find_program(COMPILER_CACHE NAMES sccache ccache)
+    if(COMPILER_CACHE)
+        message(STATUS "Using compiler cache: ${COMPILER_CACHE}")
+        set(CMAKE_C_COMPILER_LAUNCHER "${COMPILER_CACHE}")
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${COMPILER_CACHE}")
+    endif()
+endif()
+
 # The version lives in src/sabctools.h; pyproject.toml reads it from there too.
 
 # ---------------------------------------------------------------------------
@@ -85,6 +101,15 @@ function(add_vendored_project)
     if(CMAKE_OSX_DEPLOYMENT_TARGET)
         list(APPEND common_args -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
     endif()
+
+    # A nested project inherits nothing from this cache, so a compiler cache has
+    # to be handed down explicitly - and this sub-build is the whole reason to
+    # want one, being 32 source files against our six.
+    foreach(launcher C_COMPILER_LAUNCHER CXX_COMPILER_LAUNCHER)
+        if(CMAKE_${launcher})
+            list(APPEND common_args -DCMAKE_${launcher}=${CMAKE_${launcher}})
+        endif()
+    endforeach()
 
     # One build per slice, or a single build targeting whatever we were told to
     set(slices ${SLICE_ARCHES})
@@ -184,7 +209,12 @@ function(_vendored_build name source_dir subdir libraries cmake_args arch out_ar
         DOWNLOAD_COMMAND ""
         UPDATE_COMMAND ""
         INSTALL_COMMAND ""
-        BUILD_ALWAYS OFF
+        # Without this the build step is governed by a stamp file that knows
+        # nothing about the vendored sources, so re-vendoring would silently
+        # link the previous build's objects. Always hand off to the sub-build
+        # and let its own generator decide what is out of date - that costs a
+        # no-op ninja invocation when nothing changed.
+        BUILD_ALWAYS ON
     )
 
     set(${out_archives} ${archives} PARENT_SCOPE)
@@ -226,6 +256,13 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Nothing here uses C++20 modules, so scanning every translation unit for them
+# is wasted work - and with GCC it adds -fmodules-ts -fdeps-format=p1689r5,
+# which ccache cannot parse ("to generate dependencies you must specify either
+# -M or -MM"). CMake only turns scanning on for C++20 and above, which is why
+# this bites our own sources but not the C++17 glue or the vendored trees.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # ---------------------------------------------------------------------------
 # The extension

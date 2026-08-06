@@ -1,0 +1,157 @@
+name: Compiler cache
+description: >
+  Install ccache and restore its store, so the vendored rapidyenc tree is not
+  recompiled from scratch on every run. That is 32 source files with no Python in
+  them, so they compile to identical objects for every Python version in the
+  matrix.
+
+  The key deliberately does not hash the sources. ccache is content-addressed -
+  the compiler, the flags and the preprocessed source are already part of its
+  internal hash - so a store from an older commit stays correct, and entries that
+  no longer apply simply miss. Hashing sources into the key would throw the whole
+  store away exactly when a vendored file changed, which is when reuse of the
+  other 129 files matters most. A build *tree* is the opposite case and does need
+  an exact key; see the git history for that variant.
+
+  On Windows this only pays off alongside the msvc-ninja action: a compiler cache
+  is wired up through CMAKE_<LANG>_COMPILER_LAUNCHER, which only the Makefile and
+  Ninja generators honour, and Visual Studio is what CMake reaches for there by
+  default.
+
+inputs:
+  scope:
+    description: Which kind of job this is, to keep unrelated caches apart.
+    required: true
+  variant:
+    description: >
+      Extra key component, such as a Python version. Stores are still shared
+      across variants on a miss, since the vendored objects do not differ.
+    required: false
+    default: none
+  containers:
+    description: >
+      Also hand ccache and the store to cibuildwheel's Linux build containers.
+      Those compile inside a manylinux or musllinux image, which can see neither
+      the runner's ccache binary nor its CCACHE_DIR, so without this a wheel job
+      caches nothing at all.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Configure ccache
+      shell: bash
+      run: |
+        # Forward slashes throughout: on Windows this shell is Git Bash, where
+        # the backslashes GITHUB_WORKSPACE arrives with would read as escapes.
+        # ccache is a native binary either way and accepts them.
+        ccache_dir="${GITHUB_WORKSPACE//\\//}/.ccache"
+        echo "CCACHE_DIR=$ccache_dir" >> "$GITHUB_ENV"
+        echo "CCACHE_MAXSIZE=500M" >> "$GITHUB_ENV"
+        # Stops actions/cache warning about a missing path on the first run.
+        mkdir -p "$ccache_dir"
+
+    - name: Restore compiler cache
+      uses: actions/cache@v6
+      with:
+        path: .ccache
+        # Unique per run so each run writes a fresh entry, then fall back to the
+        # newest store for this variant, and failing that any variant on this
+        # runner - the vendored objects are identical across Python versions.
+        key: ccache-${{ inputs.scope }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.variant }}-${{ github.run_id }}
+        restore-keys: |
+          ccache-${{ inputs.scope }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.variant }}-
+          ccache-${{ inputs.scope }}-${{ runner.os }}-${{ runner.arch }}-
+
+    # Upstream's static build, rather than the container's package manager: the
+    # manylinux image is AlmaLinux 8, where ccache is not in the enabled repos,
+    # so dnf goes looking further afield and can sit there for a very long time.
+    # A statically linked binary also needs no equivalent for the musllinux
+    # image, and gives both containers the same ccache, so they can share one
+    # store.
+    - name: Fetch ccache for the build containers
+      if: inputs.containers == 'true' && runner.os == 'Linux'
+      shell: bash
+      env:
+        VERSION: 4.13.6
+        # sha256 of ccache-$VERSION-linux-<arch>-musl-static.tar.xz. To bump:
+        # change VERSION, then shasum -a 256 the two release assets.
+        SHA256_X64: 156ec57c5198cc849d92834023d09910b83dc5504c6cf405d09e6ae7b208a3e5
+        SHA256_ARM64: 2098d561e4a8e36bd06a29aedce53ea90c7e365f9573a93d91c230efbf96a958
+      run: |
+        set -euo pipefail
+        case "$RUNNER_ARCH" in
+          X64)   arch=x86_64;  sha=$SHA256_X64 ;;
+          ARM64) arch=aarch64; sha=$SHA256_ARM64 ;;
+          *) echo "::error::no ccache release build for $RUNNER_ARCH"; exit 1 ;;
+        esac
+        name="ccache-$VERSION-linux-$arch-musl-static"
+        cd "$RUNNER_TEMP"
+        curl -fsSL --retry 3 -O \
+          "https://github.com/ccache/ccache/releases/download/v$VERSION/$name.tar.xz"
+        # This binary runs as part of producing the wheels we publish, so it is
+        # worth knowing it is the one upstream released.
+        echo "$sha  $name.tar.xz" | sha256sum -c -
+        mkdir -p ccache-bin
+        tar -xJf "$name.tar.xz" -C ccache-bin --strip-components=1 "$name/ccache"
+        ccache-bin/ccache --version
+
+    - name: Point the build containers at ccache and the store
+      if: inputs.containers == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        # Bind-mount the binary and the store, then put the binary on PATH so
+        # CMakeLists.txt finds it. $PATH stays unexpanded on purpose:
+        # cibuildwheel expands it inside the container.
+        #
+        # umask 000 matters: the container builds as root, and the post-job
+        # cache upload runs as the runner user, which has to be able to read
+        # what root wrote.
+        {
+          echo "CIBW_CONTAINER_ENGINE=docker; create_args: --volume=${{ github.workspace }}/.ccache:/ccache --volume=$RUNNER_TEMP/ccache-bin:/ccache-bin:ro"
+          echo "CIBW_ENVIRONMENT_LINUX=PATH=/ccache-bin:\$PATH CCACHE_DIR=/ccache CCACHE_MAXSIZE=500M CCACHE_UMASK=000"
+        } >> "$GITHUB_ENV"
+
+    # Upstream's build rather than the one Strawberry Perl happens to leave on
+    # PATH, whose version is not ours to pin - and this runs as part of producing
+    # published wheels. Keep the version in step with the container one above.
+    - name: Fetch ccache
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        VERSION: 4.13.6
+        # sha256 of ccache-$VERSION-windows-<arch>.zip
+        SHA256_X64: 3d7cebb05850ad704e197b3f1d3f0f924ab6c9fdfc561578e146184fe9d89380
+        SHA256_ARM64: bec01846b06d6d87bf35eda50544d7c8bf9b9a4859f218417a7081aa45d7fd47
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:RUNNER_ARCH -eq 'ARM64') {
+          $arch = 'aarch64'; $want = $env:SHA256_ARM64
+        } else {
+          $arch = 'x86_64'; $want = $env:SHA256_X64
+        }
+        $name = "ccache-$($env:VERSION)-windows-$arch"
+        $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+        Invoke-WebRequest -Uri "https://github.com/ccache/ccache/releases/download/v$($env:VERSION)/$name.zip" -OutFile $zip
+        $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        if ($got -ne $want) { throw "checksum mismatch for $name.zip: $got" }
+        Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP -Force
+        $dir = Join-Path $env:RUNNER_TEMP $name
+        # Ahead of Strawberry Perl's copy, which CMake would otherwise find.
+        Add-Content $env:GITHUB_PATH $dir
+        & (Join-Path $dir 'ccache.exe') --version
+
+    # Nothing on the host compiles when the build happens in a container.
+    - name: Install ccache
+      if: runner.os != 'Windows' && !(runner.os == 'Linux' && inputs.containers == 'true')
+      shell: bash
+      run: |
+        if ! command -v ccache > /dev/null; then
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install ccache
+          else
+            sudo apt-get install -y ccache
+          fi
+        fi
+        ccache --version
