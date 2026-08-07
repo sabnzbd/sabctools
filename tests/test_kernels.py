@@ -1,3 +1,4 @@
+import os
 import pathlib
 import re
 
@@ -11,16 +12,27 @@ MODULE_SOURCE = ROOT / "src" / "sabctools.cc"
 ENCODE_DECODE_KERNELS = ("", "SSE2", "SSSE3", "AVX", "AVX2", "AVX512VL+VBMI2", "NEON", "RVV")
 CRC_KERNELS = ("", "PCLMULQDQ", "VPCLMULQDQ", "ARMv8-CRC", "ARMv8-CRC+PMULL", "Zbc")
 
+# An empty kernel name is RYKERN_GENERIC, which is a legitimate answer on hardware with
+# nothing to offer - RISC-V without the vector or Zbc extensions, say. Our runners are not
+# that: every one is x86_64 or arm64, where SSE2 and NEON are baseline and the CRC kernels
+# have been available for well over a decade. So empty there means detection regressed,
+# and is worth failing on. GITHUB_ACTIONS rather than CI, because it is those runners we
+# know the capabilities of.
+ON_GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
+
 
 def test_simd_reports_an_encode_decode_kernel():
     # One mapping names both families and their values interleave, so check the
     # kernel stays in its own family rather than merely being a name we know.
-    # Empty is legitimate: a generic fallback on a CPU with nothing to offer.
     assert sabctools.simd in ENCODE_DECODE_KERNELS
+    if ON_GITHUB_ACTIONS:
+        assert sabctools.simd, "no yEnc SIMD kernel detected on a runner that has one"
 
 
 def test_crc_simd_reports_a_crc_kernel():
     assert sabctools.crc_simd in CRC_KERNELS
+    if ON_GITHUB_ACTIONS:
+        assert sabctools.crc_simd, "no CRC32 SIMD kernel detected on a runner that has one"
 
 
 def test_every_vendored_kernel_is_named():
