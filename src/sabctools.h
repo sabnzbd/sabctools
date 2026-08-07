@@ -21,7 +21,4 @@
 #include <fcntl.h>
 #include <string.h>
 
-/* Version information */
-#define SABCTOOLS_VERSION "9.6.3"
-
 PyMODINIT_FUNC PyInit_sabctools(void);

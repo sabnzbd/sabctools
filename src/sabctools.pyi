@@ -6,6 +6,7 @@ from _typeshed import WriteableBuffer
 __version__: str
 openssl_linked: bool
 simd: str
+crc_simd: str
 
 def yenc_encode(input_string: bytes) -> Tuple[bytes, int]: ...
 def unlocked_ssl_recv_into(ssl_socket: SSLSocket, buffer: WriteableBuffer) -> int: ...

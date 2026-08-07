@@ -16,49 +16,53 @@ jobs:
           --check
           --diff
 
-  ci:
-    name: Tests ${{ matrix.os }} - Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
-        python-version: [ '3.10', '3.11', '3.12', '3.13', '3.14', '3.15-dev' ]
+  # Split per operating system so a wheel build waits only on its own tests,
+  # rather than on the slowest cell of a combined 18-way matrix.
+  tests_linux:
+    name: Tests Linux
+    uses: ./.github/workflows/tests.yml
+    with:
+      os: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        name: Install Python
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Build module and run pytest
-        run: |
-          python -m pip install --upgrade pip
-          pip install --group test
-          pip install . -v
-          python -c "import sabctools; print('Version:', sabctools.__version__);"
-          python -c "import sabctools; print('SIMD:', sabctools.simd);"
-          python -c "import sabctools; print('OpenSSL linked:', sabctools.openssl_linked);"
-          pytest
+  tests_windows:
+    name: Tests Windows
+    uses: ./.github/workflows/tests.yml
+    with:
+      os: windows-latest
 
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }} ${{ matrix.linux_arch }}
-    needs: ci
+  tests_macos:
+    name: Tests macOS
+    uses: ./.github/workflows/tests.yml
+    with:
+      os: macos-latest
+
+  # No wheel job restores a build *tree*. These are what gets published, and a
+  # build tree is not content-addressed - a stale one can be wrong rather than
+  # merely unhelpful, and cibuildwheel wants a clean checkout in any case. A
+  # fresh checkout has no build/, so every wheel is configured and linked from
+  # scratch. Only the ccache store is carried in, which cannot go stale: a
+  # changed source, flag or compiler simply misses.
+  #
+  # The ARM runners have no tests of their own, so they gate on the tests for
+  # the same OS.
+  wheels_linux:
+    name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
+    needs: tests_linux
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-          - os: windows-11-arm
-          - os: macos-latest
           - os: ubuntu-latest
             linux_arch: x86_64
           - os: ubuntu-24.04-arm
             linux_arch: aarch64
-
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/compiler-cache
+        with:
+          scope: wheels
+          containers: true
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.1.1
       - name: Upload wheel artifacts
@@ -66,26 +70,64 @@ jobs:
         with:
           path: ./wheelhouse/*.whl
           name: Wheels ${{ matrix.os }} ${{ matrix.linux_arch }}
+
+  wheels_windows:
+    name: Wheels ${{ matrix.os }}
+    needs: tests_windows
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, windows-11-arm ]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/msvc-ninja
+      - uses: ./.github/actions/compiler-cache
+        with:
+          scope: wheels
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.1.1
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          path: ./wheelhouse/*.whl
+          name: Wheels ${{ matrix.os }}
+
+  wheels_macos:
+    name: Wheels macos-latest
+    needs: tests_macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/compiler-cache
+        with:
+          scope: wheels
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.1.1
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          path: ./wheelhouse/*.whl
+          name: Wheels macos-latest
+
+      # The sdist needs building once, on any platform; it rides along here.
       - name: Install Python
         uses: actions/setup-python@v7
-        if: runner.os == 'macOS'
         with:
           python-version: "3.13"
       - name: Build source distribution
-        if: runner.os == 'macOS'
         run: |
           pip install build
           python -m build --sdist
       - name: Upload source distribution artifact
         uses: actions/upload-artifact@v7.0.1
-        if: runner.os == 'macOS'
         with:
           path: ./dist/*.tar.gz
           name: Source distribution
 
   publish:
     name: Publish release to GitHub and PyPI
-    needs: build_wheels
+    needs: [ wheels_linux, wheels_windows, wheels_macos ]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') && github.repository == 'sabnzbd/sabctools'
     environment: pypi
@@ -94,6 +136,14 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
+      - name: Check the tag matches the version
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pyproject.toml version $version"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME matches pyproject.toml"
       - name: Download all artifacts
         uses: actions/download-artifact@v8.0.1
         with:

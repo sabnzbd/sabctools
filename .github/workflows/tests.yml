@@ -1,0 +1,53 @@
+name: Tests
+
+# Called once per operating system by ci_and_build_release.yml, so that each
+# wheel build can depend on just its own platform's tests. GitHub's needs: works
+# at job level and cannot name a subset of another job's matrix, so the only way
+# to gate per platform is for the tests to be separate jobs.
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: Runner image to test on.
+        required: true
+        type: string
+
+permissions: read-all
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ '3.10', '3.11', '3.12', '3.13', '3.14', '3.15' ]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        name: Install Python
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+          allow-prereleases: true
+      - uses: ./.github/actions/msvc-ninja
+      - uses: ./.github/actions/compiler-cache
+        with:
+          scope: ci
+          variant: ${{ matrix.python-version }}
+      - name: Build module and run pytest
+        run: |
+          # A floor, not an upgrade: --group needs pip 25.1. The runners ship
+          # something far newer, so this is a no-op there, where --upgrade pip
+          # spent eight seconds fetching and reinstalling pip on every job.
+          python -m pip install "pip>=25.1"
+          pip install --group test
+          pip install . -v
+          python -c "import sabctools; print('Version:', sabctools.__version__);"
+          python -c "import sabctools; print('SIMD:', sabctools.simd);"
+          python -c "import sabctools; print('CRC SIMD:', sabctools.crc_simd);"
+          python -c "import sabctools; print('OpenSSL linked:', sabctools.openssl_linked);"
+          pytest

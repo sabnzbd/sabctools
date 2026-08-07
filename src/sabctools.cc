@@ -99,38 +99,39 @@ static struct PyModuleDef sabctools_definition = {
     sabctools_methods
 };
 
-static const char* simd_detected(void) {
-    int level = RapidYenc::decode_isa_level();
-#ifdef PLATFORM_X86
-    if(level >= ISA_LEVEL_VBMI2)
-        return "AVX512VL+VBMI2";
-    if(level >= ISA_LEVEL_AVX3)
-        return "AVX512VL";
-    if(level >= ISA_LEVEL_AVX2)
-        return "AVX2";
-    if(level >= ISA_LEVEL_AVX)
-        return "AVX";
-    if(level >= ISA_LEVEL_SSE4_POPCNT)
-        return "SSE4.1+POPCNT";
-    if(level >= ISA_LEVEL_SSE41)
-        return "SSE4.1";
-    if(level >= ISA_LEVEL_SSSE3)
-        return "SSSE3";
-    if(level >= (ISA_LEVEL_SSE2 | ISA_FEATURE_POPCNT | ISA_FEATURE_LZCNT))
-        return "SSE2+ABM";
-    return "SSE2";
-#endif
-#ifdef PLATFORM_ARM
-    if(level >= ISA_LEVEL_NEON) {
-        return "NEON";
+// Names any kernel rapidyenc can report, whether an encode/decode one or a CRC32
+// one. No platform ifdefs are needed: the RYKERN_* values are disjoint between
+// architectures, so a given build only ever reports from its own family.
+//
+// Matched exactly rather than by range. Ranges would look tidier but the families
+// interleave on one number line - PCLMUL (0x340) sits below AVX (0x381), VPCLMUL
+// (0x440) between AVX2 and VBMI2 - so a ladder can hand a decode kernel a CRC name.
+// An exact switch also means a kernel upstream adds shows up as unknown rather than
+// silently borrowing its neighbour's label.
+static const char* kernel_name(int level) {
+    switch(level) {
+        // Encode/decode
+        case RYKERN_SSE2:     return "SSE2";
+        case RYKERN_SSSE3:    return "SSSE3";
+        case RYKERN_AVX:      return "AVX";
+        case RYKERN_AVX2:     return "AVX2";
+        case RYKERN_VBMI2:    return "AVX512VL+VBMI2";
+        case RYKERN_NEON:     return "NEON";
+        case RYKERN_RVV:      return "RVV";
+        // CRC32
+        case RYKERN_PCLMUL:   return "PCLMULQDQ";
+        case RYKERN_VPCLMUL:  return "VPCLMULQDQ";
+        case RYKERN_ARMCRC:   return "ARMv8-CRC";
+        case RYKERN_ARMPMULL: return "ARMv8-CRC+PMULL";
+        case RYKERN_ZBC:      return "Zbc";
+        // For CRC this means crcutil's assembly on x86 and a slice-by-4 table
+        // elsewhere; for encode/decode, plain scalar code.
+        case RYKERN_GENERIC:  return "";
     }
-#endif
-#ifdef __riscv
-    if(level >= ISA_LEVEL_RVV) {
-        return "RVV";
-    }
-#endif
-    return "";
+    // Only reachable from a BUILD_NATIVE build, which targets the host CPU and
+    // reports levels of its own (ISA_LEVEL_AVX3, or a level OR'd with POPCNT and
+    // LZCNT) that upstream deliberately does not publish a RYKERN_* value for.
+    return "unknown";
 }
 
 PyMODINIT_FUNC PyInit_sabctools(void) {
@@ -146,7 +147,8 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     sparse_init();
 
     PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);
-    PyModule_AddStringConstant(m, "simd", simd_detected());
+    PyModule_AddStringConstant(m, "simd", kernel_name(rapidyenc_decode_kernel()));
+    PyModule_AddStringConstant(m, "crc_simd", kernel_name(rapidyenc_crc_kernel()));
 
     // Add status of linking OpenSSL function
     PyObject *openssl_linked_object = openssl_linked() ? Py_True : Py_False;

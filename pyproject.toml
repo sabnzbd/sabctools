@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77.0.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "sabctools"
-dynamic = ["version"]
+version = "9.6.3"
 description = "C implementations of functions for use within SABnzbd"
 readme = "README.md"
 authors = [
@@ -61,7 +61,11 @@ build = "cp314-*"
 # Skip wheel repair: SABnzbd already bundles the required runtime DLLs
 repair-wheel-command = ""
 
-[tool.setuptools]
-packages = ["sabctools"]
-package-dir = {"sabctools" = "src"}
-include-package-data = false
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.15"
+# Keep the CMake cache between builds, so an incremental rebuild does not
+# reconfigure and recompile the vendored tree from scratch.
+build-dir = "build/{wheel_tag}"
+# CMakeLists.txt installs the package files explicitly; src/ is mostly C++.
+wheel.packages = []

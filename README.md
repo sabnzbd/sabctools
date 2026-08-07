@@ -11,11 +11,14 @@ This module implements three main sets of C implementations that are used within
 Of course, they can also be used in any other application.
 
 ## yEnc decoding and encoding using SIMD routines
-yEnc decoding and encoding performed by using [yencode](https://github.com/animetosho/node-yencode) from animetosho, 
-which utilizes x86/ARM SIMD optimised routines if such CPU features are available.
+yEnc decoding and encoding performed by using [rapidyenc](https://github.com/animetosho/rapidyenc) from animetosho,
+which utilizes x86/ARM/RISC-V SIMD optimised routines if such CPU features are available.
 
 ## CRC32 calculations
-We used the `crcutil` library for very fast CRC calculations.
+Also from rapidyenc, which uses the `crcutil` library and a PCLMULQDQ/ARMv8-CRC folding
+approach for very fast CRC calculations.
+
+See `src/rapidyenc/VENDOR.md` for the vendored version.
 
 ## Non-blocking SSL-socket reading
 When Python reads data from a non-blocking SSL socket, it is limited to receiving 16K data at once. This module implements a patched version that can read as much data is available at once.
@@ -52,6 +55,14 @@ To see which SIMD set was detected on your system, run:
 ```
 python -c "import sabctools; print(sabctools.simd);"
 ```
+
+The CRC32 routines are selected independently of the yEnc ones, so they can report a
+different set:
+```
+python -c "import sabctools; print(sabctools.crc_simd);"
+```
+Either is empty when no accelerated implementation was available for this CPU and a
+generic one is in use.
 
 ## OpenSSL detection
 
