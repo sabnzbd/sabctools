@@ -65,4 +65,21 @@ typedef struct {
 
 bool filewriter_init(PyObject *);
 
+extern PyTypeObject FileWriterType;
+
+/*
+ * Write a whole buffer at an absolute offset, without touching the Python API.
+ *
+ * Safe to call with the GIL released, which is the point: the decoder writes from
+ * inside its own GIL-free section. Failure is reported through the out-parameters and
+ * raised by the caller once the GIL is back.
+ *
+ * ``error_code`` receives errno on POSIX and the Windows error code on Windows.
+ */
+Py_ssize_t filewriter_write_raw(FileWriter *writer, const char *buffer, Py_ssize_t length, long long offset,
+                                bool *was_closed, unsigned long *error_code);
+
+/* Raise the error reported by filewriter_write_raw. Requires the GIL. */
+void filewriter_raise(FileWriter *writer, bool was_closed, unsigned long error_code);
+
 #endif // SABCTOOLS_FILEWRITER_H

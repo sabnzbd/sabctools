@@ -57,14 +57,41 @@
 /* How much raw data to process each loop */
 #define YENC_CHUNK_SIZE (64*1024)
 
+/*
+ * Staging buffer used when decoding straight to a sink.
+ *
+ * One per connection, reused for every article, so streaming costs no per-article
+ * allocation at all. Sized so a typical article is staged whole and written once:
+ * bigger than the usual ~700 KB body, and small enough that connections x this stays
+ * a fraction of the article cache it replaces.
+ */
+#define YENC_STAGING_SIZE (1024*1024)
+
 /* Functions */
 bool yenc_init(PyObject *);
 PyObject* yenc_encode(PyObject *, PyObject*);
+
+/*
+ * A request that has been sent and whose response has not yet been decoded.
+ *
+ * Held in the Decoder so responses cannot be paired with the wrong request. The
+ * alternative, a queue on the Python side kept in step with this one, has a failure
+ * mode where a desync writes one article's bytes into another article's file at a
+ * plausible-looking offset - silent corruption that only par2 would catch.
+ */
+typedef struct {
+	PyObject* context; // opaque to us, handed back as NNTPResponse.context
+	PyObject* sink;    // FileWriter to stream into, or NULL to build a bytearray
+} PendingRequest;
 
 typedef struct {
     PyObject_HEAD
 
 	PyObject* data;
+	PyObject* context;
+	PyObject* sink;
+	// Absolute file offset for the next flush, tracked across staging buffer fills
+	Py_ssize_t sink_offset;
 	Py_ssize_t bytes_decoded;
 	Py_ssize_t bytes_read;
 	PyObject* lines;
@@ -95,11 +122,18 @@ typedef struct {
 	PyObject_HEAD
 
 	std::deque<NNTPResponse*> deque; // completed responses
+	std::deque<PendingRequest> pending; // requests sent, responses not yet decoded
 	NNTPResponse* response; // current response being worked on
 	char* data; // raw input
 	Py_ssize_t size; // size of data
 	Py_ssize_t consumed; // left position
 	Py_ssize_t position; // right position
+	// Reused across every response on this connection, so decoding to a sink costs no
+	// per-article allocation. Only one response is ever decoded at a time: pipelining
+	// happens on the wire, not here.
+	char* staging;
+	Py_ssize_t staging_size;
+	Py_ssize_t staging_used;
 } Decoder;
 
 #endif //SABCTOOLS_YENC_H

@@ -152,6 +152,80 @@ static void FileWriter_dealloc(FileWriter *self) {
  * buffer is pinned by the caller beforehand and any failure is carried out as an
  * error number and raised once the GIL is back.
  */
+Py_ssize_t filewriter_write_raw(FileWriter *writer, const char *buffer, Py_ssize_t length, long long offset,
+                                bool *was_closed, unsigned long *error_code) {
+    Py_ssize_t written_total = 0;
+    *was_closed = false;
+    *error_code = 0;
+
+    // Shared: concurrent writes are allowed and are the whole point. Only close()
+    // takes this exclusively, so the handle cannot be pulled away mid-write.
+    std::shared_lock<std::shared_mutex> guard(writer->lock);
+
+    if (writer->handle == SABCTOOLS_INVALID_HANDLE) {
+        *was_closed = true;
+        return 0;
+    }
+
+    while (written_total < length) {
+        Py_ssize_t remaining = length - written_total;
+        if (remaining > FILEWRITER_MAX_CHUNK) remaining = FILEWRITER_MAX_CHUNK;
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+        // WriteFile with an OVERLAPPED offset writes positionally even on a handle not
+        // opened for overlapped I/O. It shifts the file pointer, which nothing here
+        // reads, so no lock is needed to keep writes apart.
+        OVERLAPPED overlapped;
+        memset(&overlapped, 0, sizeof(overlapped));
+        ULARGE_INTEGER position;
+        position.QuadPart = (ULONGLONG)(offset + written_total);
+        overlapped.Offset = position.LowPart;
+        overlapped.OffsetHigh = position.HighPart;
+
+        DWORD written = 0;
+        if (!WriteFile(writer->handle, buffer + written_total, (DWORD)remaining, &written, &overlapped)) {
+            *error_code = (unsigned long)GetLastError();
+            break;
+        }
+        if (written == 0) {
+            *error_code = (unsigned long)ERROR_DISK_FULL;
+            break;
+        }
+        written_total += (Py_ssize_t)written;
+#else
+        ssize_t written = pwrite(writer->handle, buffer + written_total, (size_t)remaining,
+                                 (off_t)(offset + written_total));
+        if (written < 0) {
+            if (errno == EINTR) continue;
+            *error_code = (unsigned long)errno;
+            break;
+        }
+        if (written == 0) {
+            // Not documented to happen for a regular file, but looping on it forever
+            // would be worse than reporting a full disk
+            *error_code = (unsigned long)ENOSPC;
+            break;
+        }
+        written_total += (Py_ssize_t)written;
+#endif
+    }
+
+    return written_total;
+}
+
+void filewriter_raise(FileWriter *writer, bool was_closed, unsigned long error_code) {
+    if (was_closed) {
+        PyErr_SetString(PyExc_ValueError, "write on closed FileWriter");
+        return;
+    }
+#if defined(_WIN32) || defined(__CYGWIN__)
+    PyErr_SetExcFromWindowsErrWithFilenameObject(PyExc_OSError, (int)error_code, writer->path);
+#else
+    errno = (int)error_code;
+    PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, writer->path);
+#endif
+}
+
 static PyObject *FileWriter_write(FileWriter *self, PyObject *args) {
     Py_buffer data;
     long long offset;
@@ -165,84 +239,18 @@ static PyObject *FileWriter_write(FileWriter *self, PyObject *args) {
         return NULL;
     }
 
-    const char *buffer = (const char *)data.buf;
-    const Py_ssize_t length = data.len;
     Py_ssize_t written_total = 0;
     bool was_closed = false;
-#if defined(_WIN32) || defined(__CYGWIN__)
-    DWORD error_code = 0;
-#else
-    int error_code = 0;
-#endif
+    unsigned long error_code = 0;
 
     Py_BEGIN_ALLOW_THREADS
-    {
-        // Shared: concurrent writes are allowed and are the whole point. Only close()
-        // takes this exclusively, so the handle cannot be pulled away mid-write.
-        std::shared_lock<std::shared_mutex> guard(self->lock);
-
-        if (self->handle == SABCTOOLS_INVALID_HANDLE) {
-            was_closed = true;
-        } else {
-            while (written_total < length) {
-                Py_ssize_t remaining = length - written_total;
-                if (remaining > FILEWRITER_MAX_CHUNK) remaining = FILEWRITER_MAX_CHUNK;
-
-#if defined(_WIN32) || defined(__CYGWIN__)
-                // WriteFile with an OVERLAPPED offset writes positionally even on a
-                // handle not opened for overlapped I/O. It shifts the file pointer,
-                // which nothing here reads, so no lock is needed to keep writes apart.
-                OVERLAPPED overlapped;
-                memset(&overlapped, 0, sizeof(overlapped));
-                ULARGE_INTEGER position;
-                position.QuadPart = (ULONGLONG)(offset + written_total);
-                overlapped.Offset = position.LowPart;
-                overlapped.OffsetHigh = position.HighPart;
-
-                DWORD written = 0;
-                if (!WriteFile(self->handle, buffer + written_total, (DWORD)remaining, &written, &overlapped)) {
-                    error_code = GetLastError();
-                    break;
-                }
-                if (written == 0) {
-                    error_code = ERROR_DISK_FULL;
-                    break;
-                }
-                written_total += (Py_ssize_t)written;
-#else
-                ssize_t written = pwrite(self->handle, buffer + written_total, (size_t)remaining,
-                                         (off_t)(offset + written_total));
-                if (written < 0) {
-                    if (errno == EINTR) continue;
-                    error_code = errno;
-                    break;
-                }
-                if (written == 0) {
-                    // Not documented to happen for a regular file, but looping on it
-                    // forever would be worse than reporting a full disk
-                    error_code = ENOSPC;
-                    break;
-                }
-                written_total += (Py_ssize_t)written;
-#endif
-            }
-        }
-    }
+    written_total = filewriter_write_raw(self, (const char *)data.buf, data.len, offset, &was_closed, &error_code);
     Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&data);
 
-    if (was_closed) {
-        PyErr_SetString(PyExc_ValueError, "write on closed FileWriter");
-        return NULL;
-    }
-    if (error_code) {
-#if defined(_WIN32) || defined(__CYGWIN__)
-        PyErr_SetExcFromWindowsErrWithFilenameObject(PyExc_OSError, (int)error_code, self->path);
-#else
-        errno = error_code;
-        PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, self->path);
-#endif
+    if (was_closed || error_code) {
+        filewriter_raise(self, was_closed, error_code);
         return NULL;
     }
     return PyLong_FromSsize_t(written_total);

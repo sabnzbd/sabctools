@@ -1,0 +1,260 @@
+import gc
+import os
+import sys
+from io import BytesIO
+
+import pytest
+
+from tests.testsupport import *
+
+
+def build_article(
+    payload: bytes, begin: int = 0, total: int = None, name: str = "test.bin", part: int = 1, crc: int = None
+) -> bytes:
+    """One yEnc part as it arrives on the wire, so a body of any size can be built"""
+    total = len(payload) if total is None else total
+    encoded, real_crc = sabctools.yenc_encode(payload)
+    crc = real_crc if crc is None else crc
+    header = (
+        f"222 0 <{name}-{part}>\r\n"
+        f"=ybegin part={part} line=128 size={total} name={name}\r\n"
+        f"=ypart begin={begin + 1} end={begin + len(payload)}\r\n"
+    ).encode()
+    trailer = f"\r\n=yend size={len(payload)} part={part} pcrc32={crc:08x}\r\n.\r\n".encode()
+    return header + encoded + trailer
+
+
+def feed(decoder, wire: bytes, chunk: int = 0):
+    """Push bytes through the decoder's buffer, returning the responses produced"""
+    responses = []
+    view_of = memoryview(wire)
+    position = 0
+    while position < len(view_of):
+        buffer = memoryview(decoder)
+        count = min(len(buffer), len(view_of) - position)
+        if chunk:
+            count = min(count, chunk)
+        buffer[: count] = view_of[position : position + count]
+        buffer.release()
+        decoder.process(count)
+        position += count
+        responses.extend(decoder)
+    return responses
+
+
+@pytest.fixture
+def writer(tmp_path):
+    target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+    yield target
+    target.close()
+
+
+class TestPairing:
+    """The request queue lives in the decoder so a response cannot be matched with the
+    wrong request. Kept in Python alongside this one, the two could drift, and a drift
+    writes one article's bytes into another article's file at a plausible offset."""
+
+    def test_context_comes_back_on_the_response(self):
+        data = read_plain_yenc_file("test_regular.yenc")
+        decoder = sabctools.Decoder(len(data) * 2)
+        decoder.expect("first")
+        decoder.expect("second")
+        assert decoder.expected == 2
+
+        responses = feed(decoder, bytes(data) * 2)
+        assert [response.context for response in responses] == ["first", "second"]
+        assert decoder.expected == 0
+
+    def test_without_expect_the_context_is_none(self):
+        """Existing callers that never pair keep working exactly as before"""
+        data = read_plain_yenc_file("test_regular.yenc")
+        decoder = sabctools.Decoder(len(data))
+        response = feed(decoder, bytes(data))[0]
+        assert response.context is None
+        assert response.data is not None
+        assert response.bytes_decoded == 384000
+
+    def test_clear_expected_drops_everything(self):
+        decoder = sabctools.Decoder(4096)
+        decoder.expect("one")
+        decoder.expect("two")
+        decoder.clear_expected()
+        assert decoder.expected == 0
+
+    def test_sink_must_be_a_filewriter(self):
+        """Duck typing is not enough: the write happens from C with the GIL released"""
+        decoder = sabctools.Decoder(4096)
+        with pytest.raises(TypeError):
+            decoder.expect("ctx", object())
+        with pytest.raises(TypeError):
+            decoder.expect("ctx", "not a writer")
+
+    def test_none_sink_is_accepted(self):
+        decoder = sabctools.Decoder(4096)
+        decoder.expect("ctx", None)
+        assert decoder.expected == 1
+
+
+class TestSinkOutput:
+    def test_matches_the_bytearray_path_exactly(self, writer):
+        """The sink is only worth having if it produces the same bytes"""
+        data = bytes(read_plain_yenc_file("test_regular.yenc"))
+
+        reference = feed(sabctools.Decoder(len(data)), data)[0]
+
+        decoder = sabctools.Decoder(len(data))
+        decoder.expect("article", writer)
+        streamed = feed(decoder, data)[0]
+        writer.close()
+
+        assert streamed.data is None, "a streamed response must not also build a bytearray"
+        assert streamed.bytes_decoded == reference.bytes_decoded
+        assert streamed.crc == reference.crc
+        assert streamed.part_begin == reference.part_begin
+
+        on_disk = open(writer.path, "rb").read()
+        assert on_disk[streamed.part_begin :] == bytes(reference.data)
+
+    def test_lands_at_the_offset_from_the_headers(self, writer):
+        payload = b"payload at an offset"
+        decoder = sabctools.Decoder(65536)
+        decoder.expect("article", writer)
+        response = feed(decoder, build_article(payload, begin=4096, total=8192))[0]
+        writer.close()
+
+        assert response.part_begin == 4096
+        contents = open(writer.path, "rb").read()
+        assert contents[4096 : 4096 + len(payload)] == payload
+        assert contents[:4096] == b"\0" * 4096
+
+    def test_parts_arriving_out_of_order(self, writer):
+        """Articles do not arrive in order, which is the whole reason for writing at an
+        offset rather than appending"""
+        parts = [os.urandom(1000) for _ in range(4)]
+        total = sum(len(part) for part in parts)
+
+        decoder = sabctools.Decoder(65536)
+        for index in (2, 0, 3, 1):
+            decoder.expect(index, writer)
+            feed(decoder, build_article(parts[index], begin=index * 1000, total=total, part=index + 1))
+        writer.close()
+
+        assert open(writer.path, "rb").read() == b"".join(parts)
+
+    def test_body_larger_than_the_staging_buffer(self, writer):
+        """Anything over YENC_STAGING_SIZE is written in pieces, and the pieces have to
+        land contiguously and still checksum"""
+        payload = os.urandom(3 * 1024 * 1024)
+        decoder = sabctools.Decoder(256 * 1024)
+        decoder.expect("big", writer)
+        response = feed(decoder, build_article(payload))[0]
+        writer.close()
+
+        assert response.bytes_decoded == len(payload)
+        assert response.crc is not None, "the CRC has to survive being folded across flushes"
+        assert open(writer.path, "rb").read() == payload
+
+    def test_response_split_across_many_reads(self, writer):
+        """A response normally spans several socket reads, so the staging buffer has to
+        carry over between process() calls"""
+        payload = os.urandom(400_000)
+        decoder = sabctools.Decoder(64 * 1024)
+        decoder.expect("split", writer)
+        response = feed(decoder, build_article(payload), chunk=1024)[0]
+        writer.close()
+
+        assert response.bytes_decoded == len(payload)
+        assert open(writer.path, "rb").read() == payload
+
+    def test_the_staging_buffer_is_reused(self, writer):
+        """Streaming exists to remove the per-article allocation, so many articles must
+        not grow the decoder's memory"""
+        decoder = sabctools.Decoder(256 * 1024)
+        payload = os.urandom(200_000)
+        for index in range(20):
+            decoder.expect(index, writer)
+            feed(decoder, build_article(payload, begin=index * len(payload), total=20 * len(payload)))
+        writer.close()
+
+        assert os.path.getsize(writer.path) == 20 * len(payload)
+
+
+class TestSinkErrors:
+    def test_writing_to_a_closed_sink_raises(self, tmp_path):
+        target = sabctools.FileWriter(str(tmp_path / "closed.bin"))
+        target.close()
+
+        decoder = sabctools.Decoder(65536)
+        decoder.expect("article", target)
+        with pytest.raises(ValueError):
+            feed(decoder, build_article(b"x" * 5000))
+
+    def test_a_bad_crc_is_still_reported(self, writer):
+        """The bytes are already on disk by the time the CRC is known, which matches
+        what the cache path does: the data is kept so par2 can repair it"""
+        payload = b"z" * 5000
+        wire = build_article(payload, crc=0xDEADBEEF)
+        decoder = sabctools.Decoder(65536)
+        decoder.expect("article", writer)
+        response = feed(decoder, wire)[0]
+        writer.close()
+
+        assert response.crc is None, "a mismatch has to be reported"
+        assert response.bytes_decoded == len(payload)
+        assert open(writer.path, "rb").read() == payload, "the data is still written, for par2"
+
+    def test_uu_falls_back_to_a_bytearray(self, writer):
+        """uu carries no offsets, so there is nowhere to stream it to. The sink is
+        ignored and the caller gets data as usual."""
+        data = read_uu_file("logo_full.nntp")
+        decoder = sabctools.Decoder(len(data))
+        decoder.expect("article", writer)
+        response = feed(decoder, bytes(data))[0]
+        writer.close()
+
+        assert response.format is sabctools.EncodingFormat.UU
+        assert response.data is not None
+        assert os.path.getsize(writer.path) == 0
+
+
+class TestGarbageCollection:
+    """Both types hold arbitrary Python objects now, so cycles through them are
+    reachable and have to be collectable"""
+
+    def test_a_decoder_cycle_is_collected(self):
+        gc.collect()
+        decoder = sabctools.Decoder(4096)
+        decoder.expect(decoder)
+        address = id(decoder)
+        del decoder
+        gc.collect()
+        assert not any(id(obj) == address for obj in gc.get_objects())
+
+    def test_a_response_cycle_is_collected(self):
+        gc.collect()
+        data = bytes(read_plain_yenc_file("test_regular.yenc"))
+        decoder = sabctools.Decoder(len(data))
+        cycle = []
+        decoder.expect(cycle)
+        response = feed(decoder, data)[0]
+        cycle.append(response)  # response -> context list -> response
+        address = id(response)
+        del response, cycle, decoder
+        gc.collect()
+        assert not any(id(obj) == address for obj in gc.get_objects())
+
+    def test_both_types_are_tracked(self):
+        decoder = sabctools.Decoder(4096)
+        assert gc.is_tracked(decoder)
+
+    def test_the_sink_is_released_with_the_response(self, tmp_path):
+        """A held sink reference would keep the file open past the article"""
+        target = sabctools.FileWriter(str(tmp_path / "released.bin"))
+        decoder = sabctools.Decoder(65536)
+        before = sys.getrefcount(target)
+        decoder.expect("article", target)
+        response = feed(decoder, build_article(b"y" * 2000))[0]
+        del response
+        gc.collect()
+        assert sys.getrefcount(target) == before
+        target.close()

@@ -28,6 +28,8 @@ class EncodingFormat(IntEnum):
     UU = 2
 
 class NNTPResponse:
+    context: Optional[object]
+    """Object handed to Decoder.expect() for the request this answers"""
     status_code: int
     """Code extracted from the first 3 characters of the response"""
     message: Optional[str]
@@ -43,7 +45,7 @@ class NNTPResponse:
     part_size: int
     end_size: int
     data: Optional[bytearray]
-    """Decoded data"""
+    """Decoded data, or None when it was streamed to a sink instead"""
     crc: Optional[int]
     """CRC of decoded data, None if does not match crc_expected"""
     crc_expected: Optional[int]
@@ -65,6 +67,25 @@ class Decoder:
     def __next__(self) -> NNTPResponse: ...
     def __buffer__(self, __flags: int) -> memoryview: ...
     def __release_buffer__(self, __buffer: memoryview) -> None: ...
+    expected: int
+    """Requests recorded with expect() whose responses have not been decoded yet"""
+
+    def expect(self, context: object, sink: Optional["FileWriter"] = None) -> None:
+        """Record that a request has been sent, so its response can be paired with it.
+
+        `context` is returned untouched as NNTPResponse.context. Calls must be in the
+        order the requests were sent.
+
+        When `sink` is given, the decoded body is written into it at the offset the
+        yEnc headers declare rather than collected into a bytearray, and the response's
+        `data` is left as None. Bodies larger than the internal staging buffer are
+        written in pieces. uu-encoded articles carry no offsets, so a sink is ignored
+        for those and `data` is populated as usual.
+        """
+
+    def clear_expected(self) -> None:
+        """Forget every pending request, for a connection being reset."""
+
     def process(self, length: int) -> None:
         """Process `length` additional bytes of the internal buffer.
 
