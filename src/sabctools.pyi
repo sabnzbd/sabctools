@@ -1,7 +1,9 @@
 from enum import IntEnum
-from typing import Tuple, Optional, IO, List, Iterator, Union
+from os import PathLike
+from types import TracebackType
+from typing import Tuple, Optional, IO, List, Iterator, Union, Type
 from ssl import SSLSocket
-from _typeshed import WriteableBuffer
+from _typeshed import ReadableBuffer, WriteableBuffer
 
 __version__: str
 openssl_linked: bool
@@ -15,7 +17,9 @@ def crc32_multiply(crc1: int, crc2: int) -> int: ...
 def crc32_xpow8n(n: int) -> int: ...
 def crc32_xpown(n: int) -> int: ...
 def crc32_zero_unpad(crc1: int, length: int) -> int: ...
-def sparse(file: Union[IO, int], length: int) -> None: ...
+def sparse(file: Union[IO, int], length: int) -> None:
+    """Deprecated in favour of FileWriter.preallocate, kept for existing callers."""
+
 def bytearray_malloc(size: int) -> bytearray: ...
 def rarfile_rar3_s2k(pwd, salt) -> tuple[bytes, bytes]: ...
 
@@ -72,3 +76,40 @@ class Decoder:
         This pattern minimizes copying and wasted allocations while allowing
         streaming decode of multiple NNTP responses.
         """
+
+class FileWriter:
+    """A file opened for positional writes.
+
+    Owns its descriptor so nothing outside can close it while a write is in flight,
+    and writes at absolute offsets so several threads may write to one file at once
+    without a lock. On Windows this uses WriteFile with an OVERLAPPED offset, which
+    Python itself has no equivalent for: os.pwrite is Unix only.
+    """
+
+    def __init__(self, path: Union[str, bytes, PathLike]) -> None:
+        """Open path for writing, creating it if it does not exist."""
+    closed: bool
+    path: Optional[str]
+    size: int
+    """Current length of the file, read from the owned handle"""
+
+    def write(self, data: ReadableBuffer, offset: int) -> int:
+        """Write all of data at an absolute offset, returning the bytes written.
+
+        Short writes are retried internally, so the return value always equals
+        len(data) unless an error was raised.
+        """
+
+    def preallocate(self, length: int) -> None:
+        """Set the file length, marking it sparse first where the filesystem requires it."""
+
+    def close(self) -> None:
+        """Close the file. Idempotent, and waits for any writes still in flight."""
+
+    def __enter__(self) -> "FileWriter": ...
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None: ...
