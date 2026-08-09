@@ -69,6 +69,8 @@ class Decoder:
     def __release_buffer__(self, __buffer: memoryview) -> None: ...
     expected: int
     """Requests recorded with expect() whose responses have not been decoded yet"""
+    pending: Tuple[object, ...]
+    """Contexts of the requests still awaiting a response, oldest first"""
 
     def expect(self, context: object, sink: Optional["FileWriter"] = None) -> None:
         """Record that a request has been sent, so its response can be paired with it.

@@ -1664,14 +1664,67 @@ static PyObject* Decoder_clear_expected(Decoder *self, PyObject *Py_UNUSED(ignor
     Py_RETURN_NONE;
 }
 
+/*
+ * Requests whose responses have not been handed to the caller yet.
+ *
+ * Counts three things, because a request stays in flight until its response has been
+ * delivered: responses finished but not yet iterated, the one currently arriving, and
+ * requests with nothing received at all. The middle one matters - the pending entry is
+ * taken as soon as the first byte of a response shows up, so counting only untouched
+ * requests reports a pipelined connection as idle while it is still receiving, and the
+ * caller stops reading from it.
+ */
+static Py_ssize_t Decoder_in_flight(Decoder *self)
+{
+    return static_cast<Py_ssize_t>(self->deque.size()) + (self->response ? 1 : 0) +
+           static_cast<Py_ssize_t>(self->pending.size());
+}
+
 static PyObject* Decoder_get_expected(Decoder *self, void* closure)
 {
-    return PyLong_FromSsize_t(static_cast<Py_ssize_t>(self->pending.size()));
+    return PyLong_FromSsize_t(Decoder_in_flight(self));
+}
+
+/*
+ * Contexts of the requests still waiting for a response, oldest first.
+ *
+ * The caller needs these for more than pairing: to name the article a connection is
+ * currently fetching, and to hand every outstanding article back to the queue when a
+ * connection is reset. Exposing them here is what lets the request queue exist only
+ * once, instead of being mirrored on the Python side.
+ */
+static PyObject* Decoder_get_pending(Decoder *self, void* closure)
+{
+    PyObject* result = PyTuple_New(Decoder_in_flight(self));
+    if (!result) return NULL;
+
+    Py_ssize_t index = 0;
+
+    // Oldest first: finished but not yet collected, then the one arriving now, then
+    // those still waiting on their first byte
+    for (NNTPResponse* item : self->deque) {
+        PyObject* context = item->context ? item->context : Py_None;
+        Py_INCREF(context);
+        PyTuple_SET_ITEM(result, index++, context);
+    }
+    if (self->response) {
+        PyObject* context = self->response->context ? self->response->context : Py_None;
+        Py_INCREF(context);
+        PyTuple_SET_ITEM(result, index++, context);
+    }
+    for (PendingRequest& request : self->pending) {
+        PyObject* context = request.context ? request.context : Py_None;
+        Py_INCREF(context);
+        PyTuple_SET_ITEM(result, index++, context);
+    }
+    return result;
 }
 
 static PyGetSetDef Decoder_getsetters[] = {
     {"expected", (getter)Decoder_get_expected, NULL,
      PyDoc_STR("Requests sent whose responses have not been decoded yet"), NULL},
+    {"pending", (getter)Decoder_get_pending, NULL,
+     PyDoc_STR("Contexts of the requests still awaiting a response, oldest first"), NULL},
     {NULL}
 };
 

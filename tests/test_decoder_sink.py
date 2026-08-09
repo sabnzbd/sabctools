@@ -258,3 +258,59 @@ class TestGarbageCollection:
         gc.collect()
         assert sys.getrefcount(target) == before
         target.close()
+
+
+class TestInFlightAccounting:
+    """A request stays in flight until its response reaches the caller. Counting only
+    untouched requests reports a pipelined connection as idle while it is still
+    receiving, and the caller then stops reading from the socket."""
+
+    def test_a_partially_received_response_still_counts(self):
+        data = bytes(read_plain_yenc_file("test_regular.yenc"))
+        decoder = sabctools.Decoder(len(data) * 2)
+        decoder.expect("first")
+        decoder.expect("second")
+
+        # Enough of the first response to start it, nowhere near enough to finish
+        buffer = memoryview(decoder)
+        buffer[:512] = data[:512]
+        buffer.release()
+        decoder.process(512)
+
+        assert decoder.expected == 2, "the response being received is still in flight"
+        assert decoder.pending == ("first", "second")
+
+    def test_completed_but_uncollected_responses_count(self):
+        data = bytes(read_plain_yenc_file("test_regular.yenc"))
+        decoder = sabctools.Decoder(len(data) * 2)
+        decoder.expect("first")
+        decoder.expect("second")
+        feed_without_collecting = memoryview(data + data)
+
+        buffer = memoryview(decoder)
+        buffer[: len(feed_without_collecting)] = feed_without_collecting
+        buffer.release()
+        decoder.process(len(feed_without_collecting))
+
+        # Both finished, neither collected
+        assert decoder.expected == 2
+        assert decoder.pending == ("first", "second")
+
+        collected = list(decoder)
+        assert [response.context for response in collected] == ["first", "second"]
+        assert decoder.expected == 0
+        assert decoder.pending == ()
+
+    def test_the_article_being_received_is_reported_first(self):
+        """The caller names the article a connection is fetching from this"""
+        data = bytes(read_plain_yenc_file("test_regular.yenc"))
+        decoder = sabctools.Decoder(len(data) * 2)
+        decoder.expect("being received")
+        decoder.expect("still queued")
+
+        buffer = memoryview(decoder)
+        buffer[:512] = data[:512]
+        buffer.release()
+        decoder.process(512)
+
+        assert decoder.pending[0] == "being received"
