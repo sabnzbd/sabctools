@@ -34,7 +34,7 @@ def feed(decoder, wire: bytes, chunk: int = 0):
         count = min(len(buffer), len(view_of) - position)
         if chunk:
             count = min(count, chunk)
-        buffer[: count] = view_of[position : position + count]
+        buffer[:count] = view_of[position : position + count]
         buffer.release()
         decoder.process(count)
         position += count

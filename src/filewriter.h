@@ -28,7 +28,15 @@
 #include <shared_mutex>
 
 #if defined(_WIN32) || defined(__CYGWIN__)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+// Otherwise Windows.h defines min/max macros that break std::min/std::max
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
+#include <winioctl.h>
 typedef HANDLE FileHandle;
 #define SABCTOOLS_INVALID_HANDLE INVALID_HANDLE_VALUE
 #else

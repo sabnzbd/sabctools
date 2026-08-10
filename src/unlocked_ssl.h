@@ -28,7 +28,12 @@
 
 /* OpenSSL link */
 #if defined(_WIN32) || defined(__CYGWIN__)
-# define WIN32_LEAN_AND_MEAN
+# ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+# endif
+# ifndef NOMINMAX
+#  define NOMINMAX
+# endif
 # include <Windows.h>
 # include <winsock2.h>
 #else
