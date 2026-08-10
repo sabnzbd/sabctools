@@ -180,14 +180,76 @@ class TestSinkOutput:
 
 
 class TestSinkErrors:
-    def test_writing_to_a_closed_sink_raises(self, tmp_path):
+    def test_a_closed_sink_fails_the_article_not_the_connection(self, tmp_path):
+        """A job deleted mid-download closes the file under an article still arriving.
+
+        Raising here would abandon the decoder inside a response, leaving the rest of
+        that article in the buffer to be parsed as the next one - so one closed file
+        would cost the whole connection. The response is consumed to its end instead
+        and the failure reported on the response.
+        """
         target = sabctools.FileWriter(str(tmp_path / "closed.bin"))
         target.close()
 
         decoder = sabctools.Decoder(65536)
         decoder.expect("article", target)
-        with pytest.raises(ValueError):
-            feed(decoder, build_article(b"x" * 5000))
+        responses = feed(decoder, build_article(b"x" * 5000))
+
+        assert len(responses) == 1
+        assert responses[0].sink_failed is True
+        assert responses[0].data is None, "nothing was kept, so there is nothing to save"
+        assert responses[0].context == "article"
+
+    def test_the_stream_stays_in_sync_after_a_sink_failure(self, tmp_path):
+        """The point of not raising: the next article on the same connection still
+        decodes. This is what a mid-response abort would destroy."""
+        closed = sabctools.FileWriter(str(tmp_path / "closed.bin"))
+        closed.close()
+        good = sabctools.FileWriter(str(tmp_path / "good.bin"))
+
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("doomed", closed)
+        decoder.expect("fine", good)
+
+        payload = b"y" * 4000
+        wire = build_article(b"x" * 5000, name="a.bin") + build_article(payload, name="b.bin")
+        responses = feed(decoder, wire)
+
+        assert [r.context for r in responses] == ["doomed", "fine"]
+        assert responses[0].sink_failed is True
+        assert responses[1].sink_failed is False, "the second article was collateral damage"
+        assert responses[1].bytes_decoded == len(payload)
+        good.close()
+        assert open(str(tmp_path / "good.bin"), "rb").read() == payload
+
+    def test_a_sink_closed_partway_through_is_reported(self, tmp_path):
+        """The realistic shape: the file is open when the article starts and closed
+        while its body is still arriving"""
+        target = sabctools.FileWriter(str(tmp_path / "midway.bin"))
+        decoder = sabctools.Decoder(64 * 1024)
+        decoder.expect("article", target)
+
+        # Larger than the staging buffer, so flushes happen while the body arrives
+        wire = memoryview(build_article(b"z" * (2 * 1024 * 1024)))
+        responses = []
+        position = 0
+        closed = False
+        while position < len(wire):
+            buffer = memoryview(decoder)
+            count = min(len(buffer), len(wire) - position)
+            buffer[:count] = wire[position : position + count]
+            buffer.release()
+            decoder.process(count)
+            responses.extend(decoder)
+            position += count
+            if not closed and position > len(wire) // 2:
+                target.close()  # the job is deleted right here
+                closed = True
+
+        assert closed, "the sink was never closed, so nothing was tested"
+        assert len(responses) == 1, "the response still has to complete"
+        assert responses[0].sink_failed is True
+        assert responses[0].data is None
 
     def test_a_bad_crc_is_still_reported(self, writer):
         """The bytes are already on disk by the time the CRC is known, which matches

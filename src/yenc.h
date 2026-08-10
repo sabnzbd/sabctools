@@ -116,6 +116,10 @@ typedef struct {
 	bool has_end;
 	bool has_emptyline; // for article requests has the empty line separating headers and body been seen
 	bool has_baddata; // invalid line lengths for uu decoding; some data lost
+	// A write to the sink failed, so the body was decoded but not kept. Decoding
+	// continues regardless: the response has to be consumed to its end or the
+	// connection's byte stream is left mid-article.
+	bool sink_failed;
 } NNTPResponse;
 
 typedef struct {

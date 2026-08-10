@@ -630,6 +630,13 @@ static PyObject* NNTPResponse_get_format(NNTPResponse* self, void *closure)
  * body larger than the staging buffer is written in pieces that still land contiguously.
  */
 static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
+    // Already given up on this response's sink, so keep decoding and throw the bytes
+    // away rather than retrying a write that is going to fail again
+    if (instance->sink_failed) {
+        owner->staging_used = 0;
+        return true;
+    }
+
     if (owner->staging_used == 0) return true;
 
     FileWriter *writer = reinterpret_cast<FileWriter *>(instance->sink);
@@ -643,8 +650,22 @@ static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
     Py_END_ALLOW_THREADS;
 
     if (was_closed || error_code) {
-        filewriter_raise(writer, was_closed, error_code);
-        return false;
+        // Not an error for the connection, and it must not be raised here.
+        //
+        // The obvious handling - raise and let the caller deal with it - abandons the
+        // decoder in the middle of a response. The remainder of the article is still
+        // in the connection's buffer and would then be parsed as the start of the next
+        // one, so a failed write would cost the whole connection rather than one
+        // article. That also puts it out of reach of the Python caller, since by the
+        // time the exception surfaces the damage is done.
+        //
+        // So the response is consumed to its end with the body discarded, and the
+        // failure is reported to Python as sink_failed once the response completes.
+        // The article is lost either way and has to be fetched again; the connection
+        // does not have to be.
+        instance->sink_failed = true;
+        owner->staging_used = 0;
+        return true;
     }
 
     instance->sink_offset += written;
@@ -1202,6 +1223,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->context = nullptr;
     instance->sink = nullptr;
     instance->sink_offset = 0;
+    instance->sink_failed = false;
     instance->lines = nullptr;
     instance->format = nullptr;
     instance->file_name = nullptr;
@@ -1225,6 +1247,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->has_end = false;
     instance->has_emptyline = false;
     instance->has_baddata = false;
+    instance->sink_failed = false;
 
     return reinterpret_cast<PyObject *>(instance);
 }
@@ -1256,6 +1279,8 @@ static PyMemberDef NNTPResponse_members[] = {
     {"bytes_read", T_PYSSIZET, offsetof(NNTPResponse, bytes_read), READONLY, ""},
     {"bytes_decoded", T_PYSSIZET, offsetof(NNTPResponse, bytes_decoded), READONLY, ""},
     {"baddata", T_BOOL, offsetof(NNTPResponse, has_baddata), READONLY, ""},
+    {"sink_failed", T_BOOL, offsetof(NNTPResponse, sink_failed), READONLY,
+     PyDoc_STR("A write to the sink failed, so the decoded body was discarded")},
     {nullptr, 0, 0, 0, nullptr}
 };
 

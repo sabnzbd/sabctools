@@ -56,6 +56,12 @@ class NNTPResponse:
     """Decoding process used"""
     baddata: bool
     """Invalid UU lines were encountered, some data was lost"""
+    sink_failed: bool
+    """A write to the sink failed, so the decoded body was discarded.
+
+    The response is still completed and the connection is left usable - abandoning it
+    mid-stream would desynchronise the byte stream - but nothing was kept, so the
+    article has to be fetched again."""
 
 class Decoder:
     def __init__(self, size: int):
