@@ -221,27 +221,46 @@ class TestGarbageCollection:
     """Both types hold arbitrary Python objects now, so cycles through them are
     reachable and have to be collectable"""
 
+    @staticmethod
+    def live(cls) -> int:
+        """How many instances of a type are still reachable.
+
+        Counting instances rather than checking whether a remembered id() is gone:
+        an address identifies an object only while it is alive, so a freed one is
+        immediately available to the next allocation and an identity check reports
+        whatever happens to land there. Which allocation wins the block is down to
+        the platform allocator, so that spuriously fails on some platforms and not
+        others while the collector is behaving identically on all of them.
+        """
+        return sum(1 for obj in gc.get_objects() if type(obj) is cls)
+
     def test_a_decoder_cycle_is_collected(self):
         gc.collect()
+        before = self.live(sabctools.Decoder)
+
         decoder = sabctools.Decoder(4096)
-        decoder.expect(decoder)
-        address = id(decoder)
+        decoder.expect(decoder)  # decoder -> pending -> decoder
+        assert self.live(sabctools.Decoder) == before + 1, "a live instance is not being counted"
+
         del decoder
         gc.collect()
-        assert not any(id(obj) == address for obj in gc.get_objects())
+        assert self.live(sabctools.Decoder) == before
 
     def test_a_response_cycle_is_collected(self):
         gc.collect()
+        before = self.live(sabctools.NNTPResponse)
+
         data = bytes(read_plain_yenc_file("test_regular.yenc"))
         decoder = sabctools.Decoder(len(data))
         cycle = []
         decoder.expect(cycle)
         response = feed(decoder, data)[0]
         cycle.append(response)  # response -> context list -> response
-        address = id(response)
+        assert self.live(sabctools.NNTPResponse) == before + 1, "a live instance is not being counted"
+
         del response, cycle, decoder
         gc.collect()
-        assert not any(id(obj) == address for obj in gc.get_objects())
+        assert self.live(sabctools.NNTPResponse) == before
 
     def test_both_types_are_tracked(self):
         decoder = sabctools.Decoder(4096)
