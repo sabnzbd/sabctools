@@ -64,7 +64,7 @@ jobs:
           scope: wheels
           containers: true
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.1.1
+        uses: pypa/cibuildwheel@v4.2.0
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -86,7 +86,7 @@ jobs:
         with:
           scope: wheels
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.1.1
+        uses: pypa/cibuildwheel@v4.2.0
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -103,7 +103,7 @@ jobs:
         with:
           scope: wheels
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.1.1
+        uses: pypa/cibuildwheel@v4.2.0
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
