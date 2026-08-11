@@ -60,12 +60,31 @@
 /*
  * Staging buffer used when decoding straight to a sink.
  *
- * One per connection, reused for every article, so streaming costs no per-article
- * allocation at all. Sized so a typical article is staged whole and written once:
- * bigger than the usual ~700 KB body, and small enough that connections x this stays
- * a fraction of the article cache it replaces.
+ * One per connection, allocated on first use and reused for every article, so
+ * streaming costs no per-article allocation at all.
+ *
+ * Sized to match the caller's input buffer rather than to the size of an article.
+ * A single process() call cannot produce more decoded bytes than its input holds -
+ * yEnc shrinks slightly - so this absorbs the most any one call can generate, and
+ * flushes fall on call boundaries instead of arbitrarily inside them. SABnzbd uses
+ * 256 KiB (NNTP_BUFFER_SIZE), which is where this number comes from.
+ *
+ * Sizing it to hold a whole ~700 KB article instead was the obvious idea and the
+ * wrong one. It buys nothing: measured across 64 KiB to 4 MiB, decode CPU is flat
+ * from 256 KiB upward, because the yEnc decode dominates and the write syscalls it
+ * saves do not register. 1 MiB measured no better than 256 KiB. What it does cost is
+ * memory, multiplied by every connection - and 200 connections is not unusual, which
+ * at 1 MiB is 200 MB of staging, eating the memory saving that streaming exists to
+ * deliver. Below 256 KiB the syscalls do start to show: 64 KiB cost about 9% more
+ * decode CPU.
+ *
+ * It is emphatically not about cache residency. At 200 connections nothing here
+ * stays in any level of cache, and a buffer this size already overflows L1 several
+ * times over on every article.
  */
-#define YENC_STAGING_SIZE (1024*1024)
+#ifndef YENC_STAGING_SIZE
+#define YENC_STAGING_SIZE (256*1024)
+#endif
 
 /* Functions */
 bool yenc_init(PyObject *);
