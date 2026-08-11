@@ -1,4 +1,5 @@
 import gc
+import glob
 import os
 import sys
 from io import BytesIO
@@ -395,3 +396,57 @@ class TestInFlightAccounting:
         decoder.process(512)
 
         assert decoder.pending[0] == "being received"
+
+
+@pytest.mark.parametrize("test_data", sorted(glob.glob("tests/yencfiles/*.yenc")), ids=lambda p: os.path.basename(p))
+def test_sink_and_bytearray_agree(test_data, tmp_path):
+    """Every yenc file decoded both ways, must agree"""
+    data = open(test_data, "rb").read()
+    size = max(1024, len(data) * 2)
+
+    reference = feed(sabctools.Decoder(size), data)
+
+    target = str(tmp_path / "sink.bin")
+    writer = sabctools.FileWriter(target)
+    decoder = sabctools.Decoder(size)
+    for _ in range(max(1, len(reference))):
+        decoder.expect("article", writer)
+    streamed = feed(decoder, data)
+    writer.close()
+
+    assert len(streamed) == len(reference), "different number of responses"
+
+    for expected, actual in zip(reference, streamed):
+        for attribute in (
+            "bytes_decoded",
+            "bytes_read",
+            "crc",
+            "crc_expected",
+            "part_begin",
+            "part_end",
+            "part_size",
+            "end_size",
+            "file_size",
+            "file_name",
+            "status_code",
+            "format",
+            "baddata",
+        ):
+            assert getattr(actual, attribute) == getattr(expected, attribute), attribute
+        assert actual.sink_failed is False
+
+        if expected.data is None:
+            # Nothing was decoded either way, so there is nothing on disk to check
+            assert actual.data is None
+            continue
+
+        if actual.data is not None:
+            # uu carries no offsets, so a sink is ignored and both build a bytearray
+            assert actual.format is sabctools.EncodingFormat.UU
+            assert actual.data == expected.data
+            continue
+
+        # Streamed: the same bytes have to be at the offset the headers gave
+        with open(target, "rb") as written:
+            written.seek(expected.part_begin)
+            assert written.read(len(expected.data)) == bytes(expected.data)
