@@ -483,3 +483,65 @@ def test_article_terminator_split(split_at: int):
     assert responses[0].status_code == expected.status_code
     assert responses[0].data == expected.data
     assert responses[0].bytes_read == expected.bytes_read == len(data_plain)
+
+
+class TestRingRewind:
+    """The input ring is only rewound once its free tail has run down, not on every
+    call. Rewinding eagerly costs nothing directly - on a yEnc stream the remainder is
+    almost always empty, so it is a pointer reset rather than a memmove - but it wipes
+    the consumed region in front of the read pointer between calls, and that region is
+    where decoded output would live if the decoder ever writes in place."""
+
+    SIZE = 256 * 1024
+
+    @staticmethod
+    def article(payload: bytes, begin: int, part: int, total: int) -> bytes:
+        encoded, crc = sabctools.yenc_encode(payload)
+        header = (
+            f"222 0 <a-{part}>\r\n"
+            f"=ybegin part={part} line=128 size={total} name=t.bin\r\n"
+            f"=ypart begin={begin + 1} end={begin + len(payload)}\r\n"
+        ).encode()
+        return header + encoded + f"\r\n=yend size={len(payload)} part={part} pcrc32={crc:08x}\r\n.\r\n".encode()
+
+    def feed(self, read_size: int):
+        """Returns (free tail after each call, decoded bytes)"""
+        payload = bytes(range(256)) * 2800  # ~700 KB, the usual article size
+        count = 6
+        total = len(payload) * count
+        wire = b"".join(self.article(payload, i * len(payload), i + 1, total) for i in range(count))
+
+        decoder = sabctools.Decoder(self.SIZE)
+        for index in range(count):
+            decoder.expect(index)
+
+        free, decoded, position = [], bytearray(), 0
+        while position < len(wire):
+            buffer = memoryview(decoder)
+            assert len(buffer) > 0, "the ring ran out of room, so the caller cannot make progress"
+            chunk = min(len(buffer), read_size, len(wire) - position)
+            buffer[:chunk] = wire[position : position + chunk]
+            buffer.release()
+            decoder.process(chunk)
+            free.append(len(memoryview(decoder)))
+            for response in decoder:
+                decoded += response.data
+            position += chunk
+        return free, bytes(decoded)
+
+    def test_the_ring_is_not_rewound_on_every_call(self):
+        free, _ = self.feed(48 * 1024)
+        assert len(set(free)) > 1, "the tail never moved, so the ring is being rewound every call"
+        assert min(free) < self.SIZE, "the tail never ran down"
+
+    def test_it_rewinds_before_the_tail_is_exhausted(self):
+        """Otherwise the caller is handed a zero-length buffer and cannot make progress"""
+        for read_size in (4096, 48 * 1024, 64 * 1024, self.SIZE):
+            free, _ = self.feed(read_size)
+            assert min(free) > 0, "read_size=%d left no room" % read_size
+
+    def test_deferring_does_not_change_what_is_decoded(self):
+        """The whole point is that this is invisible above the decoder"""
+        reference = self.feed(self.SIZE)[1]
+        for read_size in (1024, 4096, 48 * 1024, 100_000):
+            assert self.feed(read_size)[1] == reference, "read_size=%d decoded differently" % read_size

@@ -58,6 +58,20 @@
 #define YENC_CHUNK_SIZE (64*1024)
 
 /*
+ * Compact the input ring once the free tail falls below this.
+ *
+ * The tail is what the caller writes the next read into, so moving the unprocessed
+ * remainder to the front is only worth doing when the tail has run down far enough to
+ * make the next read small. Doing it on every call costs a memmove per call to buy
+ * space that was not needed yet, and it also destroys anything held in the region
+ * behind the read pointer - which is where decoded output would live if the decoder
+ * ever writes in place.
+ *
+ * A buffer smaller than this compacts every call, exactly as before.
+ */
+#define YENC_COMPACT_THRESHOLD YENC_CHUNK_SIZE
+
+/*
  * Staging buffer used when decoding straight to a sink.
  *
  * One per connection, allocated on first use and reused for every article, so

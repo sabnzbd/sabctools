@@ -1618,19 +1618,27 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
             if (unprocessed > 0) {
                 continue;
             }
-
-            self->position = 0;
-            self->consumed = 0;
-            break;
         }
 
-        // Case 2: not EOF
-        if (unprocessed > 0) {
-            memmove(self->data, self->data + self->consumed, unprocessed);
+        // Case 2, and the tail of case 1: rewind the ring, but only once the free tail
+        // has run down.
+        //
+        // The caller writes its next read into [position, size) and that tail is what
+        // the buffer protocol exports, so rewinding buys nothing until the tail is
+        // small enough to make the next read small. Deferring it leaves the consumed
+        // bytes in front of the read pointer untouched between calls, which is the
+        // property the decoder needs if it is ever to write decoded output in place
+        // rather than into a separate staging buffer.
+        //
+        // Note this covers the unprocessed == 0 case too, which is the common one on a
+        // yEnc stream: the decoder carries partial lines in its own state rather than
+        // leaving them in the buffer, so the memmove below almost never runs, and it
+        // was the free rewind - not the move - that reset the ring on every call.
+        if (self->size - self->position < YENC_COMPACT_THRESHOLD) {
+            if (unprocessed > 0) {
+                memmove(self->data, self->data + self->consumed, unprocessed);
+            }
             self->position = unprocessed;
-            self->consumed = 0;
-        } else {
-            self->position = 0;
             self->consumed = 0;
         }
         break;
