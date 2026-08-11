@@ -408,6 +408,16 @@ def test_sink_and_bytearray_agree(test_data, tmp_path):
 
     target = str(tmp_path / "sink.bin")
     writer = sabctools.FileWriter(target)
+
+    # Preallocate as Assembler.open does, which marks the file sparse. Without it a
+    # write past the end has to be materialised: NTFS zero-fills from the file's valid
+    # data length to the write offset, so test_huge_size_1TiB_ypart tries to write a
+    # terabyte and fails. APFS and ext4 make the hole implicitly, which is why skipping
+    # this only shows up on Windows.
+    needed = max((r.part_begin + len(r.data) for r in reference if r.data), default=0)
+    if needed:
+        writer.preallocate(needed)
+
     decoder = sabctools.Decoder(size)
     for _ in range(max(1, len(reference))):
         decoder.expect("article", writer)
