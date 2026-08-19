@@ -23,7 +23,15 @@ PyObject* bytearray_malloc(PyObject* self, PyObject* Py_input_size) {
         PyErr_SetString(PyExc_TypeError, "Expected type 'int'.");
         return NULL;
     }
-    return PyByteArray_FromStringAndSize(NULL, PyLong_AsSsize_t(Py_input_size));
+    Py_ssize_t size = PyLong_AsSsize_t(Py_input_size);
+    if (size == -1 && PyErr_Occurred()) {
+        return NULL; // OverflowError for values outside Py_ssize_t
+    }
+    if (size < 0) {
+        PyErr_SetString(PyExc_ValueError, "Size must be non-negative.");
+        return NULL;
+    }
+    return PyByteArray_FromStringAndSize(NULL, size);
 }
 
 /**

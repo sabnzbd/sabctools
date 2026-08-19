@@ -254,6 +254,78 @@ def test_uu_no_filename():
     assert response.file_name is None
 
 
+def test_encoding_format_values():
+    """Values are part of the public stub contract (sabctools.pyi) and must stay truthy."""
+    assert sabctools.EncodingFormat.YENC.value == 1
+    assert sabctools.EncodingFormat.UU.value == 2
+    assert bool(sabctools.EncodingFormat.YENC)
+    assert bool(sabctools.EncodingFormat.UU)
+
+
+def uu_decode_single(line: bytes) -> "sabctools.NNTPResponse":
+    parts = [b"222 0 <foo@bar>\r\n", b"begin 644 f\r\n", line, b"\r\n", b"`\r\n", b"end\r\n", b".\r\n"]
+    data_plain = b"".join(parts)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.format is sabctools.EncodingFormat.UU
+    return response
+
+
+def test_uu_declared_length_exceeds_data():
+    """Length byte claims 1 byte; trailing junk must not be decoded as data."""
+    response = uu_decode_single(uu(b"A") + b"````````")
+    assert response.data == b"A"
+    assert not response.baddata
+
+
+def test_uu_truncated_final_group():
+    """Some encoders omit trailing padding; the final partial group must still decode."""
+    response = uu_decode_single(uu(b"A")[:3])  # length byte + 2 data chars, no padding
+    assert response.data == b"A"
+    assert not response.baddata
+
+
+def test_uu_declared_length_not_encodable():
+    """Length byte claims 3 bytes but the characters only encode 2; flag the data loss."""
+    response = uu_decode_single(uu(b"ABC")[:4])  # drop the last char of the group
+    assert response.data == b"AB"
+    assert response.baddata
+
+
+def test_ypart_begin_zero():
+    """begin is 1-based; begin=0 must be rejected instead of producing part_begin=-1."""
+    parts = [
+        b"222 0 <foo@bar>\r\n",
+        b"=ybegin part=1 total=1 line=128 size=12 name=helloworld\r\n",
+        b"=ypart begin=0 end=12\r\n",
+        b"r\x8f\x96\x96\x99J\xa1\x99\x9c\x96\x8eK\r\n",
+        b"=yend size=12 pcrc32=deadbeef\r\n",
+        b".\r\n",
+    ]
+    data_plain = b"".join(parts)
+    input = BytesIO(data_plain)
+    decoder = sabctools.Decoder(len(data_plain))
+    n = input.readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.part_begin == 0
+    assert response.part_size == 0
+
+
+def test_line_exceeds_buffer():
+    """A single line larger than the whole buffer must raise instead of livelocking."""
+    decoder = sabctools.Decoder(1024)
+    input = BytesIO(b"A" * 2048)
+    n = input.readinto(decoder)
+    with pytest.raises(BufferError, match="exceeds decoder buffer capacity"):
+        decoder.process(n)
+
+
 @pytest.mark.parametrize(
     "length",
     range(1, 46),
@@ -294,6 +366,8 @@ def test_uu_length(length: int):
         "test_missing_yend.yenc",  # ybegin without yend
         "test_ypart_without_ybegin.yenc",  # ypart before ybegin
         "test_ypart_invalid_range.yenc",  # ypart begin > end
+        "test_ypart_greater_size.yenc",  # ypart range larger than file size
+        "test_huge_size_1TiB_ypart.yenc",  # ypart begin/end beyond the file size limit
         "test_part_exceeds_limit.yenc",  # Part size > 10MB limit
         # Special characters & encoding
         "test_non_ascii_everywhere.yenc",  # UTF-8/Chinese characters

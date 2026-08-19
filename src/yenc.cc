@@ -361,9 +361,13 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->has_part = true;
         instance->body = true;
         line.remove_prefix(6);
+        // begin is 1-based so must be >= 1; bounding end also rules out signed
+        // overflow in the size calculation below
         if (extract_int(line, " begin=", instance->part_begin) &&
-            extract_int(line, " end=", instance->part_end)) {
-            // Get the size and sanity check the values
+            extract_int(line, " end=", instance->part_end) &&
+            instance->part_begin >= 1 &&
+            instance->part_end >= instance->part_begin &&
+            instance->part_end <= YENC_MAX_FILE_SIZE) {
             instance->part_size = instance->part_end - instance->part_begin + 1;
         }
         if (instance->part_size > 0) {
@@ -452,11 +456,12 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
 }
 
 /**
- * Property getter for the 'data' attribute. Returns a memoryview of the decoded data.
+ * Property getter for the 'data' attribute. Returns the decoded data.
  * 
  * @param self The Decoder instance
  * @param closure Unused closure parameter
- * @return memoryview object providing access to decoded data
+ * @return bytearray with the decoded data, or None if the response is
+ *         incomplete or produced no data
  */
 static PyObject* NNTPResponse_get_data(NNTPResponse* self, void* closure)
 {
@@ -818,8 +823,15 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
         auto it = line.begin();
         const auto end = line.end();
 
-        while (effLen > 0 && std::distance(it, end) >= 4) {
-            const auto chunk = std::min(effLen, static_cast<std::size_t>(3));
+        while (effLen > 0) {
+            const auto avail = static_cast<std::size_t>(std::distance(it, end));
+            if (avail < 2) break; // need at least 2 chars to decode 1 byte
+
+            // Bytes this group yields: capped by the declared remainder, the
+            // group maximum of 3, and what the available chars can encode
+            // (n chars -> n-1 bytes). Handles truncated final groups from
+            // encoders that omit trailing padding.
+            const std::size_t chunk = std::min({effLen, static_cast<std::size_t>(3), avail - 1});
             const unsigned char c0 = NNTPResponse_decode_uu_char(*it++);
             const unsigned char c1 = NNTPResponse_decode_uu_char(*it++);
             unsigned char c2 = 0;
@@ -836,7 +848,15 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
                 *dst++ = static_cast<char>(c2 << 6 | c3);
             }
 
-            effLen -= 3;
+            // Subtract only what was produced; subtracting a fixed 3 would wrap
+            // the unsigned count when the final group is short and misdecode
+            // trailing padding as data
+            effLen -= chunk;
+        }
+
+        // Line declared more bytes than its characters could encode
+        if (effLen > 0) {
+            instance->has_baddata = true;
         }
 
         Py_ssize_t produced = dst - dst_start;
@@ -1290,7 +1310,7 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
         self->response = instance;
     }
 
-    return NNTPResponse_decode_buffer(instance, data, size);;
+    return NNTPResponse_decode_buffer(instance, data, size);
 }
 
 /*
@@ -1369,6 +1389,13 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
 
         // Case 2: not EOF
         if (unprocessed > 0) {
+            // No bytes consumed while the buffer is completely full: a single
+            // line exceeds the whole buffer, so no future process() call can
+            // make progress. Raise instead of livelocking the caller.
+            if (read == 0 && self->consumed == 0 && self->position == self->size) {
+                PyErr_SetString(PyExc_BufferError, "Response line exceeds decoder buffer capacity");
+                return NULL;
+            }
             memmove(self->data, self->data + self->consumed, unprocessed);
             self->position = unprocessed;
             self->consumed = 0;
@@ -1507,9 +1534,11 @@ bool yenc_init(PyObject *m) {
     rapidyenc_crc_init();
 
     // Create EncodingFormat enum
+    // Values must match the sabctools.pyi stub. Starting at 1 also keeps every
+    // member truthy, so `if response.format:` behaves as expected.
     static EnumEntry encoding_entries[] = {
-        {"YENC", 0},
-        {"UU", 1}
+        {"YENC", 1},
+        {"UU", 2}
     };
     PyObject* encoding_enum = create_int_enum("EncodingFormat", encoding_entries, std::size(encoding_entries));
     if (!encoding_enum)

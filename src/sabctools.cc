@@ -146,14 +146,14 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     openssl_init();
     sparse_init();
 
-    PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION);
-    PyModule_AddStringConstant(m, "simd", kernel_name(rapidyenc_decode_kernel()));
-    PyModule_AddStringConstant(m, "crc_simd", kernel_name(rapidyenc_crc_kernel()));
-
-    // Add status of linking OpenSSL function
-    PyObject *openssl_linked_object = openssl_linked() ? Py_True : Py_False;
-    Py_INCREF(openssl_linked_object);
-    PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
+    if (PyModule_AddStringConstant(m, "version", SABCTOOLS_VERSION) < 0 ||
+        PyModule_AddStringConstant(m, "simd", kernel_name(rapidyenc_decode_kernel())) < 0 ||
+        PyModule_AddStringConstant(m, "crc_simd", kernel_name(rapidyenc_crc_kernel())) < 0 ||
+        // AddObjectRef does not steal a reference, so no manual INCREF/leak handling
+        PyModule_AddObjectRef(m, "openssl_linked", openssl_linked() ? Py_True : Py_False) < 0) {
+        Py_DECREF(m);
+        return NULL;
+    }
 
     return m;
 }
