@@ -72,6 +72,10 @@ PyObject *sparse(PyObject *self, PyObject *args)
     }
 
     handle = reinterpret_cast<HANDLE>(PyLong_AsLongLong(Py_file_handle));
+    if (PyErr_Occurred())
+    {
+        goto error;
+    }
 
     // Creating a sparse file may fail; only change the file size if it succeeds
     DWORD bytesReturned;
@@ -115,7 +119,13 @@ PyObject *sparse(PyObject *self, PyObject *args)
         }
     }
 
-    if (ftruncate(fd, (off_t)length) == -1)
+    // ftruncate can block on disk/network I/O, so release the GIL
+    int truncate_result;
+    Py_BEGIN_ALLOW_THREADS;
+    truncate_result = ftruncate(fd, (off_t)length);
+    Py_END_ALLOW_THREADS;
+
+    if (truncate_result == -1)
     {
         PyErr_SetFromErrno(PyExc_OSError);
         goto error;
