@@ -24,11 +24,11 @@
 
 
 #include <string_view>
-#include <iostream>
 #include <charconv>
 #include <optional>
 #include <deque>
 #include <algorithm>
+#include <new>
 
 #include "yencode/common.h"
 #include "yencode/encoder.h"

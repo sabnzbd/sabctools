@@ -10,8 +10,10 @@ def test_bytearray_malloc():
 def test_bytearray_malloc_bad_inputs():
     with pytest.raises(TypeError):
         sabctools.bytearray_malloc(10.0)
-    with pytest.raises(SystemError):
+    with pytest.raises(ValueError):
         sabctools.bytearray_malloc(-1)
+    with pytest.raises(OverflowError):
+        sabctools.bytearray_malloc(2**100)
     with pytest.raises(TypeError):
         sabctools.bytearray_malloc("foo")
 

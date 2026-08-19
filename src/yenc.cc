@@ -365,8 +365,9 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->body = true;
         line.remove_prefix(6);
         if (extract_int(line, " begin=", instance->part_begin) &&
-            extract_int(line, " end=", instance->part_end)) {
-            // Get the size and sanity check the values
+            extract_int(line, " end=", instance->part_end) &&
+            instance->part_begin >= 1 && instance->part_end >= instance->part_begin) {
+            // begin is 1-based per spec; validated above so this cannot overflow
             instance->part_size = instance->part_end - instance->part_begin + 1;
         }
         if (instance->part_size > 0) {
@@ -387,7 +388,8 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         constexpr std::string_view prefixes[] = { " pcrc32=", " crc32=" };
 
         for (const auto& prefix : prefixes) {
-            auto pos = line.find(prefix, 5);
+            // "=yend" was already stripped, so search from the start of the line
+            auto pos = line.find(prefix);
             if (pos != std::string::npos) {
                 crc32 = line.substr(pos + prefix.size());
                 crc32_found = true;
@@ -455,7 +457,7 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
 }
 
 /**
- * Property getter for the 'data' attribute. Returns a memoryview of the decoded data.
+ * Property getter for the 'data' attribute. Returns the decoded data bytearray.
  * 
  * @param self The Decoder instance
  * @param closure Unused closure parameter
@@ -594,6 +596,9 @@ static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, co
         // allocation. Anything allocated beyond bytes_decoded is retained for
         // the lifetime of the article.
         Py_ssize_t base = instance->part_size > 0 ? instance->part_size : instance->file_size;
+        // Clamp before adding the margin so absurd header values cannot overflow
+        if (base > YENC_MAX_PART_SIZE)
+            base = YENC_MAX_PART_SIZE;
         Py_ssize_t expected = base + 64;  // small margin to see the end of yEnc data
 
         if (expected < YENC_MIN_BUFFER_SIZE)
@@ -1029,7 +1034,9 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->total = 0;
     instance->crc = 0;
     instance->status_code = 0;
-    instance->crc_expected = std::nullopt;
+    // Placement-new: tp_alloc returns raw zeroed memory, so the C++ object
+    // must be constructed, not assigned to
+    new (&instance->crc_expected) std::optional<uint32_t>();
     instance->state = RapidYenc::YDEC_STATE_CRLF;
     instance->eof = false;
     instance->body = false;
@@ -1284,7 +1291,7 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
         self->response = instance;
     }
 
-    return NNTPResponse_decode_buffer(instance, data, size);;
+    return NNTPResponse_decode_buffer(instance, data, size);
 }
 
 /*
@@ -1344,7 +1351,8 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
                 // Adjust the Python-size of the bytearray-object
                 // This will only do a real resize if the data shrunk by half, so never in our case!
                 // Resizing a bytes object always does a real resize, so more costly
-                PyByteArray_Resize(self->response->data, self->response->bytes_decoded);
+                if (PyByteArray_Resize(self->response->data, self->response->bytes_decoded) == -1)
+                    return NULL;
             }
 
             // Push completed decoder
@@ -1501,9 +1509,10 @@ bool yenc_init(PyObject *m) {
     RapidYenc::crc32_init();
 
     // Create EncodingFormat enum
+    // Values start at 1 so no member is falsy, matching sabctools.pyi
     static EnumEntry encoding_entries[] = {
-        {"YENC", 0},
-        {"UU", 1}
+        {"YENC", 1},
+        {"UU", 2}
     };
     PyObject* encoding_enum = create_int_enum("EncodingFormat", encoding_entries, std::size(encoding_entries));
     if (!encoding_enum)

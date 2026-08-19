@@ -60,6 +60,30 @@ def test_padded_crc():
     assert python_yenc(data_plain) == sabctools_yenc_wrapper(data_plain)
 
 
+def test_crc_first_field_on_yend_line():
+    """pcrc32 must be found even when it is the first field after =yend"""
+    data = os.urandom(1000)
+    encoded, crc = sabctools.yenc_encode(bytes(data))
+    article = b"".join(
+        [
+            b"222 0 <test@yend>\r\n",
+            b"=ybegin part=1 total=1 line=128 size=%d name=test.bin\r\n" % len(data),
+            b"=ypart begin=1 end=%d\r\n" % len(data),
+            encoded,
+            b"\r\n=yend pcrc32=%08x size=%d\r\n" % (crc, len(data)),
+            b".\r\n",
+        ]
+    )
+    decoder = sabctools.Decoder(len(article))
+    n = BytesIO(article).readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.crc_expected == crc
+    assert response.data == data
+    assert response.crc == crc
+
+
 @pytest.mark.parametrize(
     "filename",
     [

@@ -48,7 +48,7 @@ PyObject *sparse(PyObject *self, PyObject *args)
 
     HANDLE handle = NULL;
 
-    if (Py_msvcrt_module == NULL)
+    if (Py_msvcrt_module == NULL || get_osfhandle_string == NULL)
     {
         PyErr_SetString(PyExc_SystemError, "msvcrt module not loaded.");
         goto error;
@@ -72,6 +72,10 @@ PyObject *sparse(PyObject *self, PyObject *args)
     }
 
     handle = reinterpret_cast<HANDLE>(PyLong_AsLongLong(Py_file_handle));
+    if (PyErr_Occurred())
+    {
+        goto error;
+    }
 
     // Creating a sparse file may fail; only change the file size if it succeeds
     DWORD bytesReturned;
