@@ -18,6 +18,7 @@
 
 #include "yenc.h"
 #include "filewriter.h"
+#include "unlocked_ssl.h"
 
 #include "rapidyenc/rapidyenc.h"
 
@@ -452,6 +453,7 @@ static int NNTPResponse_traverse(NNTPResponse* self, visitproc visit, void* arg)
     Py_VISIT(self->data);
     Py_VISIT(self->context);
     Py_VISIT(self->sink);
+    Py_VISIT(self->sink_error);
     Py_VISIT(self->lines);
     Py_VISIT(self->format);
     Py_VISIT(self->file_name);
@@ -464,6 +466,7 @@ static int NNTPResponse_clear(NNTPResponse* self)
     Py_CLEAR(self->data);
     Py_CLEAR(self->context);
     Py_CLEAR(self->sink);
+    Py_CLEAR(self->sink_error);
     Py_CLEAR(self->lines);
     Py_CLEAR(self->format);
     Py_CLEAR(self->file_name);
@@ -477,6 +480,7 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
     Py_XDECREF(self->data);
     Py_XDECREF(self->context);
     Py_XDECREF(self->sink);
+    Py_XDECREF(self->sink_error);
     Py_XDECREF(self->lines);
     Py_XDECREF(self->format);
     Py_XDECREF(self->file_name);
@@ -665,6 +669,23 @@ static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
         // does not have to be.
         instance->sink_failed = true;
         owner->staging_used = 0;
+
+        // Build the error but hold it rather than raising: the caller needs to know
+        // whether this was a full disk or a file that was closed underneath us, and
+        // those want opposite handling. The GIL is back by now, so this is safe.
+        if (!instance->sink_error) {
+            filewriter_raise(writer, was_closed, error_code);
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 12)
+            instance->sink_error = PyErr_GetRaisedException();
+#else
+            PyObject *error_type = NULL, *error_value = NULL, *error_traceback = NULL;
+            PyErr_Fetch(&error_type, &error_value, &error_traceback);
+            PyErr_NormalizeException(&error_type, &error_value, &error_traceback);
+            Py_XDECREF(error_type);
+            Py_XDECREF(error_traceback);
+            instance->sink_error = error_value;
+#endif
+        }
         return true;
     }
 
@@ -1222,6 +1243,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->data = nullptr;
     instance->context = nullptr;
     instance->sink = nullptr;
+    instance->sink_error = nullptr;
     instance->sink_offset = 0;
     instance->lines = nullptr;
     instance->format = nullptr;
@@ -1280,6 +1302,8 @@ static PyMemberDef NNTPResponse_members[] = {
     {"baddata", T_BOOL, offsetof(NNTPResponse, has_baddata), READONLY, ""},
     {"sink_failed", T_BOOL, offsetof(NNTPResponse, sink_failed), READONLY,
      PyDoc_STR("A write to the sink failed, so the decoded body was discarded")},
+    {"sink_error", T_OBJECT, offsetof(NNTPResponse, sink_error), READONLY,
+     PyDoc_STR("The exception the failed sink write produced, or None")},
     {nullptr, 0, 0, 0, nullptr}
 };
 

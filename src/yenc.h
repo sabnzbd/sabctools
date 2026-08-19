@@ -123,6 +123,9 @@ typedef struct {
 	PyObject* data;
 	PyObject* context;
 	PyObject* sink;
+	// The error the failed write raised, built but not raised so the response can be
+	// consumed to its end first. NULL when no write failed.
+	PyObject* sink_error;
 	// Absolute file offset for the next flush, tracked across staging buffer fills
 	Py_ssize_t sink_offset;
 	Py_ssize_t bytes_decoded;

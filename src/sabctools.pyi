@@ -62,6 +62,12 @@ class NNTPResponse:
     The response is still completed and the connection is left usable - abandoning it
     mid-stream would desynchronise the byte stream - but nothing was kept, so the
     article has to be fetched again."""
+    sink_error: Optional[BaseException]
+    """The exception that failed write produced, held rather than raised.
+
+    An OSError for a real disk error, carrying its errno and the file it was writing -
+    a full disk arrives as ENOSPC. A ValueError when the file had simply been closed,
+    which is what a deleted job looks like. None when no write failed."""
 
 class Decoder:
     def __init__(self, size: int):

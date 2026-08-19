@@ -460,3 +460,44 @@ def test_sink_and_bytearray_agree(test_data, tmp_path):
         with open(target, "rb") as written:
             written.seek(expected.part_begin)
             assert written.read(len(expected.data)) == bytes(expected.data)
+
+
+class TestSinkError:
+    """A failed write has to say what went wrong. A closed file means the job went away
+    and the article can simply be fetched again; a full disk cannot be fixed that way
+    and the caller has to be able to tell the two apart."""
+
+    def test_a_closed_sink_reports_a_valueerror(self, tmp_path):
+        target = sabctools.FileWriter(str(tmp_path / "closed.bin"))
+        target.close()
+
+        decoder = sabctools.Decoder(65536)
+        decoder.expect("article", target)
+        response = feed(decoder, build_article(b"x" * 5000))[0]
+
+        assert response.sink_failed is True
+        assert isinstance(response.sink_error, ValueError)
+        assert not isinstance(response.sink_error, OSError), "a deleted job is not a disk error"
+
+    def test_no_failure_leaves_it_none(self, writer):
+        decoder = sabctools.Decoder(65536)
+        decoder.expect("article", writer)
+        response = feed(decoder, build_article(b"x" * 5000))[0]
+        assert response.sink_failed is False
+        assert response.sink_error is None
+
+    def test_the_error_survives_being_held_across_the_response(self, tmp_path):
+        """It is built mid-body and read after the response completes, so it has to be
+        owned by the response rather than left in the raised-exception slot"""
+        target = sabctools.FileWriter(str(tmp_path / "closed.bin"))
+        target.close()
+
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("article", target)
+        # Big enough to flush several times, so the error is produced early and then
+        # has to survive the rest of the body being decoded
+        response = feed(decoder, build_article(b"y" * (2 * 1024 * 1024)))[0]
+
+        assert response.sink_error is not None
+        gc.collect()
+        assert str(response.sink_error)  # still usable after a collection
