@@ -307,3 +307,59 @@ class TestReferenceCounting:
             assert sys.getrefcount(path) - before < accesses // 10
         finally:
             writer.close()
+
+
+class TestAccessors:
+    def test_size_reports_the_current_length(self, target):
+        with sabctools.FileWriter(target) as writer:
+            assert writer.size == 0
+            writer.write(b"x" * 1000, 0)
+            assert writer.size == 1000
+            writer.preallocate(8192)
+            assert writer.size == 8192
+
+    def test_size_after_close_raises(self, target):
+        writer = sabctools.FileWriter(target)
+        writer.close()
+        with pytest.raises(ValueError):
+            writer.size
+
+    def test_repr_says_whether_it_is_open(self, target):
+        writer = sabctools.FileWriter(target)
+        assert "closed=False" in repr(writer)
+        writer.close()
+        assert "closed=True" in repr(writer)
+
+    def test_accessors_are_safe_against_a_concurrent_close(self, target):
+        """close() mutates the handle under the exclusive lock with the GIL released,
+        so the accessors have to take the shared lock rather than reading it bare.
+        Unlocked, size would also be free to stat a descriptor that close() has already
+        released - and that the OS may have handed to an entirely different file."""
+        errors = []
+
+        for _ in range(50):
+            writer = sabctools.FileWriter(target)
+            writer.write(b"payload", 0)
+            stop = threading.Event()
+
+            def poke():
+                while not stop.is_set():
+                    try:
+                        writer.closed
+                        repr(writer)
+                        writer.size
+                    except ValueError:
+                        pass  # closed underneath us, which is the expected race
+                    except Exception as err:  # anything else is a real failure
+                        errors.append(err)
+                        return
+
+            readers = [threading.Thread(target=poke) for _ in range(4)]
+            for reader in readers:
+                reader.start()
+            writer.close()
+            stop.set()
+            for reader in readers:
+                reader.join()
+
+        assert not errors, errors[:3]

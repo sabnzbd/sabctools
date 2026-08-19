@@ -363,33 +363,70 @@ static PyObject *FileWriter_exit(FileWriter *self, PyObject *Py_UNUSED(args)) {
  * disagree with the file actually being written. Callers use it to tell an existing
  * file from one they have just created, which decides whether to preallocate.
  */
+/*
+ * Read the handle under the same shared lock the writes take.
+ *
+ * close() mutates the handle under the exclusive lock with the GIL released, so
+ * holding the GIL is not enough to be safe here: an unlocked read races it. For size
+ * that matters in practice and not only formally, because the descriptor could be
+ * closed - and reused by an unrelated file - between the check and the call below,
+ * which is the failure this class owns its descriptor to rule out.
+ */
 static PyObject *FileWriter_get_size(FileWriter *self, void *Py_UNUSED(closure)) {
-    if (self->handle == SABCTOOLS_INVALID_HANDLE) {
+    bool was_closed = false;
+    unsigned long error_code = 0;
+    long long size = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+    {
+        std::shared_lock<std::shared_mutex> guard(self->lock);
+
+        if (self->handle == SABCTOOLS_INVALID_HANDLE) {
+            was_closed = true;
+        } else {
+#if defined(_WIN32) || defined(__CYGWIN__)
+            LARGE_INTEGER value;
+            if (GetFileSizeEx(self->handle, &value)) {
+                size = (long long)value.QuadPart;
+            } else {
+                error_code = (unsigned long)GetLastError();
+            }
+#else
+            struct stat info;
+            if (fstat(self->handle, &info) == 0) {
+                size = (long long)info.st_size;
+            } else {
+                error_code = (unsigned long)errno;
+            }
+#endif
+        }
+    }
+    Py_END_ALLOW_THREADS
+
+    if (was_closed) {
         PyErr_SetString(PyExc_ValueError, "size of closed FileWriter");
         return NULL;
     }
-
-#if defined(_WIN32) || defined(__CYGWIN__)
-    LARGE_INTEGER size;
-    if (!GetFileSizeEx(self->handle, &size)) {
-        PyErr_SetExcFromWindowsErrWithFilenameObject(PyExc_OSError, 0, self->path);
+    if (error_code) {
+        filewriter_raise(self, false, error_code);
         return NULL;
     }
-    return PyLong_FromLongLong((long long)size.QuadPart);
-#else
-    struct stat info;
-    if (fstat(self->handle, &info) < 0) {
-        PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, self->path);
-        return NULL;
-    }
-    return PyLong_FromLongLong((long long)info.st_size);
-#endif
+    return PyLong_FromLongLong(size);
 }
 
 static PyObject *FileWriter_get_closed(FileWriter *self, void *Py_UNUSED(closure)) {
-    return PyBool_FromLong(self->handle == SABCTOOLS_INVALID_HANDLE);
+    bool closed;
+    Py_BEGIN_ALLOW_THREADS
+    {
+        std::shared_lock<std::shared_mutex> guard(self->lock);
+        closed = self->handle == SABCTOOLS_INVALID_HANDLE;
+    }
+    Py_END_ALLOW_THREADS
+    return PyBool_FromLong(closed);
 }
 
+/* No lock: path is set once during __init__ and only cleared in dealloc, by which
+   point nothing else can hold a reference. close() never touches it. */
 static PyObject *FileWriter_get_path(FileWriter *self, void *Py_UNUSED(closure)) {
     if (!self->path) Py_RETURN_NONE;
     Py_INCREF(self->path);
@@ -397,8 +434,15 @@ static PyObject *FileWriter_get_path(FileWriter *self, void *Py_UNUSED(closure))
 }
 
 static PyObject *FileWriter_repr(FileWriter *self) {
+    bool closed;
+    Py_BEGIN_ALLOW_THREADS
+    {
+        std::shared_lock<std::shared_mutex> guard(self->lock);
+        closed = self->handle == SABCTOOLS_INVALID_HANDLE;
+    }
+    Py_END_ALLOW_THREADS
     return PyUnicode_FromFormat("<sabctools.FileWriter path=%R closed=%s>", self->path ? self->path : Py_None,
-                                self->handle == SABCTOOLS_INVALID_HANDLE ? "True" : "False");
+                                closed ? "True" : "False");
 }
 
 static PyMethodDef FileWriter_methods[] = {
