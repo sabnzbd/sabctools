@@ -1223,7 +1223,6 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->context = nullptr;
     instance->sink = nullptr;
     instance->sink_offset = 0;
-    instance->sink_failed = false;
     instance->lines = nullptr;
     instance->format = nullptr;
     instance->file_name = nullptr;
@@ -1544,6 +1543,11 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
             instance->context = request.context;
             instance->sink = request.sink;
         }
+        // Defensive, and deliberately so. A response that ran to the end of its body
+        // has already flushed, so this is normally a no-op - but tp_clear drops a
+        // part-decoded response without one, and carrying those bytes into the next
+        // article would write them at the next article's offset. Silent corruption
+        // that only par2 would notice, for the sake of one store.
         self->staging_used = 0;
     }
 
