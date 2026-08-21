@@ -168,9 +168,9 @@ void openssl_init() {
 #endif
     if(!openssl_handle) goto cleanup;
 
-    *(void**)&SSL_read_ex = GetProcAddress(openssl_handle, "SSL_read_ex");
-    *(void**)&SSL_get_error = GetProcAddress(openssl_handle, "SSL_get_error");
-    *(void**)&SSL_get_shutdown = GetProcAddress(openssl_handle, "SSL_get_shutdown");
+    SSL_read_ex = reinterpret_cast<decltype(SSL_read_ex)>(GetProcAddress(openssl_handle, "SSL_read_ex"));
+    SSL_get_error = reinterpret_cast<decltype(SSL_get_error)>(GetProcAddress(openssl_handle, "SSL_get_error"));
+    SSL_get_shutdown = reinterpret_cast<decltype(SSL_get_shutdown)>(GetProcAddress(openssl_handle, "SSL_get_shutdown"));
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 

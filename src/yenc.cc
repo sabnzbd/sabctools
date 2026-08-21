@@ -17,6 +17,8 @@
  */
 
 #include "yenc.h"
+#include "filewriter.h"
+#include "unlocked_ssl.h"
 
 #include "rapidyenc/rapidyenc.h"
 
@@ -441,9 +443,44 @@ static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view lin
  * 
  * @param self The Decoder instance to deallocate
  */
+/*
+ * GC support. Both these types hold arbitrary Python objects now - the context and the
+ * sink handed to Decoder.expect() - so a cycle through them is reachable. d.expect(d)
+ * is enough to make one, and without traverse/clear it would never be collected.
+ */
+static int NNTPResponse_traverse(NNTPResponse* self, visitproc visit, void* arg)
+{
+    Py_VISIT(self->data);
+    Py_VISIT(self->context);
+    Py_VISIT(self->sink);
+    Py_VISIT(self->sink_error);
+    Py_VISIT(self->lines);
+    Py_VISIT(self->format);
+    Py_VISIT(self->file_name);
+    Py_VISIT(self->message);
+    return 0;
+}
+
+static int NNTPResponse_clear(NNTPResponse* self)
+{
+    Py_CLEAR(self->data);
+    Py_CLEAR(self->context);
+    Py_CLEAR(self->sink);
+    Py_CLEAR(self->sink_error);
+    Py_CLEAR(self->lines);
+    Py_CLEAR(self->format);
+    Py_CLEAR(self->file_name);
+    Py_CLEAR(self->message);
+    return 0;
+}
+
 static void NNTPResponse_dealloc(NNTPResponse* self)
 {
+    PyObject_GC_UnTrack(self);
     Py_XDECREF(self->data);
+    Py_XDECREF(self->context);
+    Py_XDECREF(self->sink);
+    Py_XDECREF(self->sink_error);
     Py_XDECREF(self->lines);
     Py_XDECREF(self->format);
     Py_XDECREF(self->file_name);
@@ -458,6 +495,19 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
  * @param closure Unused closure parameter
  * @return memoryview object providing access to decoded data
  */
+/*
+ * The object handed to Decoder.expect() for the request this response answers.
+ *
+ * Opaque here: SABnzbd puts its Article in and gets the same object back, which is
+ * what lets the pairing live on this side rather than in a parallel Python queue.
+ */
+static PyObject* NNTPResponse_get_context(NNTPResponse* self, void* closure)
+{
+    if (!self->context) Py_RETURN_NONE;
+    Py_INCREF(self->context);
+    return self->context;
+}
+
 static PyObject* NNTPResponse_get_data(NNTPResponse* self, void* closure)
 {
     if (!self->eof || !self->bytes_decoded || self->data == NULL) {
@@ -576,11 +626,182 @@ static PyObject* NNTPResponse_get_format(NNTPResponse* self, void *closure)
  * - Detects end conditions (control line, article terminator) and adjusts read position
  * - Releases GIL during decoding for parallel processing
  */
-static bool NNTPResponse_decode_yenc(NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
+/*
+ * Hand the staged bytes to the sink and start the buffer over.
+ *
+ * The write runs with the GIL released, so nothing here touches the Python API until
+ * the error is raised. sink_offset carries the absolute position across fills, so a
+ * body larger than the staging buffer is written in pieces that still land contiguously.
+ */
+static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
+    // Already given up on this response's sink, so keep decoding and throw the bytes
+    // away rather than retrying a write that is going to fail again
+    if (instance->sink_failed) {
+        owner->staging_used = 0;
+        return true;
+    }
+
+    if (owner->staging_used == 0) return true;
+
+    FileWriter *writer = reinterpret_cast<FileWriter *>(instance->sink);
+    Py_ssize_t written = 0;
+    bool was_closed = false;
+    unsigned long error_code = 0;
+
+    Py_BEGIN_ALLOW_THREADS;
+    written = filewriter_write_raw(writer, owner->staging, owner->staging_used,
+                                   static_cast<long long>(instance->sink_offset), &was_closed, &error_code);
+    Py_END_ALLOW_THREADS;
+
+    if (was_closed || error_code) {
+        // Not an error for the connection, and it must not be raised here.
+        //
+        // The obvious handling - raise and let the caller deal with it - abandons the
+        // decoder in the middle of a response. The remainder of the article is still
+        // in the connection's buffer and would then be parsed as the start of the next
+        // one, so a failed write would cost the whole connection rather than one
+        // article. That also puts it out of reach of the Python caller, since by the
+        // time the exception surfaces the damage is done.
+        //
+        // So the response is consumed to its end with the body discarded, and the
+        // failure is reported to Python as sink_failed once the response completes.
+        // The article is lost either way and has to be fetched again; the connection
+        // does not have to be.
+        instance->sink_failed = true;
+        owner->staging_used = 0;
+
+        // Build the error but hold it rather than raising: the caller needs to know
+        // whether this was a full disk or a file that was closed underneath us, and
+        // those want opposite handling. The GIL is back by now, so this is safe.
+        if (!instance->sink_error) {
+            filewriter_raise(writer, was_closed, error_code);
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 12)
+            instance->sink_error = PyErr_GetRaisedException();
+#else
+            PyObject *error_type = NULL, *error_value = NULL, *error_traceback = NULL;
+            PyErr_Fetch(&error_type, &error_value, &error_traceback);
+            PyErr_NormalizeException(&error_type, &error_value, &error_traceback);
+            Py_XDECREF(error_type);
+            Py_XDECREF(error_traceback);
+            instance->sink_error = error_value;
+#endif
+        }
+        return true;
+    }
+
+    instance->sink_offset += written;
+    owner->staging_used = 0;
+    return true;
+}
+
+/*
+ * Decode a yEnc body straight into the sink.
+ *
+ * Same shape as the bytearray path - chunked, CRC folded over what was produced, GIL
+ * dropped around the SIMD decode - but the destination is a buffer shared across the
+ * connection, flushed whenever it fills and again when the body ends. Nothing is kept
+ * once written, so a response costs no memory proportional to its size.
+ */
+static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance, const char *buf,
+                                          const Py_ssize_t buf_len, Py_ssize_t &read) {
+    constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
+    RapidYencDecoderEnd end = RYDEC_END_NONE;
+
+    while (read < buf_len) {
+        Py_ssize_t space = owner->staging_size - owner->staging_used;
+        if (space == 0) {
+            if (!NNTPResponse_flush_sink(owner, instance)) return false;
+            space = owner->staging_size;
+        }
+
+        // The decoder never writes more than it reads, so a chunk that fits the
+        // remaining space always fits its output
+        Py_ssize_t chunk_in = std::min(CHUNK, buf_len - read);
+        if (chunk_in > space) chunk_in = space;
+
+        const char *src = buf + read;
+        char *dst = owner->staging + owner->staging_used;
+        char *dst_start = dst;
+
+        Py_ssize_t consumed = 0, produced = 0;
+
+        Py_BEGIN_ALLOW_THREADS;
+
+        end = rapidyenc_decode_incremental(
+            reinterpret_cast<const void **>(&src),
+            reinterpret_cast<void **>(&dst),
+            chunk_in,
+            &instance->state
+        );
+
+        consumed = src - (buf + read);
+        produced = dst - dst_start;
+
+        if (produced > 0) {
+            instance->crc = rapidyenc_crc(dst_start, produced, instance->crc);
+        }
+
+        Py_END_ALLOW_THREADS;
+
+        read += consumed;
+        instance->bytes_decoded += produced;
+        owner->staging_used += produced;
+
+        if (end != RYDEC_END_NONE || (consumed == 0 && produced == 0))
+            break;
+    }
+
+    // Same end handling as the bytearray path; see the comments there
+    switch (end) {
+        case RYDEC_END_NONE:
+            if (instance->state == RYDEC_STATE_CRLFEQ) {
+                instance->state = RYDEC_STATE_CRLF;
+                read -= 1;
+            }
+            break;
+        case RYDEC_END_CONTROL:
+            instance->body = false;
+            read -= 2;
+            break;
+        case RYDEC_END_ARTICLE:
+            instance->body = false;
+            instance->eof = true;
+            break;
+    }
+
+    // The body is over, so whatever is still staged has to go out now. Leaving it would
+    // lose the tail of the article: the buffer belongs to the connection, and the next
+    // response resets it.
+    if (!instance->body && !NNTPResponse_flush_sink(owner, instance)) return false;
+
+    return true;
+}
+
+static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     // Already at the end of input
     if (read >= buf_len) return true;
 
     constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
+
+    // Streaming to a sink: decode through a buffer shared by every response on this
+    // connection and write it out, instead of building a bytearray per article. The
+    // sizing rules below do not apply, because nothing here is handed to Python.
+    if (instance->sink) {
+        if (owner->staging == nullptr) {
+            owner->staging = static_cast<char*>(malloc(YENC_STAGING_SIZE));
+            if (!owner->staging) {
+                PyErr_NoMemory();
+                return false;
+            }
+            owner->staging_size = YENC_STAGING_SIZE;
+            owner->staging_used = 0;
+        }
+        if (instance->bytes_decoded == 0) {
+            // Where this article belongs in the file, straight from its =ypart header
+            instance->sink_offset = instance->part_begin;
+        }
+        return NNTPResponse_decode_yenc_sink(owner, instance, buf, buf_len, read);
+    }
 
     if (instance->data == nullptr) {
         // Allocate output buffer on first decode call
@@ -897,12 +1118,12 @@ bool next_crlf_line(const char* buf, std::size_t buf_len, Py_ssize_t &read, std:
  *    - Switch to body decoding when =ypart is encountered
  * 3. Return number of bytes processed (may be less than buffer length)
  */
-static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char* buf, const Py_ssize_t buf_len) {
+static Py_ssize_t NNTPResponse_decode_buffer(Decoder *owner, NNTPResponse *instance, const char* buf, const Py_ssize_t buf_len) {
     Py_ssize_t read = 0;
 
     // Resume body decoding if we were in the middle of it
     if (instance->body && instance->format == ENCODING_FORMAT_YENC) {
-        if (!NNTPResponse_decode_yenc(instance, buf, buf_len, read)) return -1;
+        if (!NNTPResponse_decode_yenc(owner, instance, buf, buf_len, read)) return -1;
         if (instance->body) return read;  // Still in body, need more data
         if (instance->eof) return read;   // Decoder consumed the article terminator
     }
@@ -942,7 +1163,7 @@ static Py_ssize_t NNTPResponse_decode_buffer(NNTPResponse *instance, const char*
             NNTPResponse_process_yenc_header(instance, line);
             if (instance->body) {
                 // =ypart was encountered, switch to body decoding
-                if (!NNTPResponse_decode_yenc(instance, buf, buf_len, read)) return -1;
+                if (!NNTPResponse_decode_yenc(owner, instance, buf, buf_len, read)) return -1;
                 if (instance->body) return read;  // Still decoding, need more data
                 if (instance->eof) return read;   // Decoder consumed the article terminator
             }
@@ -1020,6 +1241,10 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     if (!instance) return nullptr;
 
     instance->data = nullptr;
+    instance->context = nullptr;
+    instance->sink = nullptr;
+    instance->sink_error = nullptr;
+    instance->sink_offset = 0;
     instance->lines = nullptr;
     instance->format = nullptr;
     instance->file_name = nullptr;
@@ -1043,6 +1268,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->has_end = false;
     instance->has_emptyline = false;
     instance->has_baddata = false;
+    instance->sink_failed = false;
 
     return reinterpret_cast<PyObject *>(instance);
 }
@@ -1074,11 +1300,16 @@ static PyMemberDef NNTPResponse_members[] = {
     {"bytes_read", T_PYSSIZET, offsetof(NNTPResponse, bytes_read), READONLY, ""},
     {"bytes_decoded", T_PYSSIZET, offsetof(NNTPResponse, bytes_decoded), READONLY, ""},
     {"baddata", T_BOOL, offsetof(NNTPResponse, has_baddata), READONLY, ""},
+    {"sink_failed", T_BOOL, offsetof(NNTPResponse, sink_failed), READONLY,
+     PyDoc_STR("A write to the sink failed, so the decoded body was discarded")},
+    {"sink_error", T_OBJECT, offsetof(NNTPResponse, sink_error), READONLY,
+     PyDoc_STR("The exception the failed sink write produced, or None")},
     {nullptr, 0, 0, 0, nullptr}
 };
 
 static PyGetSetDef NNTPResponse_gets_sets[] = {
     {"data", (getter)NNTPResponse_get_data, NULL, NULL, NULL},
+    {"context", (getter)NNTPResponse_get_context, NULL, NULL, NULL},
     {"file_name", (getter)NNTPResponse_get_file_name, NULL, NULL, NULL},
     {"lines", (getter)NNTPResponse_get_lines, NULL, NULL, NULL},
     {"crc", (getter)NNTPResponse_get_crc, NULL, NULL, NULL},
@@ -1107,10 +1338,10 @@ PyTypeObject NNTPResponseType = {
     nullptr,                             // tp_getattro
     nullptr,                             // tp_setattro
     nullptr,                             // tp_as_buffer
-    Py_TPFLAGS_DEFAULT,                  // tp_flags
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, // tp_flags
     PyDoc_STR("NNTPResponse"),           // tp_doc
-    nullptr,                             // tp_traverse
-    nullptr,                             // tp_clear
+    (traverseproc)NNTPResponse_traverse, // tp_traverse
+    (inquiry)NNTPResponse_clear,         // tp_clear
     nullptr,                             // tp_richcompare
     0,                                   // tp_weaklistoffset
     nullptr,                             // tp_iter
@@ -1227,23 +1458,60 @@ static PyObject* Decoder_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
     if (!self) return NULL;
 
     new (&self->deque) std::deque<NNTPResponse*>();
+    new (&self->pending) std::deque<PendingRequest>();
     self->response = nullptr;
     self->data = nullptr;
     self->size = 0;
     self->consumed = 0;
     self->position = 0;
+    self->staging = nullptr;
+    self->staging_size = 0;
+    self->staging_used = 0;
 
     return reinterpret_cast<PyObject *>(self);
 }
 
+static int Decoder_traverse(Decoder *self, visitproc visit, void* arg)
+{
+    for (NNTPResponse* item : self->deque)
+        Py_VISIT(item);
+    Py_VISIT(self->response);
+    for (PendingRequest& request : self->pending) {
+        Py_VISIT(request.context);
+        Py_VISIT(request.sink);
+    }
+    return 0;
+}
+
+static int Decoder_clear(Decoder *self)
+{
+    for (NNTPResponse* item : self->deque)
+        Py_XDECREF(item);
+    self->deque.clear();
+    Py_CLEAR(self->response);
+    for (PendingRequest& request : self->pending) {
+        Py_XDECREF(request.context);
+        Py_XDECREF(request.sink);
+    }
+    self->pending.clear();
+    return 0;
+}
+
 static void Decoder_dealloc(Decoder *self)
 {
+    PyObject_GC_UnTrack(self);
     // DECREF all remaining items
     for (NNTPResponse* item : self->deque)
         Py_XDECREF(item);
     Py_XDECREF(self->response);
+    for (PendingRequest& request : self->pending) {
+        Py_XDECREF(request.context);
+        Py_XDECREF(request.sink);
+    }
     self->deque.~deque();
+    self->pending.~deque();
     free(self->data);
+    free(self->staging);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -1288,9 +1556,26 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
         instance = reinterpret_cast<NNTPResponse *>(PyObject_CallObject(reinterpret_cast<PyObject *>(&NNTPResponseType), NULL));
         if (!instance) return -1;
         self->response = instance;
+
+        // Responses come back in the order the requests went out, so the front of the
+        // queue belongs to this one. Absent when the caller never used expect(), which
+        // leaves context and sink unset and decoding unchanged.
+        if (!self->pending.empty()) {
+            PendingRequest request = self->pending.front();
+            self->pending.pop_front();
+            // References are transferred from the queue
+            instance->context = request.context;
+            instance->sink = request.sink;
+        }
+        // Defensive, and deliberately so. A response that ran to the end of its body
+        // has already flushed, so this is normally a no-op - but tp_clear drops a
+        // part-decoded response without one, and carrying those bytes into the next
+        // article would write them at the next article's offset. Silent corruption
+        // that only par2 would notice, for the sake of one store.
+        self->staging_used = 0;
     }
 
-    return NNTPResponse_decode_buffer(instance, data, size);;
+    return NNTPResponse_decode_buffer(self, instance, data, size);
 }
 
 /*
@@ -1361,19 +1646,27 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
             if (unprocessed > 0) {
                 continue;
             }
-
-            self->position = 0;
-            self->consumed = 0;
-            break;
         }
 
-        // Case 2: not EOF
-        if (unprocessed > 0) {
-            memmove(self->data, self->data + self->consumed, unprocessed);
+        // Case 2, and the tail of case 1: rewind the ring, but only once the free tail
+        // has run down.
+        //
+        // The caller writes its next read into [position, size) and that tail is what
+        // the buffer protocol exports, so rewinding buys nothing until the tail is
+        // small enough to make the next read small. Deferring it leaves the consumed
+        // bytes in front of the read pointer untouched between calls, which is the
+        // property the decoder needs if it is ever to write decoded output in place
+        // rather than into a separate staging buffer.
+        //
+        // Note this covers the unprocessed == 0 case too, which is the common one on a
+        // yEnc stream: the decoder carries partial lines in its own state rather than
+        // leaving them in the buffer, so the memmove below almost never runs, and it
+        // was the free rewind - not the move - that reset the ring on every call.
+        if (self->size - self->position < YENC_COMPACT_THRESHOLD) {
+            if (unprocessed > 0) {
+                memmove(self->data, self->data + self->consumed, unprocessed);
+            }
             self->position = unprocessed;
-            self->consumed = 0;
-        } else {
-            self->position = 0;
             self->consumed = 0;
         }
         break;
@@ -1382,8 +1675,126 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
     Py_RETURN_NONE;
 }
 
+/*
+ * Record that a request has gone out, so its response can be paired with it.
+ *
+ * ``context`` is returned untouched as NNTPResponse.context. ``sink`` is an optional
+ * FileWriter: when given, the decoded body is streamed into it at the offset the yEnc
+ * headers declare instead of being collected into a bytearray, and response.data is
+ * left as None.
+ *
+ * Calls must be in the order the requests were sent. Nothing here can check that, but
+ * keeping the queue on this side means it cannot drift against the responses the way
+ * a second queue in Python could.
+ */
+static PyObject* Decoder_expect(Decoder *self, PyObject *args)
+{
+    PyObject* context = nullptr;
+    PyObject* sink = nullptr;
+
+    if (!PyArg_ParseTuple(args, "O|O:expect", &context, &sink))
+        return NULL;
+
+    if (sink == Py_None) sink = nullptr;
+
+    // Checked rather than duck-typed: the write happens from C with the GIL released,
+    // so it needs the real structure, not an object that merely has a write method
+    if (sink && !PyObject_TypeCheck(sink, &FileWriterType)) {
+        PyErr_Format(PyExc_TypeError, "sink must be a FileWriter or None, not %s", Py_TYPE(sink)->tp_name);
+        return NULL;
+    }
+
+    PendingRequest request;
+    request.context = context;
+    request.sink = sink;
+    Py_XINCREF(request.context);
+    Py_XINCREF(request.sink);
+    self->pending.push_back(request);
+
+    Py_RETURN_NONE;
+}
+
+/* Drop every pending request, for a connection being reset */
+static PyObject* Decoder_clear_expected(Decoder *self, PyObject *Py_UNUSED(ignored))
+{
+    for (PendingRequest& request : self->pending) {
+        Py_XDECREF(request.context);
+        Py_XDECREF(request.sink);
+    }
+    self->pending.clear();
+    Py_RETURN_NONE;
+}
+
+/*
+ * Requests whose responses have not been handed to the caller yet.
+ *
+ * Counts three things, because a request stays in flight until its response has been
+ * delivered: responses finished but not yet iterated, the one currently arriving, and
+ * requests with nothing received at all. The middle one matters - the pending entry is
+ * taken as soon as the first byte of a response shows up, so counting only untouched
+ * requests reports a pipelined connection as idle while it is still receiving, and the
+ * caller stops reading from it.
+ */
+static Py_ssize_t Decoder_in_flight(Decoder *self)
+{
+    return static_cast<Py_ssize_t>(self->deque.size()) + (self->response ? 1 : 0) +
+           static_cast<Py_ssize_t>(self->pending.size());
+}
+
+static PyObject* Decoder_get_expected(Decoder *self, void* closure)
+{
+    return PyLong_FromSsize_t(Decoder_in_flight(self));
+}
+
+/*
+ * Contexts of the requests still waiting for a response, oldest first.
+ *
+ * The caller needs these for more than pairing: to name the article a connection is
+ * currently fetching, and to hand every outstanding article back to the queue when a
+ * connection is reset. Exposing them here is what lets the request queue exist only
+ * once, instead of being mirrored on the Python side.
+ */
+static PyObject* Decoder_get_pending(Decoder *self, void* closure)
+{
+    PyObject* result = PyTuple_New(Decoder_in_flight(self));
+    if (!result) return NULL;
+
+    Py_ssize_t index = 0;
+
+    // Oldest first: finished but not yet collected, then the one arriving now, then
+    // those still waiting on their first byte
+    for (NNTPResponse* item : self->deque) {
+        PyObject* context = item->context ? item->context : Py_None;
+        Py_INCREF(context);
+        PyTuple_SET_ITEM(result, index++, context);
+    }
+    if (self->response) {
+        PyObject* context = self->response->context ? self->response->context : Py_None;
+        Py_INCREF(context);
+        PyTuple_SET_ITEM(result, index++, context);
+    }
+    for (PendingRequest& request : self->pending) {
+        PyObject* context = request.context ? request.context : Py_None;
+        Py_INCREF(context);
+        PyTuple_SET_ITEM(result, index++, context);
+    }
+    return result;
+}
+
+static PyGetSetDef Decoder_getsetters[] = {
+    {"expected", (getter)Decoder_get_expected, NULL,
+     PyDoc_STR("Requests sent whose responses have not been decoded yet"), NULL},
+    {"pending", (getter)Decoder_get_pending, NULL,
+     PyDoc_STR("Contexts of the requests still awaiting a response, oldest first"), NULL},
+    {NULL}
+};
+
 static PyMethodDef Decoder_methods[] = {
     {"process", (PyCFunction)Decoder_process, METH_O, ""},
+    {"expect", (PyCFunction)Decoder_expect, METH_VARARGS,
+     PyDoc_STR("expect(context, sink=None)\n\nRecord a sent request and how its response should be handled.")},
+    {"clear_expected", (PyCFunction)Decoder_clear_expected, METH_NOARGS,
+     PyDoc_STR("clear_expected()\n\nForget every pending request.")},
     {NULL}
 };
 
@@ -1433,17 +1844,17 @@ PyTypeObject DecoderType = {
     nullptr,                              // tp_getattro
     nullptr,                              // tp_setattro
     &Decoder_bufferprocs,                 // tp_as_buffer
-    Py_TPFLAGS_DEFAULT,                   // tp_flags
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, // tp_flags
     PyDoc_STR("Decoder"),                 // tp_doc
-    nullptr,                              // tp_traverse
-    nullptr,                              // tp_clear
+    (traverseproc)Decoder_traverse,       // tp_traverse
+    (inquiry)Decoder_clear,               // tp_clear
     nullptr,                              // tp_richcompare
     0,                                    // tp_weaklistoffset
     (getiterfunc)Decoder_iter,            // tp_iter
     (iternextfunc)Decoder_iternext,       // tp_iternext
     Decoder_methods,                      // tp_methods
     nullptr,                              // tp_members
-    nullptr,                              // tp_getset
+    Decoder_getsetters,                   // tp_getset
     nullptr,                              // tp_base
     nullptr,                              // tp_dict
     nullptr,                              // tp_descr_get

@@ -57,14 +57,77 @@
 /* How much raw data to process each loop */
 #define YENC_CHUNK_SIZE (64*1024)
 
+/*
+ * Compact the input ring once the free tail falls below this.
+ *
+ * The tail is what the caller writes the next read into, so moving the unprocessed
+ * remainder to the front is only worth doing when the tail has run down far enough to
+ * make the next read small. Doing it on every call costs a memmove per call to buy
+ * space that was not needed yet, and it also destroys anything held in the region
+ * behind the read pointer - which is where decoded output would live if the decoder
+ * ever writes in place.
+ *
+ * A buffer smaller than this compacts every call, exactly as before.
+ */
+#define YENC_COMPACT_THRESHOLD YENC_CHUNK_SIZE
+
+/*
+ * Staging buffer used when decoding straight to a sink.
+ *
+ * One per connection, allocated on first use and reused for every article, so
+ * streaming costs no per-article allocation at all.
+ *
+ * Sized to match the caller's input buffer rather than to the size of an article.
+ * A single process() call cannot produce more decoded bytes than its input holds -
+ * yEnc shrinks slightly - so this absorbs the most any one call can generate, and
+ * flushes fall on call boundaries instead of arbitrarily inside them. SABnzbd uses
+ * 256 KiB (NNTP_BUFFER_SIZE), which is where this number comes from.
+ *
+ * Sizing it to hold a whole ~700 KB article instead was the obvious idea and the
+ * wrong one. It buys nothing: measured across 64 KiB to 4 MiB, decode CPU is flat
+ * from 256 KiB upward, because the yEnc decode dominates and the write syscalls it
+ * saves do not register. 1 MiB measured no better than 256 KiB. What it does cost is
+ * memory, multiplied by every connection - and 200 connections is not unusual, which
+ * at 1 MiB is 200 MB of staging, eating the memory saving that streaming exists to
+ * deliver. Below 256 KiB the syscalls do start to show: 64 KiB cost about 9% more
+ * decode CPU.
+ *
+ * It is emphatically not about cache residency. At 200 connections nothing here
+ * stays in any level of cache, and a buffer this size already overflows L1 several
+ * times over on every article.
+ */
+#ifndef YENC_STAGING_SIZE
+#define YENC_STAGING_SIZE (256*1024)
+#endif
+
 /* Functions */
 bool yenc_init(PyObject *);
 PyObject* yenc_encode(PyObject *, PyObject*);
+
+/*
+ * A request that has been sent and whose response has not yet been decoded.
+ *
+ * Held in the Decoder so responses cannot be paired with the wrong request. The
+ * alternative, a queue on the Python side kept in step with this one, has a failure
+ * mode where a desync writes one article's bytes into another article's file at a
+ * plausible-looking offset - silent corruption that only par2 would catch.
+ */
+typedef struct {
+	PyObject* context; // opaque to us, handed back as NNTPResponse.context
+	PyObject* sink;    // FileWriter to stream into, or NULL to build a bytearray
+} PendingRequest;
 
 typedef struct {
     PyObject_HEAD
 
 	PyObject* data;
+	PyObject* context;
+	PyObject* sink;
+	// The error the failed write raised, built but not raised so the response can be
+	// consumed to its end first. NULL when no write failed.
+	PyObject* sink_error;
+	// Absolute file offset for the next flush, tracked across staging buffer fills
+	Py_ssize_t sink_offset;
 	Py_ssize_t bytes_decoded;
 	Py_ssize_t bytes_read;
 	PyObject* lines;
@@ -89,17 +152,28 @@ typedef struct {
 	bool has_end;
 	bool has_emptyline; // for article requests has the empty line separating headers and body been seen
 	bool has_baddata; // invalid line lengths for uu decoding; some data lost
+	// A write to the sink failed, so the body was decoded but not kept. Decoding
+	// continues regardless: the response has to be consumed to its end or the
+	// connection's byte stream is left mid-article.
+	bool sink_failed;
 } NNTPResponse;
 
 typedef struct {
 	PyObject_HEAD
 
 	std::deque<NNTPResponse*> deque; // completed responses
+	std::deque<PendingRequest> pending; // requests sent, responses not yet decoded
 	NNTPResponse* response; // current response being worked on
 	char* data; // raw input
 	Py_ssize_t size; // size of data
 	Py_ssize_t consumed; // left position
 	Py_ssize_t position; // right position
+	// Reused across every response on this connection, so decoding to a sink costs no
+	// per-article allocation. Only one response is ever decoded at a time: pipelining
+	// happens on the wire, not here.
+	char* staging;
+	Py_ssize_t staging_size;
+	Py_ssize_t staging_used;
 } Decoder;
 
 #endif //SABCTOOLS_YENC_H

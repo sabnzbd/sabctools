@@ -2,10 +2,11 @@
 SABCTools - C implementations of functions for use within SABnzbd
 ===============================
 
-This module implements three main sets of C implementations that are used within SABnzbd: 
+This module implements the main sets of C implementations that are used within SABnzbd: 
 * yEnc decoding and encoding using SIMD routines
 * CRC32 calculations
 * Non-blocking SSL-socket reading
+* Positional file writing
 * Marking files as sparse
 
 Of course, they can also be used in any other application.
@@ -24,9 +25,22 @@ See `src/rapidyenc/VENDOR.md` for the vendored version.
 When Python reads data from a non-blocking SSL socket, it is limited to receiving 16K data at once. This module implements a patched version that can read as much data is available at once.
 For more details, see the [cpython pull request](https://github.com/python/cpython/pull/31492).
 
+## Positional file writing
+`sabctools.FileWriter` opens a file for writing at absolute offsets, which several threads can do at once without holding a lock:
+```python
+writer = sabctools.FileWriter(path)
+writer.preallocate(size)    # set the length, marking the file sparse where needed
+writer.write(data, offset)  # short writes are retried internally
+writer.close()              # idempotent, and waits for writes still in flight
+```
+It owns its own descriptor, so nothing outside can close it while a write is in progress. On Windows the writes use `WriteFile` with an `OVERLAPPED` offset, because `os.pwrite` is not available there.
+
+The decoder can write into one directly: pass a `FileWriter` as the `sink` argument of `Decoder.expect(context, sink)`, and each decoded body is written at the offset given by its yEnc headers rather than returned as a `bytearray`.
+
 ## Marking files as sparse
 Uses Windows specific system calls to mark files as sparse and set the desired size.
 On other platforms the same is achieved by calling `truncate`.
+Superseded by `FileWriter.preallocate`, but kept for existing callers.
 
 ## Utility functions
 Use `sabctools.bytearray_malloc(size)` to get an `bytearray` that is uninitialized (not set to `0`'s). 
