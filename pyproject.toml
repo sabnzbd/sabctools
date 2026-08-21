@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "sabctools"
-version = "9.6.3"
+version = "9.7.0"
 description = "C implementations of functions for use within SABnzbd"
 readme = "README.md"
 authors = [
