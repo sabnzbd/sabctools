@@ -203,6 +203,17 @@ function(_vendored_build name source_dir subdir libraries cmake_args arch out_ar
             -DCMAKE_SYSTEM_NAME=Darwin
             -DCMAKE_SYSTEM_PROCESSOR=${arch}
         )
+        # CFLAGS and friends reach a sub-build through the environment, so a
+        # universal2 CFLAGS - which is how a universal2 wheel is usually asked for -
+        # has the compiler emit both architectures while this slice asks for one, and
+        # CMake rejects the mismatch before it compiles anything. Pass the flags on
+        # without their -arch, which also stops the environment being consulted at all.
+        foreach(language C CXX)
+            string(REGEX REPLACE "-arch[ \t]+[^ \t]+" "" sliced "${CMAKE_${language}_FLAGS}")
+            list(APPEND extra_args "-DCMAKE_${language}_FLAGS=${sliced}")
+        endforeach()
+        string(REGEX REPLACE "-arch[ \t]+[^ \t]+" "" sliced "${CMAKE_EXE_LINKER_FLAGS}")
+        list(APPEND extra_args "-DCMAKE_EXE_LINKER_FLAGS=${sliced}")
     endif()
 
     set(binary_dir "${CMAKE_BINARY_DIR}/${target}")
