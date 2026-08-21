@@ -363,3 +363,71 @@ class TestAccessors:
                 reader.join()
 
         assert not errors, errors[:3]
+
+
+class TestWriteStats:
+    @pytest.fixture
+    def before(self):
+        return sabctools.write_stats()
+
+    @staticmethod
+    def since(before: dict) -> dict:
+        now = sabctools.write_stats()
+        return {key: now[key] - before[key] for key in ("count", "bytes", "nanos")}
+
+    def test_it_reports_four_counters(self):
+        stats = sabctools.write_stats()
+        assert set(stats) == {"count", "bytes", "nanos", "max_nanos"}
+        assert all(isinstance(value, int) and value >= 0 for value in stats.values())
+
+    def test_every_write_is_counted(self, target, before):
+        with sabctools.FileWriter(target) as writer:
+            for index in range(4):
+                writer.write(b"x" * 1000, index * 1000)
+        assert self.since(before)["count"] == 4
+        assert self.since(before)["bytes"] == 4000
+        assert self.since(before)["nanos"] > 0
+
+    def test_writes_to_several_files_add_up(self, tmp_path, before):
+        for name in ("a.bin", "b.bin", "c.bin"):
+            with sabctools.FileWriter(str(tmp_path / name)) as writer:
+                writer.write(b"y" * 100, 0)
+        assert self.since(before)["count"] == 3
+        assert self.since(before)["bytes"] == 300
+
+    def test_a_closed_file_keeps_its_writes_in_the_total(self, target, before):
+        writer = sabctools.FileWriter(target)
+        writer.write(b"x" * 500, 0)
+        writer.close()
+        del writer
+        assert self.since(before)["count"] == 1
+        assert self.since(before)["bytes"] == 500
+
+    def test_preallocate_is_not_a_write(self, target, before):
+        with sabctools.FileWriter(target) as writer:
+            writer.preallocate(1 << 20)
+        assert self.since(before)["count"] == 0
+
+    def test_a_write_to_a_closed_writer_is_not_counted(self, target, before):
+        writer = sabctools.FileWriter(target)
+        writer.close()
+        with pytest.raises(ValueError):
+            writer.write(b"payload", 0)
+        assert self.since(before)["count"] == 0
+
+    def test_the_slowest_write_never_falls(self, target):
+        with sabctools.FileWriter(target) as writer:
+            writer.write(b"x" * 4096, 0)
+            worst = sabctools.write_stats()["max_nanos"]
+            writer.write(b"x", 0)
+            assert sabctools.write_stats()["max_nanos"] >= worst
+
+    def test_concurrent_writes_are_all_counted(self, target, before):
+        with sabctools.FileWriter(target) as writer:
+            threads = [threading.Thread(target=writer.write, args=(b"y" * 4096, index * 4096)) for index in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        assert self.since(before)["count"] == 8
+        assert self.since(before)["bytes"] == 8 * 4096

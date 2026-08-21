@@ -23,6 +23,8 @@
 // shared_mutex and shared_lock come from <shared_mutex>, unique_lock from <mutex>, and
 // placement new from <new>. libc++ happens to pull the latter two in transitively;
 // libstdc++ does not, so all three are named rather than relied on.
+#include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <new>
 #include <shared_mutex>
@@ -89,5 +91,8 @@ Py_ssize_t filewriter_write_raw(FileWriter *writer, const char *buffer, Py_ssize
 
 /* Raise the error reported by filewriter_write_raw. Requires the GIL. */
 void filewriter_raise(FileWriter *writer, bool was_closed, unsigned long error_code);
+
+/* Totals for every write through every FileWriter. Requires the GIL. */
+PyObject *filewriter_write_stats(PyObject *, PyObject *);
 
 #endif // SABCTOOLS_FILEWRITER_H

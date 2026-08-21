@@ -1,7 +1,7 @@
 from enum import IntEnum
 from os import PathLike
 from types import TracebackType
-from typing import Tuple, Optional, IO, List, Iterator, Union, Type
+from typing import Tuple, Optional, IO, List, Iterator, TypedDict, Union, Type
 from ssl import SSLSocket
 from _typeshed import ReadableBuffer, WriteableBuffer
 
@@ -19,6 +19,20 @@ def crc32_xpown(n: int) -> int: ...
 def crc32_zero_unpad(crc1: int, length: int) -> int: ...
 def sparse(file: Union[IO, int], length: int) -> None:
     """Deprecated in favour of FileWriter.preallocate, kept for existing callers."""
+
+class WriteStats(TypedDict):
+    count: int
+    bytes: int
+    nanos: int
+    """Nanoseconds spent inside the write itself"""
+    max_nanos: int
+    """Nanoseconds the slowest single write took"""
+
+def write_stats() -> WriteStats:
+    """Totals for every write through every FileWriter since sabctools was imported.
+
+    Only write() is counted, and closing a file does not subtract what it wrote.
+    """
 
 def bytearray_malloc(size: int) -> bytearray: ...
 def rarfile_rar3_s2k(pwd, salt) -> tuple[bytes, bytes]: ...
