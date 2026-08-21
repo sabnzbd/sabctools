@@ -139,6 +139,20 @@ class TestPreallocate:
         assert contents[:4] == b"head"
         assert contents[8188:] == b"tail"
 
+    def test_what_was_already_written_survives(self, target):
+        with sabctools.FileWriter(target) as writer:
+            writer.write(b"head", 0)
+            writer.preallocate(64 * 1024 * 1024)
+            assert writer.size == 64 * 1024 * 1024
+        assert open(target, "rb").read(4) == b"head"
+        assert is_sparse(target) is True
+
+    def test_it_can_shrink(self, target):
+        with sabctools.FileWriter(target) as writer:
+            writer.preallocate(1024 * 1024)
+            writer.preallocate(4096)
+            assert writer.size == 4096
+
     def test_negative_length_is_refused(self, target):
         with sabctools.FileWriter(target) as writer:
             with pytest.raises(ValueError):

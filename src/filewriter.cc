@@ -320,11 +320,29 @@ static PyObject *FileWriter_preallocate(FileWriter *self, PyObject *arg) {
                 }
             }
 #else
+            struct stat before{};
             int result;
-            do {
-                result = ftruncate(self->handle, (off_t)length);
-            } while (result < 0 && errno == EINTR);
-            if (result < 0) error_code = errno;
+            if (fstat(self->handle, &before) < 0) {
+                error_code = errno;
+            } else {
+                do {
+                    result = ftruncate(self->handle, length);
+                } while (result < 0 && errno == EINTR);
+                if (result < 0) {
+                    error_code = errno;
+                } else if (length > before.st_size) {
+                    // A filesystem without sparse files answers ftruncate by allocating
+                    // the whole span, so put the length back the way Windows does when
+                    // FSCTL_SET_SPARSE fails
+                    struct stat after{};
+                    if (fstat(self->handle, &after) == 0 &&
+                        (after.st_blocks - before.st_blocks) * 512 >= length - before.st_size) {
+                        do {
+                            result = ftruncate(self->handle, before.st_size);
+                        } while (result < 0 && errno == EINTR);
+                    }
+                }
+            }
 #endif
         }
     }
