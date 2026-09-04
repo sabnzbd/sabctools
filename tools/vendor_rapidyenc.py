@@ -57,15 +57,14 @@ def apply_patches():
 
 def write_vendor_notes(commit: str, ref: str):
     with open(os.path.join(DEST, "VENDOR.md"), "w", encoding="utf-8") as handle:
-        handle.write(
-            """# Vendored rapidyenc
+        handle.write(f"""# Vendored rapidyenc
 
 | | |
 |---|---|
-| Upstream | {repo} |
+| Upstream | {REPO} |
 | Ref | `{ref}` |
 | Commit | `{commit}` |
-| Vendored | {date} |
+| Vendored | {datetime.date.today().isoformat()} |
 
 [animetosho/rapidyenc](https://github.com/animetosho/rapidyenc) is the library form of
 node-yencode: SIMD yEnc encoding and decoding, and a CRC32 implementation built on
@@ -100,8 +99,7 @@ and are not part of its compatibility promise.
 
 None. The vendoring script fails loudly if a patch it carries stops matching, so this
 section is the one to check when adding one.
-""".format(repo=REPO, ref=ref, commit=commit, date=datetime.date.today().isoformat())
-        )
+""")
 
 
 def main():

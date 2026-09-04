@@ -10,7 +10,7 @@ import time
 import pytest
 import portend
 
-from tests.testsupport import *
+import sabctools
 
 HOST = "127.0.0.1"
 
@@ -118,7 +118,7 @@ class EchoServer(threading.Thread):
         def wrap_conn(self):
             try:
                 self.sslconn = self.server.context.wrap_socket(self.sock, server_side=True)
-            except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError) as e:
+            except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
                 self.running = False
                 self.close()
                 return False

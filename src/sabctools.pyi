@@ -1,7 +1,7 @@
 from enum import IntEnum
 from os import PathLike
 from types import TracebackType
-from typing import Tuple, Optional, IO, List, Iterator, TypedDict, Union, Type
+from typing import Optional, IO, Iterator, TypedDict
 from ssl import SSLSocket
 from _typeshed import ReadableBuffer, WriteableBuffer
 
@@ -10,14 +10,14 @@ openssl_linked: bool
 simd: str
 crc_simd: str
 
-def yenc_encode(input_string: bytes) -> Tuple[bytes, int]: ...
+def yenc_encode(input_string: bytes) -> tuple[bytes, int]: ...
 def unlocked_ssl_recv_into(ssl_socket: SSLSocket, buffer: WriteableBuffer) -> int: ...
 def crc32_combine(crc1: int, crc2: int, length: int) -> int: ...
 def crc32_multiply(crc1: int, crc2: int) -> int: ...
 def crc32_xpow8n(n: int) -> int: ...
 def crc32_xpown(n: int) -> int: ...
 def crc32_zero_unpad(crc1: int, length: int) -> int: ...
-def sparse(file: Union[IO, int], length: int) -> None:
+def sparse(file: IO | int, length: int) -> None:
     """Deprecated in favour of FileWriter.preallocate, kept for existing callers."""
 
 class SparseUnsupported(OSError):
@@ -69,7 +69,7 @@ class NNTPResponse:
     """CRC of decoded data, None if does not match crc_expected"""
     crc_expected: Optional[int]
     """CRC is yEnc headers, None if not found"""
-    lines: Optional[List[str]]
+    lines: Optional[list[str]]
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: Optional[EncodingFormat]
     """Decoding process used"""
@@ -100,10 +100,10 @@ class Decoder:
     def __release_buffer__(self, __buffer: memoryview) -> None: ...
     expected: int
     """Requests recorded with expect() whose responses have not been decoded yet"""
-    pending: Tuple[object, ...]
+    pending: tuple[object, ...]
     """Contexts of the requests still awaiting a response, oldest first"""
 
-    def expect(self, context: object, sink: Optional["FileWriter"] = None) -> None:
+    def expect(self, context: object, sink: Optional[FileWriter] = None) -> None:
         """Record that a request has been sent, so its response can be paired with it.
 
         `context` is returned untouched as NNTPResponse.context. Calls must be in the
@@ -140,7 +140,7 @@ class FileWriter:
     Python itself has no equivalent for: os.pwrite is Unix only.
     """
 
-    def __init__(self, path: Union[str, bytes, PathLike]) -> None:
+    def __init__(self, path: str | bytes | PathLike) -> None:
         """Open path for writing, creating it if it does not exist."""
     closed: bool
     path: Optional[str]
@@ -165,10 +165,10 @@ class FileWriter:
     def close(self) -> None:
         """Close the file. Idempotent, and waits for any writes still in flight."""
 
-    def __enter__(self) -> "FileWriter": ...
+    def __enter__(self) -> FileWriter: ...
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
+        exc_type: Optional[type[BaseException]],
         exc: Optional[BaseException],
         tb: Optional[TracebackType],
     ) -> None: ...

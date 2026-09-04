@@ -41,8 +41,34 @@ test = [
 
 [tool.black]
 line-length = 120
-target-version = ['py310']
-include = '(?:src|tests)\/.*\.pyi?'
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "RUF",
+    "UP",
+    "C4"
+]
+ignore = [
+    "E402",
+    "E501",
+    "E731",
+    "RUF012",
+    "RUF022",
+    "RUF023",
+    "UP015",
+    "UP024",
+    "UP031",
+    "UP035",
+    "UP045"
+]
 
 [tool.cibuildwheel]
 skip = "*i686* *t-*"

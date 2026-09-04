@@ -1,11 +1,10 @@
 import os
-import subprocess
 import sys
 import tempfile
 import pytest
 from typing import IO
 
-from tests.testsupport import *
+import sabctools
 
 
 def test_sparse():

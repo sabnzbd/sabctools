@@ -2,15 +2,21 @@ import gc
 import glob
 import os
 import sys
-from io import BytesIO
+from typing import Optional
 
 import pytest
 
-from tests.testsupport import *
+import sabctools
+from tests.testsupport import read_plain_yenc_file, read_uu_file
 
 
 def build_article(
-    payload: bytes, begin: int = 0, total: int = None, name: str = "test.bin", part: int = 1, crc: int = None
+    payload: bytes,
+    begin: int = 0,
+    total: Optional[int] = None,
+    name: str = "test.bin",
+    part: int = 1,
+    crc: Optional[int] = None,
 ) -> bytes:
     """One yEnc part as it arrives on the wire, so a body of any size can be built"""
     total = len(payload) if total is None else total

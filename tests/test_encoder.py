@@ -1,4 +1,4 @@
-from tests.testsupport import *
+import sabctools
 
 
 def test_encoder():

@@ -21,7 +21,7 @@
 from zlib import crc32
 import re
 import pickle
-from typing import Tuple, Optional, Union
+from typing import Optional
 from io import BytesIO
 import binascii
 
@@ -29,7 +29,7 @@ import chardet
 import sabctools
 
 
-def correct_unknown_encoding(str_or_bytes_in: Union[str, bytes]) -> str:
+def correct_unknown_encoding(str_or_bytes_in: str | bytes) -> str:
     """Files created on Windows but unpacked/repaired on
     linux can result in invalid filenames. Try to fix this
     encoding by going to bytes and then back to unicode again.
@@ -64,15 +64,15 @@ def read_uu_file(filename: str) -> bytearray:
 def read_pickle(filename):
     with open(filename, "rb") as yencfile:
         try:
-            data_chunks, data_bytes = pickle.load(yencfile, encoding="bytes")
-        except:
+            data_chunks, _data_bytes = pickle.load(yencfile, encoding="bytes")
+        except Exception:
             # Reset the pointer and try again
             yencfile.seek(0)
-            data_chunks, data_bytes, lines = pickle.load(yencfile, encoding="bytes")
+            data_chunks, _data_bytes, _lines = pickle.load(yencfile, encoding="bytes")
     return bytearray(b"".join(data_chunks))
 
 
-def sabctools_yenc_wrapper(data: bytearray) -> Tuple[bytearray, str, int, int, int, Optional[int]]:
+def sabctools_yenc_wrapper(data: bytearray) -> tuple[bytearray, str, int, int, int, Optional[int]]:
     input = BytesIO(data)
     decoder = sabctools.Decoder(len(data))
     assert not decoder
@@ -106,7 +106,7 @@ def python_yenc(data_plain):
 
     # Parse the yEnc headers
     yenc, data = parse_yenc_data(data)
-    ybegin, ypart, yend = yenc
+    ybegin, ypart, _yend = yenc
 
     # Now we get the true flat data
     flat_yenc_data = b"".join(data)

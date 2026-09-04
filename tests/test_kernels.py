@@ -2,7 +2,6 @@ import os
 import pathlib
 import re
 
-import pytest
 import sabctools
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent

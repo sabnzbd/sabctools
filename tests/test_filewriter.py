@@ -3,7 +3,7 @@ import sys
 import threading
 import pytest
 
-from tests.testsupport import *
+import sabctools
 
 
 def is_sparse(path: str) -> bool:

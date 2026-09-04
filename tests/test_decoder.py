@@ -1,10 +1,21 @@
 import io
 import os
 import sys
+from io import BytesIO
 
 import pytest
 import glob
-from tests.testsupport import *
+
+import sabctools
+from tests.testsupport import (
+    correct_unknown_encoding,
+    python_yenc,
+    read_pickle,
+    read_plain_yenc_file,
+    read_uu_file,
+    sabctools_yenc_wrapper,
+    uu,
+)
 
 
 @pytest.mark.parametrize(
@@ -80,7 +91,7 @@ def test_ref_counts():
 
     # Test regular case
     data_plain = read_plain_yenc_file("test_regular.yenc")
-    data_out, filename, filesize, begin, end, crc_correct = sabctools_yenc_wrapper(data_plain)
+    data_out, filename, _filesize, begin, end, crc_correct = sabctools_yenc_wrapper(data_plain)
 
     assert sys.getrefcount(data_plain) == expected_refcount
     assert sys.getrefcount(data_out) == expected_refcount

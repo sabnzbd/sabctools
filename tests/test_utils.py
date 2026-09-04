@@ -1,6 +1,6 @@
 import pytest
 
-from tests.testsupport import *
+import sabctools
 
 
 def test_bytearray_malloc():
