@@ -35,7 +35,6 @@ Issues = "https://github.com/sabnzbd/sabctools/issues"
 test = [
     "pytest",
     "chardet",
-    "jaraco.functools",
     "portend"
 ]
 
