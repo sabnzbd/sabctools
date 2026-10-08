@@ -127,18 +127,18 @@ typedef struct {
 	// consumed to its end first. NULL when no write failed.
 	PyObject* sink_error;
 	// Absolute file offset for the next flush, tracked across staging buffer fills
-	Py_ssize_t sink_offset;
+	long long sink_offset;
 	Py_ssize_t bytes_decoded;
 	Py_ssize_t bytes_read;
 	PyObject* lines;
 	PyObject* format;
 	PyObject* file_name;
-	Py_ssize_t file_size;
+	long long file_size;
 	Py_ssize_t part;
-	Py_ssize_t part_begin;
-	Py_ssize_t part_end;
-	Py_ssize_t part_size;
-	Py_ssize_t end_size;
+	long long part_begin;
+	long long part_end;
+	long long part_size;
+	long long end_size;
 	Py_ssize_t total;
 	std::optional<uint32_t> crc_expected;
 	PyObject* message;

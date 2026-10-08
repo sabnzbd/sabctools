@@ -354,6 +354,17 @@ def test_invalid_ypart_resets_offsets(ypart: bytes):
     assert response.part_size == 0
 
 
+def test_offsets_beyond_32_bits():
+    data_plain = read_plain_yenc_file("test_huge_size_1TiB_ypart.yenc")
+    decoder = sabctools.Decoder(len(data_plain) * 2)
+    n = BytesIO(data_plain).readinto(decoder)
+    decoder.process(n)
+    response = next(decoder)
+    assert response.part_begin == 1024**4
+    assert response.part_end == 1024**4 + 9
+    assert response.part_size == 9
+
+
 def test_exceeds_size_limit():
     size = 20 * 1024 * 1024
     output, crc = sabctools.yenc_encode(b"\x00" * size)
