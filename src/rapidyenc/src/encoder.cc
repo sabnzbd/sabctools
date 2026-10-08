@@ -122,7 +122,7 @@ size_t RapidYenc::do_encode_generic(int line_size, int* colOffset, const unsigne
 			col = 2;
 		} else {
 			// another option may be to just write the EOL and let the first char be handled by the faster methods above, but it appears that writing the extra byte here is generally faster...
-			uint32_t w = UINT32_PACK('\r', '\n', (uint32_t)(c+42), 0);
+			uint32_t w = UINT32_PACK('\r', '\n', (uint32_t)((c+42) & 0xff), 0);
 			memcpy(p, &w, sizeof(w));
 			p += 3;
 			col = 1;
@@ -175,7 +175,7 @@ void RapidYenc::encoder_init() {
 	encoder_native_init();
 # else
 	int use_isa = cpu_supports_isa();
-	if(use_isa >= ISA_LEVEL_VBMI2 && (encoder_has_avx10 || (use_isa & ISA_FEATURE_EVEX512)))
+	if(use_isa >= ISA_LEVEL_VBMI2)
 		encoder_vbmi2_init();
 	else if(use_isa >= ISA_LEVEL_AVX2)
 		encoder_avx2_init();

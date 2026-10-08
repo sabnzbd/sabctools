@@ -22,7 +22,8 @@ bool RapidYenc::cpu_supports_neon() {
 # if defined(AT_HWCAP)
 #  if defined(__FreeBSD__) || defined(__OpenBSD__)
 	unsigned long supported;
-	elf_aux_info(AT_HWCAP, &supported, sizeof(supported));
+	if (elf_aux_info(AT_HWCAP, &supported, sizeof(supported)) != 0)
+		supported = 0;
 #   ifdef __aarch64__
 	return supported & HWCAP_ASIMD;
 #   else
@@ -133,26 +134,10 @@ int RapidYenc::cpu_supports_isa() {
 					int cpuInfo[4];
 					_cpuidX(cpuInfo, 7, 0);
 					if((cpuInfo[1] & 0x128) == 0x128 && (ret & ISA_FEATURE_LZCNT)) { // BMI2 + AVX2 + BMI1
-						if((xcr & 0xE0) == 0xE0) { // AVX512 XSTATE (also applies to AVX10)
-							// check AVX10
-							int cpuInfo2[4];
-							_cpuidX(cpuInfo2, 7, 1);
-							if(cpuInfo2[3] & 0x80000) {
-								_cpuidX(cpuInfo2, 0x24, 0);
-								if((cpuInfo2[1] & 0xff) >= 1 && ( // minimum AVX10.1
-									cpuInfo2[1] & 0x20000 // AVX10/256 (AVX10/128 is now invalid)
-								)) {
-									if(cpuInfo2[1] & 0x40000) ret |= ISA_FEATURE_EVEX512;
-									return ret | ISA_LEVEL_VBMI2;
-								}
-							}
-							
-							if((cpuInfo[1] & 0xC0010000) == 0xC0010000) { // AVX512BW + AVX512VL + AVX512F
-								ret |= ISA_FEATURE_EVEX512;
-								if(cpuInfo[2] & 0x40)
-									return ret | ISA_LEVEL_VBMI2;
-								return ret | ISA_LEVEL_AVX3;
-							}
+						if((xcr & 0xE0) == 0xE0 && (cpuInfo[1] & 0xC0010000) == 0xC0010000) { // AVX512BW + AVX512VL + AVX512F
+							if(cpuInfo[2] & 0x40)
+								return ret | ISA_LEVEL_VBMI2;
+							return ret | ISA_LEVEL_AVX3;
 						}
 						// AVX2 is beneficial even on Zen1
 						return ret | ISA_LEVEL_AVX2;
@@ -202,7 +187,8 @@ bool RapidYenc::cpu_supports_rvv() {
 # if defined(AT_HWCAP)
 	unsigned long ret;
 #  if defined(__FreeBSD__) || defined(__OpenBSD__)
-	elf_aux_info(AT_HWCAP, &ret, sizeof(ret));
+	if (elf_aux_info(AT_HWCAP, &ret, sizeof(ret)) != 0)
+		ret = 0;
 #  else
 	ret = getauxval(AT_HWCAP);
 #  endif

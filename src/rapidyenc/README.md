@@ -5,7 +5,7 @@ Note that it only handles the underlying encoding/decoding routines - yEnc heade
 Features
 ---------
 
--   implementation uses x86/ARM/RISC-V SIMD capabilities, with support for ARMv7 NEON, ARMv8 ASIMD or the following x86 SIMD extensions: SSE2, SSSE3, AVX, AVX2, AVX512-BW (128/256-bit), AVX512-VBMI2 (or AVX10.1/256)
+-   implementation uses x86/ARM/RISC-V SIMD capabilities, with support for ARMv7 NEON, ARMv8 ASIMD or the following x86 SIMD extensions: SSE2, SSSE3, AVX, AVX2, AVX512-BW (128/256-bit), AVX512-VBMI2 (or AVX10.1)
 -   CPU detection and dynamic dispatch (i.e. select best implementation for currently running CPU)
 -   incremental processing, including detection of yEnc/NNTP end sequences in decoder
 -   raw yEnc encoding with the ability to specify line length. A single thread can achieve \>450MB/s on a Raspberry Pi 3, or \>5GB/s on a Core-i series CPU.
@@ -55,6 +55,8 @@ Functions documented in the [header file](rapidyenc.h).
 * [go-yencode](https://github.com/mnightingale/go-yencode): for Golang
 * [sabctools](https://github.com/sabnzbd/sabctools): for Python (Sabnzbd specific binding)
 * [RapidYencSharp](https://github.com/nzbdav-dev/RapidYencSharp): for C#/.NET
+* https://github.com/cryeprecision/rapidyenc-rs
+* https://github.com/skjaere/rapidyenc-kotlin-wrapper
 
 Algorithm
 =========
