@@ -363,14 +363,12 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->has_part = true;
         instance->body = true;
         line.remove_prefix(6);
-        if (extract_int(line, " begin=", instance->part_begin) &&
-            extract_int(line, " end=", instance->part_end)) {
-            // Get the size and sanity check the values
-            instance->part_size = instance->part_end - instance->part_begin + 1;
-        }
-        if (instance->part_size > 0) {
+        long long begin = 0, end = 0;
+        if (extract_int(line, " begin=", begin) && extract_int(line, " end=", end) && begin > 0 && end >= begin) {
             // Convert from 1-based to 0-based indexing
-            instance->part_begin--;
+            instance->part_begin = begin - 1;
+            instance->part_end = end;
+            instance->part_size = end - begin + 1;
         } else {
             // Reset values; invalid metadata
             instance->part_begin = 0;

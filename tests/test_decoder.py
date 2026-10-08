@@ -326,6 +326,34 @@ def test_invalid_inputs_no_crash(filename: str):
     assert decoder is not None
 
 
+@pytest.mark.parametrize(
+    "ypart",
+    [
+        b"begin=99999999999999999999 end=99999999999999999999",
+        b"begin=0 end=9",
+        b"begin=abc end=9",
+        b"begin=10 end=1",
+    ],
+)
+def test_invalid_ypart_resets_offsets(ypart: bytes):
+    """An unusable =ypart after a =ybegin without part= must not leave the =ybegin values behind"""
+    data_plain = (
+        b"220 0 <message-id>\r\n"
+        b"=ybegin line=128 size=9 name=test.bin\r\n"
+        b"=ypart " + ypart + b"\r\n"
+        b"test data\r\n"
+        b"=yend size=9 crc32=00000000\r\n"
+        b".\r\n"
+    )
+    decoder = sabctools.Decoder(1024)
+    n = BytesIO(data_plain).readinto(decoder)
+    decoder.process(n)
+    response = next(decoder)
+    assert response.part_begin == 0
+    assert response.part_end == 0
+    assert response.part_size == 0
+
+
 def test_exceeds_size_limit():
     size = 20 * 1024 * 1024
     output, crc = sabctools.yenc_encode(b"\x00" * size)
