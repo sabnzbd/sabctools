@@ -810,6 +810,8 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
         // allocation. Anything allocated beyond bytes_decoded is retained for
         // the lifetime of the article.
         long long base = instance->part_size > 0 ? instance->part_size : instance->file_size;
+        if (base > YENC_MAX_PART_SIZE)
+            base = YENC_MAX_PART_SIZE;
         long long expected = base + 64;  // small margin to see the end of yEnc data
 
         if (expected < YENC_MIN_BUFFER_SIZE)

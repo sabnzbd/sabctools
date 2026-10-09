@@ -365,6 +365,23 @@ def test_offsets_beyond_32_bits():
     assert response.part_size == 9
 
 
+def test_largest_part_size():
+    data_plain = (
+        b"220 0 <message-id>\r\n"
+        b"=ybegin part=1 line=128 size=9 name=test.bin\r\n"
+        b"=ypart begin=1 end=9223372036854775807\r\n"
+        b"test data\r\n"
+        b"=yend size=9 crc32=00000000\r\n"
+        b".\r\n"
+    )
+    decoder = sabctools.Decoder(1024)
+    n = BytesIO(data_plain).readinto(decoder)
+    decoder.process(n)
+    response = next(decoder)
+    assert response.part_size == 2**63 - 1
+    assert response.bytes_decoded == 9
+
+
 def test_exceeds_size_limit():
     size = 20 * 1024 * 1024
     output, crc = sabctools.yenc_encode(b"\x00" * size)
