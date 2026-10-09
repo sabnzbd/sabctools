@@ -363,14 +363,12 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
         instance->has_part = true;
         instance->body = true;
         line.remove_prefix(6);
-        if (extract_int(line, " begin=", instance->part_begin) &&
-            extract_int(line, " end=", instance->part_end)) {
-            // Get the size and sanity check the values
-            instance->part_size = instance->part_end - instance->part_begin + 1;
-        }
-        if (instance->part_size > 0) {
+        long long begin = 0, end = 0;
+        if (extract_int(line, " begin=", begin) && extract_int(line, " end=", end) && begin > 0 && end >= begin) {
             // Convert from 1-based to 0-based indexing
-            instance->part_begin--;
+            instance->part_begin = begin - 1;
+            instance->part_end = end;
+            instance->part_size = end - begin + 1;
         } else {
             // Reset values; invalid metadata
             instance->part_begin = 0;
@@ -811,15 +809,17 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
         // PyByteArray_Resize only reallocates on a downsize below half the
         // allocation. Anything allocated beyond bytes_decoded is retained for
         // the lifetime of the article.
-        Py_ssize_t base = instance->part_size > 0 ? instance->part_size : instance->file_size;
-        Py_ssize_t expected = base + 64;  // small margin to see the end of yEnc data
+        long long base = instance->part_size > 0 ? instance->part_size : instance->file_size;
+        if (base > YENC_MAX_PART_SIZE)
+            base = YENC_MAX_PART_SIZE;
+        long long expected = base + 64;  // small margin to see the end of yEnc data
 
         if (expected < YENC_MIN_BUFFER_SIZE)
             expected = YENC_MIN_BUFFER_SIZE;
         if (expected > YENC_MAX_PART_SIZE)
             expected = YENC_MAX_PART_SIZE;
 
-        instance->data = PyByteArray_FromStringAndSize(nullptr, expected);
+        instance->data = PyByteArray_FromStringAndSize(nullptr, static_cast<Py_ssize_t>(expected));
         if (!instance->data) {
             return false;
         }
@@ -1292,11 +1292,11 @@ static PyObject* NNTPResponse_repr(NNTPResponse* self)
 static PyMemberDef NNTPResponse_members[] = {
     {"status_code", T_INT, offsetof(NNTPResponse, status_code), READONLY, ""},
     {"message", T_OBJECT_EX, offsetof(NNTPResponse, message), READONLY, ""},
-    {"file_size", T_PYSSIZET, offsetof(NNTPResponse, file_size), READONLY, ""},
-    {"part_begin", T_PYSSIZET, offsetof(NNTPResponse, part_begin), READONLY, ""},
-    {"part_end", T_PYSSIZET, offsetof(NNTPResponse, part_end), READONLY, ""},
-    {"part_size", T_PYSSIZET, offsetof(NNTPResponse, part_size), READONLY, ""},
-    {"end_size", T_PYSSIZET, offsetof(NNTPResponse, end_size), READONLY, ""},
+    {"file_size", T_LONGLONG, offsetof(NNTPResponse, file_size), READONLY, ""},
+    {"part_begin", T_LONGLONG, offsetof(NNTPResponse, part_begin), READONLY, ""},
+    {"part_end", T_LONGLONG, offsetof(NNTPResponse, part_end), READONLY, ""},
+    {"part_size", T_LONGLONG, offsetof(NNTPResponse, part_size), READONLY, ""},
+    {"end_size", T_LONGLONG, offsetof(NNTPResponse, end_size), READONLY, ""},
     {"bytes_read", T_PYSSIZET, offsetof(NNTPResponse, bytes_read), READONLY, ""},
     {"bytes_decoded", T_PYSSIZET, offsetof(NNTPResponse, bytes_decoded), READONLY, ""},
     {"baddata", T_BOOL, offsetof(NNTPResponse, has_baddata), READONLY, ""},
