@@ -7,7 +7,6 @@ namespace RapidYenc {
 	void encoder_avx_init();
 	void encoder_avx2_init();
 	void encoder_vbmi2_init();
-	extern const bool encoder_has_avx10;
 	void encoder_neon_init();
 	void encoder_rvv_init();
 	
@@ -79,7 +78,7 @@ static size_t do_encode_simd(int line_size, int* colOffset, const unsigned char*
 				p += 4;
 				*colOffset = 2;
 			} else {
-				uint32_t w = UINT32_PACK('\r', '\n', (uint32_t)(c+42), 0);
+				uint32_t w = UINT32_PACK('\r', '\n', (uint32_t)((c+42) & 0xff), 0);
 				memcpy(p, &w, sizeof(w));
 				p += 3;
 				*colOffset = 1;

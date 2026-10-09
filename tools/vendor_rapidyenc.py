@@ -33,7 +33,7 @@ import tempfile
 import vendor_common
 
 REPO = "https://github.com/animetosho/rapidyenc.git"
-REF = "27f435afa0a3a15995001219beca08de29f87a0f"
+REF = "d223ecc92aa20e95e86827f341a7019ba7b62ecb"
 
 DEST = os.path.join(vendor_common.ROOT, "src", "rapidyenc")
 

@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Upstream | https://github.com/animetosho/rapidyenc.git |
-| Ref | `27f435afa0a3a15995001219beca08de29f87a0f` |
-| Commit | `27f435afa0a3a15995001219beca08de29f87a0f` |
-| Vendored | 2026-08-06 |
+| Ref | `d223ecc92aa20e95e86827f341a7019ba7b62ecb` |
+| Commit | `d223ecc92aa20e95e86827f341a7019ba7b62ecb` |
+| Vendored | 2026-10-08 |
 
 [animetosho/rapidyenc](https://github.com/animetosho/rapidyenc) is the library form of
 node-yencode: SIMD yEnc encoding and decoding, and a CRC32 implementation built on
