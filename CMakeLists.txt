@@ -293,6 +293,10 @@ fetch_source(par2cmdline
     https://github.com/Parchive/par2cmdline.git
     15de89856bf6aee2c8c2896c13a891ecd55efa78
 )
+fetch_source(parpar
+    https://github.com/animetosho/ParPar.git
+    f4fe1cee823b77da4bb04a8fb122fb0082917518
+)
 
 # Nothing is built for a source distribution
 if(SKBUILD_STATE STREQUAL "sdist")
