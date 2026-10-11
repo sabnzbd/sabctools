@@ -108,4 +108,8 @@ sdist.include = [
     "extern/par2cmdline/include/",
     "extern/par2cmdline/libs/",
     "extern/par2cmdline/src/",
+    "extern/parpar/README.md",
+    "extern/parpar/gf16/",
+    "extern/parpar/hasher/",
+    "extern/parpar/src/",
 ]
