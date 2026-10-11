@@ -63,6 +63,10 @@ dist
 
 # Visual studio
 cmake*/
+# ...but our own CMake modules are not Visual Studio artefacts. This re-includes
+# the directory itself: cmake*/ excludes the directory, and git will not look
+# inside an excluded directory to find a negated file within it.
+!/cmake/
 *.sln
 *.vcxproj*
 .vs/
