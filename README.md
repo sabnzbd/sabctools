@@ -46,6 +46,7 @@ Superseded by `FileWriter.preallocate`, but kept for existing callers.
 
 ## par2 verification and repair
 Verifies and repairs par2 sets in-process using [par2cmdline](https://github.com/Parchive/par2cmdline),
+with [ParPar](https://github.com/animetosho/ParPar)'s engines for the Reed Solomon and hashing work,
 so callers get typed results instead of having to parse the par2 tool's output.
 
 ```python
@@ -65,7 +66,7 @@ repairer.repair()
 go and fetch more" cycle: only the new packets are read, and the next `repair()` re-checks
 whether it now has enough blocks without repeating the verification pass.
 
-The par2cmdline commit it uses is pinned in `CMakeLists.txt`.
+The par2cmdline and ParPar commits it uses are pinned in `CMakeLists.txt`.
 
 ## Utility functions
 Use `sabctools.bytearray_malloc(size)` to get an `bytearray` that is uninitialized (not set to `0`'s). 

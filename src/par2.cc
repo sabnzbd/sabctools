@@ -17,6 +17,7 @@
  */
 
 #include "par2.h"
+#include "par2_parpar.h"
 
 #include <par2/libpar2.h>
 
@@ -470,7 +471,7 @@ static int Par2Repairer_init(Par2RepairerObject* self, PyObject* args, PyObject*
 
     /* An empty basepath is taken from the first par2 file added, and a memory
        limit of zero lets par2 size itself from physical memory. */
-    self->verifier = new par2::Par2Verifier(basepath);
+    self->verifier = new par2::Par2Verifier(basepath, ParParBackends());
     self->verifier->SetMemoryLimit((size_t)memory_limit);
     self->verifier->SetThreadCounts(threads, file_threads);
     self->verifier->SetDataSkipping(self->skip_data, (par2::u64)self->skip_leaway);
