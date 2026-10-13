@@ -246,6 +246,59 @@ function(_vendored_build name source_dir subdir libraries cmake_args arch out_ar
     set(${out_target} ${target} PARENT_SCOPE)
 endfunction()
 
+# ---------------------------------------------------------------------------
+# Fetched dependencies
+# ---------------------------------------------------------------------------
+# Each is fetched at a pinned commit. Configuring for a source distribution
+# copies them into extern/, and a tree there fetched at the same commit is used
+# instead of fetching. FETCHCONTENT_SOURCE_DIR_<NAME> points the build at a
+# local checkout of one instead.
+include(FetchContent)
+
+# Fetch name and set <name>_SOURCE_DIR in the caller's scope
+function(fetch_source name repository commit)
+    string(TOUPPER "${name}" upper)
+    set(bundled "${CMAKE_CURRENT_SOURCE_DIR}/extern/${name}")
+    set(stamp "${bundled}/.sabctools-hash")
+
+    if(FETCHCONTENT_SOURCE_DIR_${upper})
+        if(SKBUILD_STATE STREQUAL "sdist")
+            message(FATAL_ERROR "A source distribution carries the pinned ${name}, unset FETCHCONTENT_SOURCE_DIR_${upper}")
+        endif()
+    elseif(EXISTS "${stamp}")
+        file(READ "${stamp}" bundled_hash)
+        if(bundled_hash STREQUAL commit)
+            set(FETCHCONTENT_SOURCE_DIR_${upper} "${bundled}")
+        endif()
+    endif()
+
+    # SOURCE_SUBDIR names a directory without a CMakeLists.txt, so that
+    # FetchContent_MakeAvailable() only populates
+    FetchContent_Declare(${name}
+        GIT_REPOSITORY "${repository}"
+        GIT_TAG ${commit}
+        SOURCE_SUBDIR do-not-add
+    )
+    FetchContent_MakeAvailable(${name})
+
+    if(SKBUILD_STATE STREQUAL "sdist" AND NOT ${name}_SOURCE_DIR STREQUAL bundled)
+        file(REMOVE_RECURSE "${bundled}")
+        file(COPY "${${name}_SOURCE_DIR}/" DESTINATION "${bundled}" PATTERN .git EXCLUDE)
+        file(WRITE "${stamp}" "${commit}")
+    endif()
+    set(${name}_SOURCE_DIR "${${name}_SOURCE_DIR}" PARENT_SCOPE)
+endfunction()
+
+fetch_source(par2cmdline
+    https://github.com/Parchive/par2cmdline.git
+    15de89856bf6aee2c8c2896c13a891ecd55efa78
+)
+
+# Nothing is built for a source distribution
+if(SKBUILD_STATE STREQUAL "sdist")
+    return()
+endif()
+
 # Only the static library is wanted; the shared one and the CLI tools would be
 # built for nothing. Its archive lands in a subdirectory of its own, set by a
 # target property upstream that an output-directory variable cannot override.
