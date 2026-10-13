@@ -23,6 +23,7 @@
 #include "sparse.h"
 #include "filewriter.h"
 #include "utils.h"
+#include "par2.h"
 
 /* Function and exception declarations */
 PyMODINIT_FUNC PyInit_sabctools(void);
@@ -154,6 +155,11 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     sparse_init();
 
     if (!filewriter_init(m)) {
+        Py_DECREF(m);
+        return NULL;
+    }
+    
+    if (!par2_init(m)) {
         Py_DECREF(m);
         return NULL;
     }

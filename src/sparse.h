@@ -19,6 +19,8 @@
 #ifndef SABCTOOLS_SPARSE_H
 #define SABCTOOLS_SPARSE_H
 
+/* Must precede Python.h, in every header that includes it */
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 #if defined(_WIN32) || defined(__CYGWIN__)

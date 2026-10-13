@@ -19,6 +19,8 @@
 #ifndef SABCTOOLS_UTILS_H
 #define SABCTOOLS_UTILS_H
 
+/* Must precede Python.h, in every header that includes it */
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 PyObject* bytearray_malloc(PyObject *, PyObject*);

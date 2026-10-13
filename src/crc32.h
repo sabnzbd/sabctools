@@ -19,6 +19,8 @@
 #ifndef SABCTOOLS_CRC32_H
 #define SABCTOOLS_CRC32_H
 
+/* Must precede Python.h, in every header that includes it */
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 PyObject* crc32_combine(PyObject *, PyObject*);

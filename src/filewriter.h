@@ -19,6 +19,8 @@
 #ifndef SABCTOOLS_FILEWRITER_H
 #define SABCTOOLS_FILEWRITER_H
 
+/* Must precede Python.h, in every header that includes it */
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 // shared_mutex and shared_lock come from <shared_mutex>, unique_lock from <mutex>, and
 // placement new from <new>. libc++ happens to pull the latter two in transitively;

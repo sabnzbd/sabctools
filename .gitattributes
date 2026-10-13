@@ -2,3 +2,5 @@
 *.yenc binary
 *.pickle binary
 *.nntp binary
+*.par2 binary
+tests/par2files/*.bin binary
