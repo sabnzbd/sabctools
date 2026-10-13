@@ -14,7 +14,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-cmake_minimum_required(VERSION 3.15...4.0)
+cmake_minimum_required(VERSION 3.16...4.0)
 project(sabctools LANGUAGES CXX)
 
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
@@ -299,6 +299,17 @@ if(SKBUILD_STATE STREQUAL "sdist")
     return()
 endif()
 
+# par2 is built by its own CMake, as a part of this build rather than a nested
+# project: it probes nothing per instruction set, so a universal2 build needs no
+# slicing. Not being the top-level project, it leaves its tool, tests and install
+# rules off, and EXCLUDE_FROM_ALL builds only the library the glue links.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+add_subdirectory("${par2cmdline_SOURCE_DIR}" par2cmdline EXCLUDE_FROM_ALL)
+
+# These static libraries end up inside a shared object
+set_target_properties(libpar2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # Only the static library is wanted; the shared one and the CLI tools would be
 # built for nothing. Its archive lands in a subdirectory of its own, set by a
 # target property upstream that an output-directory variable cannot override.
@@ -343,6 +354,29 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # ---------------------------------------------------------------------------
+# The par2 glue
+# ---------------------------------------------------------------------------
+# Built with exceptions, as it catches par2's, and at par2's C++17
+add_library(par2_glue OBJECT src/par2.cc)
+
+set_target_properties(par2_glue PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# Only par2's public header, which is self-contained
+target_include_directories(par2_glue PRIVATE src)
+target_link_libraries(par2_glue PRIVATE par2::par2 Python::Module)
+
+if(MSVC)
+    # /EHsc because the glue catches par2's exceptions and the defaults omit it;
+    # /utf-8 to match how the par2 libraries were compiled.
+    target_compile_options(par2_glue PRIVATE /O2 /GS- /Gy /Oy /Oi /utf-8 /EHsc)
+else()
+    target_compile_options(par2_glue PRIVATE
+        -Wno-unused-function -Wno-unused-parameter
+        -fomit-frame-pointer -fno-rtti -O3 -fwrapv -pthread
+    )
+endif()
+
+# ---------------------------------------------------------------------------
 # The extension
 # ---------------------------------------------------------------------------
 python_add_library(sabctools MODULE WITH_SOABI
@@ -353,6 +387,7 @@ python_add_library(sabctools MODULE WITH_SOABI
     src/filewriter.cc
     src/utils.cc
     src/unlocked_ssl.cc
+    $<TARGET_OBJECTS:par2_glue>
 )
 
 add_dependencies(sabctools rapidyenc_built)
@@ -368,6 +403,7 @@ endif()
 # The vendored archives go last: a static library only satisfies symbols already
 # demanded to its left, and it is our own objects that demand them.
 target_link_libraries(sabctools PRIVATE
+    par2::par2
     ${rapidyenc_ARCHIVES}
     ${CMAKE_DL_LIBS}  # dlopen, for the unlocked SSL reads
 )

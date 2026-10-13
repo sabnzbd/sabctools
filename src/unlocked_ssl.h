@@ -21,6 +21,8 @@
 
 #define SABCTOOLS_PY_HEX(major, minor) (((major) << 24) | ((minor) << 16))
 
+/* Must precede Python.h, in every header that includes it */
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <stdio.h>
 #include <fcntl.h>

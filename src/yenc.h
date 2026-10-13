@@ -19,6 +19,8 @@
 #ifndef SABCTOOLS_YENC_H
 #define SABCTOOLS_YENC_H
 
+/* Must precede Python.h, in every header that includes it */
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "structmember.h"
 

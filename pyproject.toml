@@ -88,7 +88,7 @@ repair-wheel-command = ""
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"
-cmake.version = ">=3.15"
+cmake.version = ">=3.16"
 # Keep the CMake cache between builds, so an incremental rebuild does not
 # reconfigure and recompile the vendored tree from scratch.
 build-dir = "build/{wheel_tag}"
