@@ -58,6 +58,9 @@ dist
 *.pyd
 *.dylib
 
+# Fetched dependencies, copied here for a source distribution
+/extern/
+
 # Visual studio
 cmake*/
 *.sln

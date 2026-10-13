@@ -94,3 +94,18 @@ cmake.version = ">=3.15"
 build-dir = "build/{wheel_tag}"
 # CMakeLists.txt installs the package files explicitly; src/ is mostly C++.
 wheel.packages = []
+# Configure for the sdist too, which copies the fetched dependencies into extern/
+sdist.cmake = true
+# The parts of them the build uses, and the commits they were fetched at
+sdist.include = [
+    "extern/*/.sabctools-hash",
+    "extern/par2cmdline/AUTHORS",
+    "extern/par2cmdline/CMakeLists.txt",
+    "extern/par2cmdline/COPYING",
+    "extern/par2cmdline/ChangeLog",
+    "extern/par2cmdline/README.md",
+    "extern/par2cmdline/cmake/",
+    "extern/par2cmdline/include/",
+    "extern/par2cmdline/libs/",
+    "extern/par2cmdline/src/",
+]
