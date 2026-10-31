@@ -483,6 +483,7 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
     Py_XDECREF(self->format);
     Py_XDECREF(self->file_name);
     Py_XDECREF(self->message);
+    free(self->pieces);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -553,6 +554,30 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
     }
 
     return PyLong_FromUnsignedLong(self->crc);
+}
+
+/**
+ * Property getter for the 'block_crcs' attribute: the CRC of each piece of the yEnc
+ * body between multiples of the block size given to expect(), counted from the start
+ * of the file. None without a block size, and where the pieces could not be kept.
+ */
+static PyObject* NNTPResponse_get_block_crcs(NNTPResponse* self, void *closure)
+{
+    if (self->format != ENCODING_FORMAT_YENC || self->block_size <= 0 || self->pieces_dropped) {
+        Py_RETURN_NONE;
+    }
+
+    PyObject* list = PyList_New(self->piece_count);
+    if (list == NULL) return NULL;
+    for (Py_ssize_t i = 0; i < self->piece_count; i++) {
+        PyObject* value = PyLong_FromUnsignedLong(self->pieces[i]);
+        if (value == NULL) {
+            Py_DECREF(list);
+            return NULL;
+        }
+        PyList_SET_ITEM(list, i, value);
+    }
+    return list;
 }
 
 /**
@@ -697,6 +722,62 @@ static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
 }
 
 /*
+ * End the current piece of the body: keep its CRC and fold it into the article's.
+ */
+static void NNTPResponse_end_piece(NNTPResponse *instance) {
+    if (instance->piece_length == 0) return;
+    if (instance->piece_count < instance->piece_capacity)
+        instance->pieces[instance->piece_count++] = instance->piece_crc;
+    else
+        instance->pieces_dropped = true;
+    instance->crc = rapidyenc_crc_combine(instance->crc, instance->piece_crc, instance->piece_length);
+    instance->piece_crc = 0;
+    instance->piece_length = 0;
+}
+
+/*
+ * Fold decoded bytes into the CRC. With a block size the CRC runs per piece, a piece
+ * ending at each multiple of the block size. Called without the GIL.
+ */
+static void NNTPResponse_fold_crc(NNTPResponse *instance, const char *data, Py_ssize_t length) {
+    if (instance->block_size <= 0 || instance->pieces_dropped) {
+        instance->crc = rapidyenc_crc(data, length, instance->crc);
+        return;
+    }
+
+    if (instance->pieces == nullptr) {
+        long long size = instance->part_size > 0 ? instance->part_size : instance->file_size;
+        if (size > YENC_MAX_PART_SIZE) size = YENC_MAX_PART_SIZE;
+        instance->piece_capacity = static_cast<Py_ssize_t>(size / instance->block_size + 2);
+        instance->pieces = static_cast<uint32_t*>(malloc(instance->piece_capacity * sizeof(uint32_t)));
+        if (instance->pieces == nullptr) {
+            instance->pieces_dropped = true;
+            instance->crc = rapidyenc_crc(data, length, instance->crc);
+            return;
+        }
+    }
+
+    long long position = instance->part_begin + instance->bytes_decoded;
+    while (length > 0) {
+        const long long to_boundary = instance->block_size - position % instance->block_size;
+        const Py_ssize_t take = static_cast<Py_ssize_t>(std::min<long long>(length, to_boundary));
+        instance->piece_crc = rapidyenc_crc(data, take, instance->piece_crc);
+        instance->piece_length += take;
+        data += take;
+        length -= take;
+        position += take;
+        if (position % instance->block_size == 0) {
+            NNTPResponse_end_piece(instance);
+            // Once the pieces are dropped the rest goes straight into the article's CRC
+            if (instance->pieces_dropped) {
+                instance->crc = rapidyenc_crc(data, length, instance->crc);
+                return;
+            }
+        }
+    }
+}
+
+/*
  * Decode a yEnc body straight into the sink.
  *
  * Same shape as the bytearray path - chunked, CRC folded over what was produced, GIL
@@ -740,7 +821,7 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
         produced = dst - dst_start;
 
         if (produced > 0) {
-            instance->crc = rapidyenc_crc(dst_start, produced, instance->crc);
+            NNTPResponse_fold_crc(instance, dst_start, produced);
         }
 
         Py_END_ALLOW_THREADS;
@@ -770,6 +851,8 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
             instance->eof = true;
             break;
     }
+
+    if (!instance->body) NNTPResponse_end_piece(instance);
 
     // The body is over, so whatever is still staged has to go out now. Leaving it would
     // lose the tail of the article: the buffer belongs to the connection, and the next
@@ -898,7 +981,7 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
         produced = dst - dst_start;
 
         if (produced > 0) {
-            instance->crc = rapidyenc_crc(dst_start, produced, instance->crc);
+            NNTPResponse_fold_crc(instance, dst_start, produced);
         }
 
         Py_END_ALLOW_THREADS;
@@ -939,6 +1022,8 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
             instance->eof = true;
             break;
     }
+
+    if (!instance->body) NNTPResponse_end_piece(instance);
 
     return true;
 }
@@ -1275,6 +1360,13 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->has_baddata = false;
     instance->sink_failed = false;
     instance->sink_unplaced = false;
+    instance->block_size = 0;
+    instance->pieces = nullptr;
+    instance->piece_count = 0;
+    instance->piece_capacity = 0;
+    instance->piece_crc = 0;
+    instance->piece_length = 0;
+    instance->pieces_dropped = false;
 
     return reinterpret_cast<PyObject *>(instance);
 }
@@ -1300,6 +1392,8 @@ static PyMemberDef NNTPResponse_members[] = {
     {"message", T_OBJECT_EX, offsetof(NNTPResponse, message), READONLY, ""},
     {"file_size", T_LONGLONG, offsetof(NNTPResponse, file_size), READONLY, ""},
     {"part_begin", T_LONGLONG, offsetof(NNTPResponse, part_begin), READONLY, ""},
+    {"block_size", T_LONGLONG, offsetof(NNTPResponse, block_size), READONLY,
+     PyDoc_STR("The block_size given to Decoder.expect(), 0 for none")},
     {"part_end", T_LONGLONG, offsetof(NNTPResponse, part_end), READONLY, ""},
     {"part_size", T_LONGLONG, offsetof(NNTPResponse, part_size), READONLY, ""},
     {"end_size", T_LONGLONG, offsetof(NNTPResponse, end_size), READONLY, ""},
@@ -1319,6 +1413,7 @@ static PyGetSetDef NNTPResponse_gets_sets[] = {
     {"file_name", (getter)NNTPResponse_get_file_name, NULL, NULL, NULL},
     {"lines", (getter)NNTPResponse_get_lines, NULL, NULL, NULL},
     {"crc", (getter)NNTPResponse_get_crc, NULL, NULL, NULL},
+    {"block_crcs", (getter)NNTPResponse_get_block_crcs, NULL, NULL, NULL},
     {"crc_expected", (getter)NNTPResponse_get_crc_expected, NULL, NULL, NULL},
     {"format", (getter)NNTPResponse_get_format, NULL, NULL, NULL},
     {nullptr, nullptr, nullptr, nullptr, nullptr}
@@ -1572,6 +1667,7 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
             // References are transferred from the queue
             instance->context = request.context;
             instance->sink = request.sink;
+            instance->block_size = request.block_size;
         }
         // Defensive, and deliberately so. A response that ran to the end of its body
         // has already flushed, so this is normally a no-op - but tp_clear drops a
@@ -1693,13 +1789,20 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
  * keeping the queue on this side means it cannot drift against the responses the way
  * a second queue in Python could.
  */
-static PyObject* Decoder_expect(Decoder *self, PyObject *args)
+static PyObject* Decoder_expect(Decoder *self, PyObject *args, PyObject *kwds)
 {
+    static const char* kwlist[] = {"context", "sink", "block_size", NULL};
     PyObject* context = nullptr;
     PyObject* sink = nullptr;
+    long long block_size = 0;
 
-    if (!PyArg_ParseTuple(args, "O|O:expect", &context, &sink))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|OL:expect", (char**)kwlist, &context, &sink, &block_size))
         return NULL;
+
+    if (block_size < 0) {
+        PyErr_SetString(PyExc_ValueError, "block_size must not be negative");
+        return NULL;
+    }
 
     if (sink == Py_None) sink = nullptr;
 
@@ -1713,6 +1816,7 @@ static PyObject* Decoder_expect(Decoder *self, PyObject *args)
     PendingRequest request;
     request.context = context;
     request.sink = sink;
+    request.block_size = block_size;
     Py_XINCREF(request.context);
     Py_XINCREF(request.sink);
     self->pending.push_back(request);
@@ -1797,8 +1901,8 @@ static PyGetSetDef Decoder_getsetters[] = {
 
 static PyMethodDef Decoder_methods[] = {
     {"process", (PyCFunction)Decoder_process, METH_O, ""},
-    {"expect", (PyCFunction)Decoder_expect, METH_VARARGS,
-     PyDoc_STR("expect(context, sink=None)\n\nRecord a sent request and how its response should be handled.")},
+    {"expect", (PyCFunction)(void (*)(void))Decoder_expect, METH_VARARGS | METH_KEYWORDS,
+     PyDoc_STR("expect(context, sink=None, block_size=0)\n\nRecord a sent request and how its response should be handled.")},
     {"clear_expected", (PyCFunction)Decoder_clear_expected, METH_NOARGS,
      PyDoc_STR("clear_expected()\n\nForget every pending request.")},
     {NULL}

@@ -117,6 +117,7 @@ PyObject* yenc_encode(PyObject *, PyObject*);
 typedef struct {
 	PyObject* context; // opaque to us, handed back as NNTPResponse.context
 	PyObject* sink;    // FileWriter to stream into, or NULL to build a bytearray
+	long long block_size; // split the CRC at multiples of this, 0 for none
 } PendingRequest;
 
 typedef struct {
@@ -160,6 +161,15 @@ typedef struct {
 	bool sink_failed;
 	// The =ypart offsets were invalid, so the body has nowhere to go and is discarded
 	bool sink_unplaced;
+	// With a block size, the CRC of each piece of a yEnc body between multiples of it,
+	// counted from the start of the file. crc is combined from these as each ends.
+	long long block_size;
+	uint32_t* pieces;
+	Py_ssize_t piece_count;
+	Py_ssize_t piece_capacity;
+	uint32_t piece_crc;
+	long long piece_length;
+	bool pieces_dropped;
 } NNTPResponse;
 
 typedef struct {
