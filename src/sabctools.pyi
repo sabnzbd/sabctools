@@ -372,6 +372,13 @@ class NNTPResponse:
     streamed to a sink but its =ypart offsets were invalid and nothing was written"""
     crc_expected: Optional[int]
     """CRC is yEnc headers, None if not found"""
+    block_size: int
+    """The block_size given to Decoder.expect(), 0 for none"""
+    block_crcs: Optional[list[int]]
+    """With a block_size given to Decoder.expect(), the CRC of each piece of the yEnc body
+    between multiples of it, counted from the start of the file, in order. Reported even
+    when the article's CRC does not match. None without a block size, for uu, and where
+    the pieces could not be kept."""
     lines: Optional[list[str]]
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: Optional[EncodingFormat]
@@ -406,7 +413,7 @@ class Decoder:
     pending: tuple[object, ...]
     """Contexts of the requests still awaiting a response, oldest first"""
 
-    def expect(self, context: object, sink: Optional[FileWriter] = None) -> None:
+    def expect(self, context: object, sink: Optional[FileWriter] = None, block_size: int = 0) -> None:
         """Record that a request has been sent, so its response can be paired with it.
 
         `context` is returned untouched as NNTPResponse.context. Calls must be in the
@@ -417,6 +424,9 @@ class Decoder:
         `data` is left as None. Bodies larger than the internal staging buffer are
         written in pieces. uu-encoded articles carry no offsets, so a sink is ignored
         for those and `data` is populated as usual.
+
+        When `block_size` is given, the response's `block_crcs` holds the CRC of each
+        piece of the body between multiples of it.
         """
 
     def clear_expected(self) -> None:

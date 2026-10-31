@@ -2,6 +2,7 @@ import gc
 import glob
 import os
 import sys
+import zlib
 from typing import Optional
 
 import pytest
@@ -544,3 +545,82 @@ class TestSinkError:
         assert response.sink_error is not None
         gc.collect()
         assert str(response.sink_error)  # still usable after a collection
+
+
+def expected_pieces(payload: bytes, begin: int, block_size: int) -> list[int]:
+    """The CRC of each piece of payload between multiples of block_size in the file"""
+    pieces = []
+    position = begin
+    while position < begin + len(payload):
+        end = min((position // block_size + 1) * block_size, begin + len(payload))
+        pieces.append(zlib.crc32(payload[position - begin : end - begin]))
+        position = end
+    return pieces
+
+
+class TestBlockCrcs:
+    payload = bytes(range(256)) * 300
+
+    @pytest.mark.parametrize("sink", [False, True])
+    @pytest.mark.parametrize("begin, block_size", [(0, 4096), (1000, 4096), (5000, 768), (0, 1 << 20), (3, 4)])
+    @pytest.mark.parametrize("chunk", [0, 997])
+    def test_split_at_block_boundaries(self, tmp_path, sink, begin, block_size, chunk):
+        target = sabctools.FileWriter(str(tmp_path / "target.bin")) if sink else None
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("article", target, block_size=block_size)
+
+        wire = build_article(self.payload, begin=begin, total=begin + len(self.payload) + 100)
+        response = feed(decoder, wire, chunk)[0]
+        if target:
+            target.close()
+
+        assert response.block_size == block_size
+        assert response.block_crcs == expected_pieces(self.payload, begin, block_size)
+        assert response.crc == zlib.crc32(self.payload)
+
+    @pytest.mark.parametrize("sink", [False, True])
+    @pytest.mark.parametrize("chunk", [0, 37])
+    def test_more_pieces_than_the_headers_allow_for(self, tmp_path, sink, chunk):
+        """The pieces are dropped, but the article's CRC still covers every byte in order"""
+        encoded, crc = sabctools.yenc_encode(self.payload)
+        wire = (
+            b"222 0 <test.bin-1>\r\n"
+            b"=ybegin part=1 line=128 size=100000 name=test.bin\r\n"
+            b"=ypart begin=1 end=32\r\n" + encoded + f"\r\n=yend size=32 part=1 pcrc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin")) if sink else None
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("article", target, block_size=16)
+        response = feed(decoder, wire, chunk)[0]
+        if target:
+            target.close()
+
+        assert response.bytes_decoded == len(self.payload)
+        assert response.block_crcs is None
+        assert response.crc == zlib.crc32(self.payload)
+
+    def test_none_without_a_block_size(self):
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("article")
+        response = feed(decoder, build_article(self.payload))[0]
+        assert response.block_crcs is None
+        assert response.crc == zlib.crc32(self.payload)
+
+    def test_a_bad_crc_still_reports_the_pieces(self):
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("article", block_size=4096)
+        response = feed(decoder, build_article(self.payload, crc=0))[0]
+        assert response.crc is None
+        assert response.block_crcs == expected_pieces(self.payload, 0, 4096)
+
+    def test_uu_has_none(self):
+        data = read_uu_file("logo_full.nntp")
+        decoder = sabctools.Decoder(len(data))
+        decoder.expect("article", block_size=4096)
+        response = feed(decoder, bytes(data))[0]
+        assert response.format is sabctools.EncodingFormat.UU
+        assert response.block_crcs is None
+
+    def test_negative_block_size_is_refused(self):
+        with pytest.raises(ValueError):
+            sabctools.Decoder(1024).expect("article", block_size=-1)
