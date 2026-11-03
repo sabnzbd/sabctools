@@ -599,6 +599,31 @@ class TestBlockCrcs:
         assert response.block_crcs is None
         assert response.crc == zlib.crc32(self.payload)
 
+    @pytest.mark.parametrize("sink", [False, True])
+    @pytest.mark.parametrize("ypart", [b"=ypart begin=0 end=0", b"=ypart begin=4097", b"=ypart begin=8193 end=4096"])
+    def test_none_without_valid_part_offsets(self, tmp_path, sink, ypart):
+        encoded, crc = sabctools.yenc_encode(self.payload)
+        wire = (
+            b"222 0 <test.bin-2>\r\n"
+            b"=ybegin part=2 line=128 size=100000 name=test.bin\r\n"
+            + ypart
+            + b"\r\n"
+            + encoded
+            + f"\r\n=yend size={len(self.payload)} part=2 pcrc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin")) if sink else None
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("article", target, block_size=4096)
+        response = feed(decoder, wire)[0]
+        if target:
+            target.close()
+
+        assert response.block_crcs is None
+        if sink:
+            assert response.crc is None
+        else:
+            assert response.crc == zlib.crc32(self.payload)
+
     def test_none_without_a_block_size(self):
         decoder = sabctools.Decoder(1 << 20)
         decoder.expect("article")
