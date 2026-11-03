@@ -548,6 +548,10 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
         Py_RETURN_NONE;
     }
 
+    if (self->sink_unplaced) {
+        Py_RETURN_NONE;
+    }
+
     return PyLong_FromUnsignedLong(self->crc);
 }
 
@@ -632,9 +636,9 @@ static PyObject* NNTPResponse_get_format(NNTPResponse* self, void *closure)
  * body larger than the staging buffer is written in pieces that still land contiguously.
  */
 static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
-    // Already given up on this response's sink, so keep decoding and throw the bytes
-    // away rather than retrying a write that is going to fail again
-    if (instance->sink_failed) {
+    // Already given up on this response's sink, or the body has nowhere to go, so keep
+    // decoding and throw the bytes away
+    if (instance->sink_failed || instance->sink_unplaced) {
         owner->staging_used = 0;
         return true;
     }
@@ -797,6 +801,7 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
         if (instance->bytes_decoded == 0) {
             // Where this article belongs in the file, straight from its =ypart header
             instance->sink_offset = instance->part_begin;
+            instance->sink_unplaced = instance->has_part && instance->part_size == 0;
         }
         return NNTPResponse_decode_yenc_sink(owner, instance, buf, buf_len, read);
     }
@@ -1269,6 +1274,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->has_emptyline = false;
     instance->has_baddata = false;
     instance->sink_failed = false;
+    instance->sink_unplaced = false;
 
     return reinterpret_cast<PyObject *>(instance);
 }

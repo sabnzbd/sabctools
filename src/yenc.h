@@ -156,6 +156,8 @@ typedef struct {
 	// continues regardless: the response has to be consumed to its end or the
 	// connection's byte stream is left mid-article.
 	bool sink_failed;
+	// The =ypart offsets were invalid, so the body has nowhere to go and is discarded
+	bool sink_unplaced;
 } NNTPResponse;
 
 typedef struct {

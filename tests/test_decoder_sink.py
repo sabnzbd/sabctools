@@ -272,6 +272,38 @@ class TestSinkErrors:
         assert response.bytes_decoded == len(payload)
         assert open(writer.path, "rb").read() == payload, "the data is still written, for par2"
 
+    @pytest.mark.parametrize("ypart", [b"=ypart begin=0 end=0", b"=ypart begin=4097", b"=ypart begin=8193 end=4096"])
+    def test_invalid_part_offsets_fail_the_article(self, tmp_path, ypart):
+        """With no usable offset there is nowhere to put the body, so nothing is written
+        and the article is reported as bad"""
+        payload = b"q" * 4096
+        encoded, crc = sabctools.yenc_encode(payload)
+        bad = (
+            b"222 0 <test.bin-2>\r\n"
+            b"=ybegin part=2 line=128 size=100000 name=test.bin\r\n"
+            + ypart
+            + b"\r\n"
+            + encoded
+            + f"\r\n=yend size={len(payload)} part=2 pcrc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        good = sabctools.FileWriter(str(tmp_path / "good.bin"))
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("bad", target)
+        decoder.expect("good", good)
+        responses = feed(decoder, bad + build_article(payload))
+        target.close()
+        good.close()
+
+        assert [r.context for r in responses] == ["bad", "good"]
+        assert responses[0].crc is None
+        assert responses[0].sink_failed is False
+        assert responses[0].sink_error is None
+        assert responses[0].data is None
+        assert os.path.getsize(target.path) == 0
+        assert responses[1].crc == crc
+        assert open(good.path, "rb").read() == payload
+
     def test_uu_falls_back_to_a_bytearray(self, writer):
         """uu carries no offsets, so there is nowhere to stream it to. The sink is
         ignored and the caller gets data as usual."""
@@ -460,6 +492,11 @@ def test_sink_and_bytearray_agree(test_data, tmp_path):
             # uu carries no offsets, so a sink is ignored and both build a bytearray
             assert actual.format is sabctools.EncodingFormat.UU
             assert actual.data == expected.data
+            continue
+
+        if expected.part_size == 0:
+            # No usable =ypart offsets, so the article fails and nothing is written
+            assert actual.crc is None
             continue
 
         # Streamed: the same bytes have to be at the offset the headers gave
