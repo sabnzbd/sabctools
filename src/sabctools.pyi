@@ -66,7 +66,8 @@ class NNTPResponse:
     data: Optional[bytearray]
     """Decoded data, or None when it was streamed to a sink instead"""
     crc: Optional[int]
-    """CRC of decoded data, None if does not match crc_expected"""
+    """CRC of decoded data, None if does not match crc_expected, or when the body was
+    streamed to a sink but its =ypart offsets were invalid and nothing was written"""
     crc_expected: Optional[int]
     """CRC is yEnc headers, None if not found"""
     lines: Optional[list[str]]
