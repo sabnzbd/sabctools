@@ -377,8 +377,8 @@ class NNTPResponse:
     block_crcs: Optional[list[int]]
     """With a block_size given to Decoder.expect(), the CRC of each piece of the yEnc body
     between multiples of it, counted from the start of the file, in order. Reported even
-    when the article's CRC does not match. None without a block size, for uu, and where
-    the pieces could not be kept."""
+    when the article's CRC does not match. None without a block size, for uu, without
+    valid =ypart offsets, and where the pieces could not be kept."""
     lines: Optional[list[str]]
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: Optional[EncodingFormat]

@@ -559,7 +559,8 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
 /**
  * Property getter for the 'block_crcs' attribute: the CRC of each piece of the yEnc
  * body between multiples of the block size given to expect(), counted from the start
- * of the file. None without a block size, and where the pieces could not be kept.
+ * of the file. None without a block size, without valid =ypart offsets, and where the
+ * pieces could not be kept.
  */
 static PyObject* NNTPResponse_get_block_crcs(NNTPResponse* self, void *closure)
 {
@@ -746,6 +747,12 @@ static void NNTPResponse_fold_crc(NNTPResponse *instance, const char *data, Py_s
     }
 
     if (instance->pieces == nullptr) {
+        // Without valid =ypart offsets the block boundaries are unknown
+        if (instance->has_part && instance->part_size == 0) {
+            instance->pieces_dropped = true;
+            instance->crc = rapidyenc_crc(data, length, instance->crc);
+            return;
+        }
         long long size = instance->part_size > 0 ? instance->part_size : instance->file_size;
         if (size > YENC_MAX_PART_SIZE) size = YENC_MAX_PART_SIZE;
         instance->piece_capacity = static_cast<Py_ssize_t>(size / instance->block_size + 2);
