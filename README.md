@@ -19,7 +19,7 @@ which utilizes x86/ARM/RISC-V SIMD optimised routines if such CPU features are a
 Also from rapidyenc, which uses the `crcutil` library and a PCLMULQDQ/ARMv8-CRC folding
 approach for very fast CRC calculations.
 
-See `src/rapidyenc/VENDOR.md` for the vendored version.
+The pinned rapidyenc commit is in `CMakeLists.txt`.
 
 ## Non-blocking SSL-socket reading
 When Python reads data from a non-blocking SSL socket, it is limited to receiving 16K data at once. This module implements a patched version that can read as much data is available at once.

@@ -1,11 +1,13 @@
 import os
 import pathlib
 import re
+from typing import Optional
+
+import pytest
 
 import sabctools
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-VENDORED_HEADER = ROOT / "src" / "rapidyenc" / "rapidyenc.h"
 MODULE_SOURCE = ROOT / "src" / "sabctools.cc"
 
 ENCODE_DECODE_KERNELS = ("", "SSE2", "SSSE3", "AVX", "AVX2", "AVX512VL+VBMI2", "NEON", "RVV")
@@ -34,15 +36,27 @@ def test_crc_simd_reports_a_crc_kernel():
         assert sabctools.crc_simd, "no CRC32 SIMD kernel detected on a runner that has one"
 
 
-def test_every_vendored_kernel_is_named():
-    """Fail when re-vendoring rapidyenc introduces a kernel we do not name.
+def fetched_header() -> Optional[pathlib.Path]:
+    candidates = [ROOT / "extern" / "rapidyenc" / "rapidyenc.h"]
+    candidates += sorted(ROOT.glob("build/*/_deps/rapidyenc-src/rapidyenc.h"))
+    return next((candidate for candidate in candidates if candidate.exists()), None)
+
+
+def test_every_fetched_kernel_is_named():
+    """Fail when bumping rapidyenc introduces a kernel we do not name.
 
     kernel_name() matches exactly and answers "unknown" for anything else, so a new
     RYKERN_* would otherwise go unnoticed until someone wondered why their CPU reports
     nothing useful. The opposite case - a constant upstream drops - needs no test: the
     switch stops compiling.
     """
-    defined = set(re.findall(r"#define\s+(RYKERN_\w+)", VENDORED_HEADER.read_text()))
+    header = fetched_header()
+    if header is None:
+        if ON_GITHUB_ACTIONS:
+            pytest.fail("rapidyenc.h not found under extern/ or build/")
+        pytest.skip("rapidyenc.h not found under extern/ or build/")
+
+    defined = set(re.findall(r"#define\s+(RYKERN_\w+)", header.read_text()))
     named = set(re.findall(r"case\s+(RYKERN_\w+)\s*:", MODULE_SOURCE.read_text()))
 
     assert defined, "no RYKERN_* defines found; has the header moved?"
