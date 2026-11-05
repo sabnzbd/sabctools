@@ -1,7 +1,7 @@
 from enum import IntEnum
 from os import PathLike
 from types import TracebackType
-from typing import Optional, IO, Iterator, Sequence, TypedDict, Callable, Mapping
+from typing import Optional, IO, Iterator, Sequence, TypedDict, Callable, Mapping, type_check_only
 from ssl import SSLSocket
 from _typeshed import ReadableBuffer, WriteableBuffer
 
@@ -23,6 +23,7 @@ def sparse(file: IO | int, length: int) -> None:
 class SparseUnsupported(OSError):
     """The filesystem cannot store the file with holes in it."""
 
+@type_check_only
 class WriteStats(TypedDict):
     count: int
     bytes: int
@@ -103,6 +104,7 @@ class Par2WarningCode(IntEnum):
 class Par2Error(Exception):
     """Raised when par2 fails in a way it has no return code for."""
 
+@type_check_only
 class Par2LastError(TypedDict):
     """Why the last call failed, as reported by Par2Repairer.last_error."""
 
@@ -112,6 +114,7 @@ class Par2LastError(TypedDict):
     filename: str
     """The absolute path of the file it concerns, empty where it concerns none"""
 
+@type_check_only
 class Par2File(TypedDict):
     """One file of a par2 set, as reported by Par2Repairer.files."""
 
