@@ -20,7 +20,7 @@
 #include "filewriter.h"
 #include "unlocked_ssl.h"
 
-#include "rapidyenc/rapidyenc.h"
+#include "rapidyenc.h"
 
 /* Global objects */
 

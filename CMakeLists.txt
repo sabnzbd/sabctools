@@ -228,13 +228,13 @@ function(_vendored_build name source_dir subdir libraries cmake_args arch out_ar
         BINARY_DIR "${binary_dir}"
         CMAKE_ARGS ${cmake_args} ${extra_args}
         BUILD_BYPRODUCTS ${archives}
-        # Nothing to fetch, patch or install: the tree is vendored in-repo and
+        # Nothing to fetch, patch or install: the tree is already fetched and
         # the archives are consumed straight out of the build directory.
         DOWNLOAD_COMMAND ""
         UPDATE_COMMAND ""
         INSTALL_COMMAND ""
         # Without this the build step is governed by a stamp file that knows
-        # nothing about the vendored sources, so re-vendoring would silently
+        # nothing about the sources, so moving a pin would silently
         # link the previous build's objects. Always hand off to the sub-build
         # and let its own generator decide what is out of date - that costs a
         # no-op ninja invocation when nothing changed.
@@ -296,6 +296,10 @@ fetch_source(parpar
     https://github.com/animetosho/ParPar.git
     f4fe1cee823b77da4bb04a8fb122fb0082917518
 )
+fetch_source(rapidyenc
+    https://github.com/animetosho/rapidyenc.git
+    d223ecc92aa20e95e86827f341a7019ba7b62ecb
+)
 
 # Nothing is built for a source distribution
 if(SKBUILD_STATE STREQUAL "sdist")
@@ -328,7 +332,7 @@ add_vendored_project(
 # target property upstream that an output-directory variable cannot override.
 add_vendored_project(
     NAME rapidyenc
-    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/rapidyenc"
+    SOURCE_DIR "${rapidyenc_SOURCE_DIR}"
     SUBDIR "rapidyenc_static/"
     LIBRARIES rapidyenc
     CMAKE_ARGS -DDISABLE_SHARED=ON -DDISABLE_TOOL=ON
@@ -409,7 +413,7 @@ python_add_library(sabctools MODULE WITH_SOABI
 
 add_dependencies(sabctools parpar_built rapidyenc_built)
 
-target_include_directories(sabctools PRIVATE src)
+target_include_directories(sabctools PRIVATE src "${rapidyenc_SOURCE_DIR}")
 target_compile_options(sabctools PRIVATE ${SABCTOOLS_FLAGS})
 target_compile_definitions(sabctools PRIVATE SABCTOOLS_VERSION="${SABCTOOLS_VERSION}")
 
@@ -460,7 +464,7 @@ endif()
 # Install
 # ---------------------------------------------------------------------------
 # Named explicitly rather than installing src/ as a package: that directory is
-# mostly C++ sources and two vendored trees, none of which belong in the wheel.
+# mostly C++ sources, none of which belong in the wheel.
 install(TARGETS sabctools DESTINATION sabctools)
 install(
     FILES

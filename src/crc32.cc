@@ -17,7 +17,7 @@
  */
 
 #include "crc32.h"
-#include "rapidyenc/rapidyenc.h"
+#include "rapidyenc.h"
 
 PyObject* crc32_combine(PyObject *self, PyObject *args) {
     unsigned long crc1, crc2;

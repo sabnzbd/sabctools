@@ -32,7 +32,7 @@
 #include <deque>
 #include <algorithm>
 
-#include "rapidyenc/rapidyenc.h"
+#include "rapidyenc.h"
 
 /* Constants */
 #define YENC_LINESIZE    128
