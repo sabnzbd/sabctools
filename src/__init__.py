@@ -1,5 +1,6 @@
 import hashlib
 from struct import pack, unpack
+from typing import TYPE_CHECKING
 
 # C-extension is placed as submodule to allow typing
 from sabctools.sabctools import (
@@ -29,6 +30,10 @@ from sabctools.sabctools import (
     write_stats,
     yenc_encode,
 )
+
+# Defined only in the stub, for type checkers
+if TYPE_CHECKING:
+    from sabctools.sabctools import Par2File as Par2File, Par2LastError as Par2LastError, WriteStats as WriteStats
 
 __version__ = version
 
