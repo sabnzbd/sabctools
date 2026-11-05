@@ -112,4 +112,10 @@ sdist.include = [
     "extern/parpar/gf16/",
     "extern/parpar/hasher/",
     "extern/parpar/src/",
+    "extern/rapidyenc/CMakeLists.txt",
+    "extern/rapidyenc/README.md",
+    "extern/rapidyenc/crcutil-1.0/",
+    "extern/rapidyenc/rapidyenc.cc",
+    "extern/rapidyenc/rapidyenc.h",
+    "extern/rapidyenc/src/",
 ]
