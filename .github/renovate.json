@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":disableDependencyDashboard"
+  ],
+  "schedule": [
+    "before 8am on Monday"
+  ],
+  "enabledManagers": [
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "description": "Commits pinned in fetch_source() calls in CMakeLists.txt, kept at the latest commit of the default branch",
+      "customType": "regex",
+      "fileMatch": ["^CMakeLists\\.txt$"],
+      "matchStrings": [
+        "fetch_source\\(\\s*\\w+\\s+(?<packageName>https://\\S+?\\.git)\\s+(?<currentDigest>[a-f0-9]{40})\\s*\\)"
+      ],
+      "datasourceTemplate": "git-refs",
+      "currentValueTemplate": "master"
+    }
+  ]
+}

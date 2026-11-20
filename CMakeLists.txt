@@ -248,7 +248,9 @@ endfunction()
 # ---------------------------------------------------------------------------
 # Fetched dependencies
 # ---------------------------------------------------------------------------
-# Each is fetched at a pinned commit. Configuring for a source distribution
+# Each is fetched at a pinned commit, which Renovate (.github/renovate.json)
+# moves to the latest commit of the default branch each week; keep every
+# fetch_source() call in the form it matches. Configuring for a source distribution
 # copies them into extern/, and a tree there fetched at the same commit is used
 # instead of fetching. FETCHCONTENT_SOURCE_DIR_<NAME> points the build at a
 # local checkout of one instead.
