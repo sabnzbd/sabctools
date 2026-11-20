@@ -73,6 +73,7 @@ typedef struct {
     PyObject *path;
     // Guards handle against close(), not the writes against each other
     std::shared_mutex lock;
+    PyObject *weakreflist;
 } FileWriter;
 
 bool filewriter_init(PyObject *);
