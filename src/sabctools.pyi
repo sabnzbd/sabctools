@@ -2,6 +2,7 @@ from enum import IntEnum
 from os import PathLike
 from types import TracebackType
 from typing import Optional, IO, Iterator, Sequence, TypedDict, Callable, Mapping, type_check_only
+import socket
 from ssl import SSLSocket
 from _typeshed import ReadableBuffer, WriteableBuffer
 
@@ -434,6 +435,17 @@ class Decoder:
 
     def clear_expected(self) -> None:
         """Forget every pending request, for a connection being reset."""
+
+    def recv(self, sock: socket.socket) -> int:
+        """Read what the socket has ready into the internal buffer and process it.
+
+        Keeps reading while more is ready, up to four buffers per call. Returns the bytes
+        read, 0 when the peer closed. Raises the socket's own error, such as
+        ssl.SSLWantReadError or BlockingIOError, only when nothing was read.
+
+        Takes a non-blocking socket.socket, or ssl.SSLSocket when OpenSSL is linked.
+        A blocking socket raises ValueError, anything else TypeError.
+        """
 
     def process(self, length: int) -> None:
         """Process `length` additional bytes of the internal buffer.
