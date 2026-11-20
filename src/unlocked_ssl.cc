@@ -25,6 +25,8 @@
 
 #include "unlocked_ssl.h"
 
+#include <errno.h>
+
 static int (*SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
 static int (*SSL_get_error)(void*, int) = NULL;
 static int (*SSL_get_shutdown)(void*) = NULL;
@@ -93,6 +95,19 @@ typedef enum {
     SOCKET_OPERATION_OK
 } timeout_state;
 
+/*
+ * A closed or vanished socket raises what socket.recv_into raises for one, an OSError
+ * with EBADF, so a caller handles both read paths with the same except clause
+ */
+static void raise_socket_closed(const char *message)
+{
+    PyObject *args = Py_BuildValue("(is)", EBADF, message);
+    if (args) {
+        PyErr_SetObject(PyExc_OSError, args);
+        Py_DECREF(args);
+    }
+}
+
 static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 {
     if (!obj->Socket) {
@@ -106,7 +121,7 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
     if (res < 0) return -1;
     if (res == 0 || sock->sock_fd == INVALID_SOCKET) {
         Py_XDECREF(sock);
-        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        raise_socket_closed("Underlying socket connection gone");
         return -1;
     }
     // sock is a now a NEW reference
@@ -115,13 +130,13 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 #else
     PyObject *tmp = PyWeakref_GetObject(obj->Socket);
     if (!tmp || Py_IsNone(tmp)) {
-        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        raise_socket_closed("Underlying socket connection gone");
         return -1;
     }
 
     PySocketSockObject *sock = (PySocketSockObject *)tmp;
     if (sock->sock_fd == INVALID_SOCKET) {
-        PyErr_SetString(PyExc_ValueError, "Underlying socket connection gone");
+        raise_socket_closed("Underlying socket connection gone");
         return -1;
     }
 
@@ -326,7 +341,9 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
 
     Py_ssl_socket = PyObject_GetAttrString(ssl_socket, "_sslobj");
     if (!Py_ssl_socket || Py_IsNone(Py_ssl_socket)) {
-        PyErr_SetString(PyExc_ValueError, "Could not find _sslobj attribute");
+        // None once the socket is closed
+        PyErr_Clear();
+        raise_socket_closed("Could not find _sslobj attribute");
         goto error;
     }
 

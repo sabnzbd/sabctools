@@ -1,4 +1,5 @@
 import os
+import errno
 import select
 import socket
 import ssl
@@ -319,8 +320,10 @@ def test_read_after_close(client):
 
     select.select([client], [], [])
     client.close()
-    with pytest.raises(ValueError, match="Could not find _sslobj attribute"):
+    # The same error socket.recv_into gives a closed socket
+    with pytest.raises(OSError, match="Could not find _sslobj attribute") as error:
         sabctools.unlocked_ssl_recv_into(client, buffer)
+    assert error.value.errno == errno.EBADF
 
 
 #
