@@ -292,7 +292,7 @@ endfunction()
 
 fetch_source(par2cmdline
     https://github.com/Parchive/par2cmdline.git
-    15de89856bf6aee2c8c2896c13a891ecd55efa78
+    3f247813023c9721fae3543309e977b1272c840e
 )
 fetch_source(parpar
     https://github.com/animetosho/ParPar.git
