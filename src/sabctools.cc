@@ -169,7 +169,7 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
     PyModule_AddStringConstant(m, "crc_simd", kernel_name(rapidyenc_crc_kernel()));
 
     // Add status of linking OpenSSL function
-    PyObject *openssl_linked_object = openssl_linked() ? Py_True : Py_False;
+    PyObject *openssl_linked_object = openssl_linked ? Py_True : Py_False;
     Py_INCREF(openssl_linked_object);
     PyModule_AddObject(m, "openssl_linked", openssl_linked_object);
 

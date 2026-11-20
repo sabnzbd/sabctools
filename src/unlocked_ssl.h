@@ -53,8 +53,11 @@ extern "C" {
 # define SSL_ERROR_ZERO_RETURN 6
 
 void openssl_init();
-bool openssl_linked();
+extern bool openssl_linked;
 PyObject *unlocked_ssl_recv_into(PyObject *, PyObject*);
+bool is_unlocked_ssl_socket(PyObject *obj);
+int require_nonblocking(PyObject *sock);
+Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, bool *pending);
 
 #ifdef __cplusplus
 }
