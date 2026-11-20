@@ -218,7 +218,7 @@ constexpr unsigned char NNTPResponse_decode_uu_char_workaround(const unsigned ch
  * Detects yEnc format (lines starting with "=ybegin ") and UUEncode format
  * (60/61 character lines starting with 'M', or "begin " header with octal permissions).
  * 
- * @param instance The Decoder instance to update
+ * @param instance The NNTPResponse instance to update
  * @param line The line to examine for format detection
  */
 static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::string_view line) {
@@ -325,7 +325,7 @@ static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::strin
 /**
  * Process yEnc header lines (=ybegin, =ypart, =yend) and extract metadata.
  * 
- * @param instance The Decoder instance to update with extracted metadata
+ * @param instance The NNTPResponse instance to update with extracted metadata
  * @param line The header line to process
  * 
  * Handles three types of yEnc headers:
@@ -401,13 +401,13 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
 }
 
 /**
- * Append a parsed line to the Decoder's collected header/response lines.
+ * Append a parsed line to the NNTPResponse's collected header/response lines.
  *
  * Used while the encoding format is still UNKNOWN to retain NNTP response
  * lines for diagnostics or higher-level consumers. Lazily allocates the
  * Python list on first use and ignores empty lines.
  *
- * @param instance Decoder instance whose lines list will be appended to.
+ * @param instance NNTPResponse instance whose lines list will be appended to.
  * @param line     Line contents without the trailing CRLF.
  * @return 0 on success, or -1 on error
  */
@@ -436,11 +436,6 @@ static int NNTPResponse_append_line(NNTPResponse* instance, std::string_view lin
     return 0;
 }
 
-/**
- * Destructor for Decoder objects. Releases Python object references and frees memory.
- * 
- * @param self The Decoder instance to deallocate
- */
 /*
  * GC support. Both these types hold arbitrary Python objects now - the context and the
  * sink handed to Decoder.expect() - so a cycle through them is reachable. d.expect(d)
@@ -472,6 +467,11 @@ static int NNTPResponse_clear(NNTPResponse* self)
     return 0;
 }
 
+/**
+ * Destructor for NNTPResponse objects. Releases Python object references and frees memory.
+ *
+ * @param self The NNTPResponse instance to deallocate
+ */
 static void NNTPResponse_dealloc(NNTPResponse* self)
 {
     PyObject_GC_UnTrack(self);
@@ -487,13 +487,6 @@ static void NNTPResponse_dealloc(NNTPResponse* self)
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
-/**
- * Property getter for the 'data' attribute. Returns a memoryview of the decoded data.
- * 
- * @param self The Decoder instance
- * @param closure Unused closure parameter
- * @return memoryview object providing access to decoded data
- */
 /*
  * The object handed to Decoder.expect() for the request this response answers.
  *
@@ -507,6 +500,14 @@ static PyObject* NNTPResponse_get_context(NNTPResponse* self, void* closure)
     return self->context;
 }
 
+/**
+ * Property getter for the 'data' attribute. Returns the decoded data.
+ *
+ * @param self The NNTPResponse instance
+ * @param closure Unused closure parameter
+ * @return bytearray with the decoded data, or None until the response is complete,
+ *         when nothing was decoded, or when the body was streamed to a sink
+ */
 static PyObject* NNTPResponse_get_data(NNTPResponse* self, void* closure)
 {
     if (!self->eof || !self->bytes_decoded || self->data == NULL) {
@@ -519,7 +520,7 @@ static PyObject* NNTPResponse_get_data(NNTPResponse* self, void* closure)
 /**
  * Property getter for the 'file_name' attribute. Returns the filename from yEnc headers.
  * 
- * @param self The Decoder instance
+ * @param self The NNTPResponse instance
  * @param closure Unused closure parameter
  * @return Unicode string with filename, or None if not found
  */
@@ -535,7 +536,7 @@ static PyObject* NNTPResponse_get_file_name(NNTPResponse* self, void *closure)
 /**
  * Property getter for the 'crc' attribute. Returns calculated CRC only if it matches expected.
  * 
- * @param self The Decoder instance
+ * @param self The NNTPResponse instance
  * @param closure Unused closure parameter
  * @return CRC32 value if valid and matches expected, otherwise None
  */
@@ -584,7 +585,7 @@ static PyObject* NNTPResponse_get_block_crcs(NNTPResponse* self, void *closure)
 /**
  * Property getter for the 'crc_expected' attribute. Returns the CRC from yEnc footer.
  * 
- * @param self The Decoder instance
+ * @param self The NNTPResponse instance
  * @param closure Unused closure parameter
  * @return Expected CRC32 value from =yend line, or None if not found
  */
@@ -600,7 +601,7 @@ static PyObject* NNTPResponse_get_crc_expected(NNTPResponse* self, void *closure
  * Property getter for the 'lines' attribute. Returns NNTP/header lines captured
  * before the encoding format was determined.
  *
- * @param self The Decoder instance
+ * @param self The NNTPResponse instance
  * @param closure Unused closure parameter
  * @return List of Unicode strings, without \r\n at the end
  */
@@ -617,7 +618,7 @@ static PyObject* NNTPResponse_get_lines(NNTPResponse* self, void *closure)
  * Property getter for the 'format' attribute. Indicates which encoding format
  * was detected for this NNTP response.
  *
- * @param self The Decoder instance
+ * @param self The NNTPResponse instance
  * @param closure Unused closure parameter
  * @return EncodingFormat IntEnum value for the detected format, or None if
  *         the format has not yet been determined
@@ -631,29 +632,6 @@ static PyObject* NNTPResponse_get_format(NNTPResponse* self, void *closure)
     return self->format;
 }
 
-/**
- * Decode yEnc-encoded body data in streaming fashion.
- * This is the core decoding function that processes encoded data incrementally.
- *
- * Data from ``buf`` is consumed in fixed-size chunks of ``YENC_CHUNK_SIZE`` bytes.
- * The internal output bytearray is allocated once on first use and then grown
- * only when required, which keeps reallocations to a minimum and avoids large
- * temporary buffers.
- * 
- * @param instance The Decoder instance with state to maintain across calls
- * @param buf Input buffer containing encoded data
- * @param buf_len Total length of input buffer
- * @param read Input/output parameter tracking position in buffer
- * @return true on success, false on error
- * 
- * Key behaviors:
- * - Allocates output buffer on first call based on expected size from headers
- *   and processes input in ``YENC_CHUNK_SIZE`` blocks to limit working set
- * - Uses RapidYenc SIMD decoder with state machine to handle partial data
- * - Updates CRC incrementally as data is decoded
- * - Detects end conditions (control line, article terminator) and adjusts read position
- * - Releases GIL during decoding for parallel processing
- */
 /*
  * A failed sink write, recorded without the GIL and turned into sink_error once the
  * GIL is back. Only the first failure of a response is kept.
@@ -780,10 +758,10 @@ static void NNTPResponse_fold_crc(NNTPResponse *instance, const char *data, Py_s
 /*
  * Decode a yEnc body straight into the sink.
  *
- * Same shape as the bytearray path - chunked, CRC folded over what was produced, GIL
- * dropped around the SIMD decode - but the destination is a buffer shared across the
- * connection, flushed whenever it fills and again when the body ends. Nothing is kept
- * once written, so a response costs no memory proportional to its size.
+ * Same shape as the bytearray path - chunked, CRC folded over what was produced - but
+ * the destination is a buffer shared across the connection, flushed whenever it fills
+ * and again when the body ends. Nothing is kept once written, so a response costs no
+ * memory proportional to its size.
  */
 static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance, const char *buf,
                                           const Py_ssize_t buf_len, Py_ssize_t &read) {
@@ -936,6 +914,31 @@ static bool NNTPResponse_grow(NNTPResponse *instance, Py_buffer &dst_buf, char *
     return true;
 }
 
+/**
+ * Decode yEnc-encoded body data in streaming fashion.
+ * This is the core decoding function that processes encoded data incrementally.
+ *
+ * Data from ``buf`` is consumed in fixed-size chunks of ``YENC_CHUNK_SIZE`` bytes.
+ * The internal output bytearray is allocated once on first use and then grown
+ * only when required, which keeps reallocations to a minimum and avoids large
+ * temporary buffers.
+ *
+ * @param owner The Decoder whose connection this response arrives on
+ * @param instance The NNTPResponse with state to maintain across calls
+ * @param buf Input buffer containing encoded data
+ * @param buf_len Total length of input buffer
+ * @param read Input/output parameter tracking position in buffer
+ * @return true on success, false on error
+ *
+ * Key behaviors:
+ * - Allocates output buffer on first call based on expected size from headers
+ *   and processes input in ``YENC_CHUNK_SIZE`` blocks to limit working set
+ * - Uses RapidYenc SIMD decoder with state machine to handle partial data
+ * - Updates CRC incrementally as data is decoded
+ * - Detects end conditions (control line, article terminator) and adjusts read position
+ * - Releases the GIL once for the whole call, taking it back only to grow the buffer
+ * - Hands off to NNTPResponse_decode_yenc_sink when the response has a sink
+ */
 static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     // Already at the end of input
     if (read >= buf_len) return true;
@@ -1043,7 +1046,7 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
 }
 
 /**
- * Decode a single UUEncoded line and update the Decoder's state and buffer.
+ * Decode a single UUEncoded line and update the NNTPResponse's state and data.
  *
  * Adapted (with modifications assisted by AI) from:
  *   UUDECODE - a Win32 utility to uudecode single files
@@ -1062,7 +1065,7 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
  * - CRC/permissions from UU are not validated here.
  * - Expects a single logical line without trailing CRLF.
  *
- * @param instance The Decoder instance to update.
+ * @param instance The NNTPResponse instance to update.
  * @param line     The current input line (without CRLF).
  * @return true on success, false on allocation/resize failure.
  */
@@ -1386,9 +1389,9 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
 }
 
 /**
- * String representation of Decoder for debugging.
+ * String representation of NNTPResponse for debugging.
  * 
- * @param self The Decoder instance
+ * @param self The NNTPResponse instance
  * @return Unicode string with decoder state summary
  */
 static PyObject* NNTPResponse_repr(NNTPResponse* self)
