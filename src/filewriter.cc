@@ -148,6 +148,7 @@ static int FileWriter_init(FileWriter *self, PyObject *args, PyObject *kwargs) {
 }
 
 static void FileWriter_dealloc(FileWriter *self) {
+    if (self->weakreflist) PyObject_ClearWeakRefs((PyObject *)self);
     filewriter_close_handle(self);
     Py_CLEAR(self->path);
     self->lock.~shared_mutex();
@@ -551,7 +552,7 @@ PyTypeObject FileWriterType = {
     nullptr,                                // tp_traverse
     nullptr,                                // tp_clear
     nullptr,                                // tp_richcompare
-    0,                                      // tp_weaklistoffset
+    offsetof(FileWriter, weakreflist),      // tp_weaklistoffset
     nullptr,                                // tp_iter
     nullptr,                                // tp_iternext
     FileWriter_methods,                     // tp_methods

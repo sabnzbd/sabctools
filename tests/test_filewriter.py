@@ -1,6 +1,8 @@
+import gc
 import os
 import sys
 import threading
+import weakref
 import pytest
 
 import sabctools
@@ -321,6 +323,26 @@ class TestReferenceCounting:
             assert sys.getrefcount(path) - before < accesses // 10
         finally:
             writer.close()
+
+
+class TestWeakReference:
+    def test_weakref_follows_the_writer(self, target):
+        writer = sabctools.FileWriter(target)
+        reference = weakref.ref(writer)
+        assert reference() is writer
+        del writer
+        gc.collect()
+        assert reference() is None
+
+    def test_dropping_the_last_reference_closes_the_file(self, target):
+        writer = sabctools.FileWriter(target)
+        cache = weakref.WeakValueDictionary({"file": writer})
+        before = len(os.listdir("/dev/fd")) if os.path.isdir("/dev/fd") else None
+        del writer
+        gc.collect()
+        assert "file" not in cache
+        if before is not None:
+            assert len(os.listdir("/dev/fd")) == before - 1
 
 
 class TestAccessors:
