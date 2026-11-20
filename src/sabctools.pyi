@@ -44,8 +44,8 @@ def bytearray_malloc(size: int) -> bytearray: ...
 def rarfile_rar3_s2k(pwd, salt) -> tuple[bytes, bytes]: ...
 
 class EncodingFormat(IntEnum):
-    YENC = 1
-    UU = 2
+    YENC = 0
+    UU = 1
 
 class Par2Result(IntEnum):
     """Return codes from Par2Repairer's methods, mirroring par2cmdline's own."""
