@@ -655,71 +655,64 @@ static PyObject* NNTPResponse_get_format(NNTPResponse* self, void *closure)
  * - Releases GIL during decoding for parallel processing
  */
 /*
- * Hand the staged bytes to the sink and start the buffer over.
- *
- * The write runs with the GIL released, so nothing here touches the Python API until
- * the error is raised. sink_offset carries the absolute position across fills, so a
- * body larger than the staging buffer is written in pieces that still land contiguously.
+ * A failed sink write, recorded without the GIL and turned into sink_error once the
+ * GIL is back. Only the first failure of a response is kept.
  */
-static bool NNTPResponse_flush_sink(Decoder *owner, NNTPResponse *instance) {
-    // Already given up on this response's sink, or the body has nowhere to go, so keep
-    // decoding and throw the bytes away
-    if (instance->sink_failed || instance->sink_unplaced) {
-        owner->staging_used = 0;
-        return true;
-    }
-
-    if (owner->staging_used == 0) return true;
-
-    FileWriter *writer = reinterpret_cast<FileWriter *>(instance->sink);
-    Py_ssize_t written = 0;
+struct SinkFailure {
+    bool failed = false;
     bool was_closed = false;
     unsigned long error_code = 0;
+};
 
-    Py_BEGIN_ALLOW_THREADS;
-    written = filewriter_write_raw(writer, owner->staging, owner->staging_used,
-                                   static_cast<long long>(instance->sink_offset), &was_closed, &error_code);
-    Py_END_ALLOW_THREADS;
-
-    if (was_closed || error_code) {
-        // Not an error for the connection, and it must not be raised here.
-        //
-        // The obvious handling - raise and let the caller deal with it - abandons the
-        // decoder in the middle of a response. The remainder of the article is still
-        // in the connection's buffer and would then be parsed as the start of the next
-        // one, so a failed write would cost the whole connection rather than one
-        // article. That also puts it out of reach of the Python caller, since by the
-        // time the exception surfaces the damage is done.
-        //
-        // So the response is consumed to its end with the body discarded, and the
-        // failure is reported to Python as sink_failed once the response completes.
-        // The article is lost either way and has to be fetched again; the connection
-        // does not have to be.
-        instance->sink_failed = true;
+/*
+ * Hand the staged bytes to the sink and start the buffer over. Called with the GIL
+ * released: nothing here touches the Python API. sink_offset carries the absolute
+ * position across fills, so a body larger than the staging buffer is written in pieces
+ * that still land contiguously.
+ *
+ * A failed write is not an error for the connection: the response is consumed to its
+ * end with the body discarded and reported as sink_failed, so the connection's byte
+ * stream stays in step.
+ */
+static void NNTPResponse_flush_sink_nogil(Decoder *owner, NNTPResponse *instance, SinkFailure &failure) {
+    if (instance->sink_failed || instance->sink_unplaced || owner->staging_used == 0) {
         owner->staging_used = 0;
-
-        // Build the error but hold it rather than raising: the caller needs to know
-        // whether this was a full disk or a file that was closed underneath us, and
-        // those want opposite handling. The GIL is back by now, so this is safe.
-        if (!instance->sink_error) {
-            filewriter_raise(writer, was_closed, error_code);
-#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 12)
-            instance->sink_error = PyErr_GetRaisedException();
-#else
-            PyObject *error_type = NULL, *error_value = NULL, *error_traceback = NULL;
-            PyErr_Fetch(&error_type, &error_value, &error_traceback);
-            PyErr_NormalizeException(&error_type, &error_value, &error_traceback);
-            Py_XDECREF(error_type);
-            Py_XDECREF(error_traceback);
-            instance->sink_error = error_value;
-#endif
-        }
-        return true;
+        return;
     }
 
-    instance->sink_offset += written;
+    FileWriter *writer = reinterpret_cast<FileWriter *>(instance->sink);
+    bool was_closed = false;
+    unsigned long error_code = 0;
+    Py_ssize_t written = filewriter_write_raw(writer, owner->staging, owner->staging_used,
+                                              static_cast<long long>(instance->sink_offset), &was_closed, &error_code);
     owner->staging_used = 0;
-    return true;
+
+    if (was_closed || error_code) {
+        instance->sink_failed = true;
+        if (!failure.failed) {
+            failure.failed = true;
+            failure.was_closed = was_closed;
+            failure.error_code = error_code;
+        }
+        return;
+    }
+    instance->sink_offset += written;
+}
+
+/* Build the held sink_error for a write that failed without the GIL. Requires the GIL. */
+static void NNTPResponse_raise_sink_failure(NNTPResponse *instance, const SinkFailure &failure) {
+    if (!failure.failed || instance->sink_error) return;
+    filewriter_raise(reinterpret_cast<FileWriter *>(instance->sink), failure.was_closed, failure.error_code);
+#if PY_VERSION_HEX >= SABCTOOLS_PY_HEX(3, 12)
+    instance->sink_error = PyErr_GetRaisedException();
+#else
+    PyObject *error_type = NULL, *error_value = NULL, *error_traceback = NULL;
+    PyErr_Fetch(&error_type, &error_value, &error_traceback);
+    PyErr_NormalizeException(&error_type, &error_value, &error_traceback);
+    Py_XDECREF(error_type);
+    Py_XDECREF(error_traceback);
+    instance->sink_error = error_value;
+#endif
 }
 
 /*
@@ -796,11 +789,17 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
                                           const Py_ssize_t buf_len, Py_ssize_t &read) {
     constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
     RapidYencDecoderEnd end = RYDEC_END_NONE;
+    SinkFailure failure;
 
+    // The GIL is dropped once for all of it - every chunk, flush and write - rather than
+    // around each one. Taking it back is not free: while another thread runs Python it
+    // can mean waiting out that thread's switch interval, so a release per chunk turns
+    // microseconds of decoding into milliseconds of waiting.
+    Py_BEGIN_ALLOW_THREADS;
     while (read < buf_len) {
         Py_ssize_t space = owner->staging_size - owner->staging_used;
         if (space == 0) {
-            if (!NNTPResponse_flush_sink(owner, instance)) return false;
+            NNTPResponse_flush_sink_nogil(owner, instance, failure);
             space = owner->staging_size;
         }
 
@@ -813,10 +812,6 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
         char *dst = owner->staging + owner->staging_used;
         char *dst_start = dst;
 
-        Py_ssize_t consumed = 0, produced = 0;
-
-        Py_BEGIN_ALLOW_THREADS;
-
         end = rapidyenc_decode_incremental(
             reinterpret_cast<const void **>(&src),
             reinterpret_cast<void **>(&dst),
@@ -824,14 +819,12 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
             &instance->state
         );
 
-        consumed = src - (buf + read);
-        produced = dst - dst_start;
+        const Py_ssize_t consumed = src - (buf + read);
+        const Py_ssize_t produced = dst - dst_start;
 
         if (produced > 0) {
             NNTPResponse_fold_crc(instance, dst_start, produced);
         }
-
-        Py_END_ALLOW_THREADS;
 
         read += consumed;
         instance->bytes_decoded += produced;
@@ -859,21 +852,93 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
             break;
     }
 
-    if (!instance->body) NNTPResponse_end_piece(instance);
+    if (!instance->body) {
+        NNTPResponse_end_piece(instance);
+        // The body is over, so whatever is still staged has to go out now. Leaving it
+        // would lose the tail of the article: the buffer belongs to the connection, and
+        // the next response resets it.
+        NNTPResponse_flush_sink_nogil(owner, instance, failure);
+    }
+    Py_END_ALLOW_THREADS;
 
-    // The body is over, so whatever is still staged has to go out now. Leaving it would
-    // lose the tail of the article: the buffer belongs to the connection, and the next
-    // response resets it.
-    if (!instance->body && !NNTPResponse_flush_sink(owner, instance)) return false;
+    NNTPResponse_raise_sink_failure(instance, failure);
+    return true;
+}
 
+/*
+ * Decode into the response's bytearray as far as the input and the buffer allow.
+ * Called without the GIL. False when it stopped because the buffer is full: the
+ * article holds more data than its headers declared.
+ */
+static bool NNTPResponse_decode_into(NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len,
+                                     Py_ssize_t &read, char *data, const Py_ssize_t capacity,
+                                     RapidYencDecoderEnd &end) {
+    while (read < buf_len) {
+        Py_ssize_t chunk_in = std::min<Py_ssize_t>(YENC_CHUNK_SIZE, buf_len - read);
+        const Py_ssize_t space = capacity - instance->bytes_decoded;
+        if (space <= 0) return false;
+
+        // The decoder never writes more bytes than it reads, so any chunk that fits in
+        // the remaining space can be decoded in place. Prefer trimming the chunk over
+        // growing the buffer: growing over-allocates and that slack can never be handed
+        // back, so it would become permanent overhead on every article.
+        if (space < chunk_in) chunk_in = space;
+
+        const char *src = buf + read;
+        char *dst = data + instance->bytes_decoded;
+        char *dst_start = dst;
+
+        end = rapidyenc_decode_incremental(
+            reinterpret_cast<const void **>(&src),
+            reinterpret_cast<void **>(&dst),
+            chunk_in,
+            &instance->state
+        );
+
+        const Py_ssize_t consumed = src - (buf + read);
+        const Py_ssize_t produced = dst - dst_start;
+
+        if (produced > 0) {
+            NNTPResponse_fold_crc(instance, dst_start, produced);
+        }
+
+        read += consumed;
+        instance->bytes_decoded += produced;
+
+        if (end != RYDEC_END_NONE || (consumed == 0 && produced == 0))
+            break;
+    }
+    return true;
+}
+
+/*
+ * Grow the response's bytearray and pin it again. Requires the GIL. False with an
+ * exception set, and the buffer released, when it cannot.
+ */
+static bool NNTPResponse_grow(NNTPResponse *instance, Py_buffer &dst_buf, char *&data, Py_ssize_t &capacity,
+                              const Py_ssize_t remaining) {
+    // The next chunk is the tightest cheap bound on what this response can still
+    // produce, since the decoder never writes more bytes than it reads. It may
+    // over-shoot when the buffer also holds later responses, but only by less than one
+    // chunk.
+    const Py_ssize_t needed = instance->bytes_decoded + std::min<Py_ssize_t>(YENC_CHUNK_SIZE, remaining);
+    PyBuffer_Release(&dst_buf);
+    if (needed > YENC_MAX_PART_SIZE) {
+        PyErr_SetString(PyExc_BufferError, "Maximum data buffer size exceeded");
+        return false;
+    }
+    if (PyByteArray_Resize(instance->data, needed) == -1)
+        return false;
+    if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
+        return false;
+    data = static_cast<char*>(dst_buf.buf);
+    capacity = PyByteArray_GET_SIZE(instance->data);
     return true;
 }
 
 static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len, Py_ssize_t &read) {
     // Already at the end of input
     if (read >= buf_len) return true;
-
-    constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
 
     // Streaming to a sink: decode through a buffer shared by every response on this
     // connection and write it out, instead of building a bytearray per article. The
@@ -926,79 +991,21 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
         return false;
 
     char *data_ptr = static_cast<char*>(dst_buf.buf);
+    Py_ssize_t capacity = PyByteArray_GET_SIZE(instance->data);
 
     RapidYencDecoderEnd end = RYDEC_END_NONE;
 
-    // Main decode loop
-    while (read < buf_len) {
-        Py_ssize_t chunk_in = std::min(CHUNK, buf_len - read);
-        Py_ssize_t space = PyByteArray_GET_SIZE(instance->data) - instance->bytes_decoded;
-
-        if (space < chunk_in) {
-            // The decoder never writes more bytes than it reads, so any chunk
-            // that fits in the remaining space can be decoded in place. Prefer
-            // trimming the chunk over growing the buffer: growing over-allocates
-            // and that slack can never be handed back (see above), so it would
-            // become permanent overhead on every decoded article.
-            if (space > 0) {
-                chunk_in = space;
-            } else {
-                // Out of room: the article holds more data than its headers declared.
-                // chunk_in is the tightest cheap bound on what this response can still
-                // produce, since the decoder never writes more bytes than it reads. It
-                // may over-shoot when the buffer also holds later responses, but only
-                // ever by less than one chunk.
-                Py_ssize_t needed = instance->bytes_decoded + chunk_in;
-                if (needed > YENC_MAX_PART_SIZE) {
-                    PyBuffer_Release(&dst_buf);
-                    PyErr_SetString(PyExc_BufferError, "Maximum data buffer size exceeded");
-                    return false;
-                }
-
-                // Release buffer to resize
-                PyBuffer_Release(&dst_buf);
-                if (PyByteArray_Resize(instance->data, needed) == -1) {
-                    return false;
-                }
-
-                // Re-pin buffer after resize
-                if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
-                    return false;
-                data_ptr = static_cast<char*>(dst_buf.buf);
-            }
-        }
-
-        const char *src = buf + read;
-        char *dst = data_ptr + instance->bytes_decoded;
-        char *dst_start = dst;
-
-        Py_ssize_t consumed = 0, produced = 0;
-
-        // Release GIL during CPU-intensive decode operation for better parallelism
+    // The GIL is dropped once and only taken back when the buffer has to grow, which
+    // needs the Python API; see the sink path for why that matters
+    bool full;
+    do {
         Py_BEGIN_ALLOW_THREADS;
-
-        end = rapidyenc_decode_incremental(
-            reinterpret_cast<const void **>(&src),
-            reinterpret_cast<void **>(&dst),
-            chunk_in,
-            &instance->state
-        );
-
-        consumed = src - (buf + read);
-        produced = dst - dst_start;
-
-        if (produced > 0) {
-            NNTPResponse_fold_crc(instance, dst_start, produced);
-        }
-
+        full = !NNTPResponse_decode_into(instance, buf, buf_len, read, data_ptr, capacity, end);
         Py_END_ALLOW_THREADS;
+    } while (full && NNTPResponse_grow(instance, dst_buf, data_ptr, capacity, buf_len - read));
 
-        read += consumed;
-        instance->bytes_decoded += produced;
-
-        if (end != RYDEC_END_NONE || (consumed == 0 && produced == 0))
-            break;
-    }
+    // A failed grow has already released the buffer and set the exception
+    if (full) return false;
 
     PyBuffer_Release(&dst_buf);
 
