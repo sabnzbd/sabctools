@@ -25,8 +25,9 @@
 #include "structmember.h"
 
 
+#include <cctype>
+#include <string>
 #include <string_view>
-#include <iostream>
 #include <charconv>
 #include <optional>
 #include <deque>
@@ -36,19 +37,12 @@
 
 /* Constants */
 #define YENC_LINESIZE    128
-#define YENC_ZERO        0x00
-#define YENC_CR          0x0d
-#define YENC_LF          0x0a
 
 #define NNTP_CAPABILITIES             101
 #define NNTP_ARTICLE                  220
 #define NNTP_HEAD                     221
 #define NNTP_BODY                     222
-#define NNTP_STAT                     223
 #define NNTP_MULTILINE                NNTP_BODY, NNTP_ARTICLE, NNTP_HEAD, NNTP_CAPABILITIES
-
-/* The =yend line cannot be crazy long */
-#define YENC_MAX_TAIL_BYTES 256
 
 /* Prevent strange yEnc sizes */
 #define YENC_MAX_PART_SIZE (UINT64_C(10) * UINT64_C(1024) * UINT64_C(1024))
@@ -142,7 +136,6 @@ typedef struct {
 	long long part_end;
 	long long part_size;
 	long long end_size;
-	Py_ssize_t total;
 	std::optional<uint32_t> crc_expected;
 	PyObject* message;
 	RapidYencDecoderState state;
@@ -152,7 +145,6 @@ typedef struct {
 	bool eof;
 	bool body;
 	bool has_part;
-	bool has_end;
 	bool has_emptyline; // for article requests has the empty line separating headers and body been seen
 	bool has_baddata; // invalid line lengths for uu decoding; some data lost
 	// A write to the sink failed, so the body was decoded but not kept. Decoding

@@ -20,7 +20,6 @@
 #include "filewriter.h"
 #include "unlocked_ssl.h"
 
-#include "rapidyenc.h"
 
 /* Global objects */
 
@@ -214,10 +213,20 @@ constexpr unsigned char NNTPResponse_decode_uu_char_workaround(const unsigned ch
 }
 
 /**
+ * Set the encoding format of the article, replacing any format set before.
+ *
+ * @param instance The NNTPResponse instance to update
+ * @param format ENCODING_FORMAT_YENC or ENCODING_FORMAT_UU
+ */
+static inline void NNTPResponse_set_format(NNTPResponse* instance, PyObject* format) {
+    Py_XSETREF(instance->format, Py_NewRef(format));
+}
+
+/**
  * Detect the encoding format of the article by examining a line.
  * Detects yEnc format (lines starting with "=ybegin ") and UUEncode format
  * (60/61 character lines starting with 'M', or "begin " header with octal permissions).
- * 
+ *
  * @param instance The NNTPResponse instance to update
  * @param line The line to examine for format detection
  */
@@ -234,17 +243,13 @@ static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::strin
     // YEnc detection
     if (starts_with(line, "=ybegin "))
     {
-        Py_XDECREF(instance->format);
-        instance->format = ENCODING_FORMAT_YENC;
-        Py_INCREF(ENCODING_FORMAT_YENC);
+        NNTPResponse_set_format(instance, ENCODING_FORMAT_YENC);
         return;
     }
 
     // UUEncode detection: 60 or 61 chars, starts with 'M'
     if ((line.size() == 60 || line.size() == 61) && line.front() == 'M') {
-        Py_XDECREF(instance->format);
-        instance->format = ENCODING_FORMAT_UU;
-        Py_INCREF(ENCODING_FORMAT_UU);
+        NNTPResponse_set_format(instance, ENCODING_FORMAT_UU);
         return;
     }
 
@@ -276,9 +281,7 @@ static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::strin
         }
 
         if (all_valid) {
-            Py_XDECREF(instance->format);
-            instance->format = ENCODING_FORMAT_UU;
-            Py_INCREF(ENCODING_FORMAT_UU);
+            NNTPResponse_set_format(instance, ENCODING_FORMAT_UU);
         }
         return;
     }
@@ -314,9 +317,7 @@ static inline void NNTPResponse_detect_format(NNTPResponse* instance, std::strin
         if (!only_space_or_backtick(padding)) continue;
 
         // Probably UU
-        Py_XDECREF(instance->format);
-        instance->format = ENCODING_FORMAT_UU;
-        Py_INCREF(ENCODING_FORMAT_UU);
+        NNTPResponse_set_format(instance, ENCODING_FORMAT_UU);
         instance->body = true;
         return;
     }
@@ -347,7 +348,6 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
             instance->part_end = instance->file_size;
             instance->part_size = instance->file_size;
         }
-        extract_int(line, " total=", instance->total);
 
         std::string::size_type pos;
 	    if ((pos = line.find(" name=")) != std::string::npos) {
@@ -376,7 +376,6 @@ static inline void NNTPResponse_process_yenc_header(NNTPResponse* instance, std:
             instance->part_size = 0;
         }
     } else if (starts_with(line, "=yend ")) {
-        instance->has_end = true;
         line.remove_prefix(5);
         std::string_view crc32;
         bool crc32_found = false;
@@ -475,14 +474,7 @@ static int NNTPResponse_clear(NNTPResponse* self)
 static void NNTPResponse_dealloc(NNTPResponse* self)
 {
     PyObject_GC_UnTrack(self);
-    Py_XDECREF(self->data);
-    Py_XDECREF(self->context);
-    Py_XDECREF(self->sink);
-    Py_XDECREF(self->sink_error);
-    Py_XDECREF(self->lines);
-    Py_XDECREF(self->format);
-    Py_XDECREF(self->file_name);
-    Py_XDECREF(self->message);
+    NNTPResponse_clear(self);
     free(self->pieces);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -755,6 +747,58 @@ static void NNTPResponse_fold_crc(NNTPResponse *instance, const char *data, Py_s
     }
 }
 
+/* Decode one chunk of at most `space` bytes into dst, without the GIL. False when done. */
+static bool NNTPResponse_decode_chunk(NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len,
+                                      Py_ssize_t &read, char *dst, const Py_ssize_t space,
+                                      Py_ssize_t &produced, RapidYencDecoderEnd &end) {
+    // Output never exceeds input, so this chunk fits
+    const Py_ssize_t chunk_in = std::min({static_cast<Py_ssize_t>(YENC_CHUNK_SIZE), buf_len - read, space});
+    const char *src = buf + read;
+    char *out = dst;
+
+    end = rapidyenc_decode_incremental(
+        reinterpret_cast<const void **>(&src),
+        reinterpret_cast<void **>(&out),
+        chunk_in,
+        &instance->state
+    );
+
+    const Py_ssize_t consumed = src - (buf + read);
+    produced = out - dst;
+    if (produced > 0) {
+        NNTPResponse_fold_crc(instance, dst, produced);
+    }
+    read += consumed;
+    instance->bytes_decoded += produced;
+    return end == RYDEC_END_NONE && (consumed > 0 || produced > 0);
+}
+
+/* Handle how decoding stopped, and end the last piece once the body is over */
+static void NNTPResponse_decode_end(NNTPResponse *instance, const RapidYencDecoderEnd end, Py_ssize_t &read) {
+    switch (end) {
+        case RYDEC_END_NONE:
+            if (instance->state == RYDEC_STATE_CRLFEQ) {
+                // "\r\n=" at the end of the input may start =yend
+                instance->state = RYDEC_STATE_CRLF;
+                read -= 1;
+            }
+            break;
+        case RYDEC_END_CONTROL:
+            // "\r\n=y": the =yend line
+            instance->body = false;
+            // Back up to "=y"; CRLFEQ keeps both bytes in this buffer
+            read -= 2;
+            break;
+        case RYDEC_END_ARTICLE:
+            // "\r\n.\r\n": read is past the terminator, so the response ends here
+            instance->body = false;
+            instance->eof = true;
+            break;
+    }
+
+    if (!instance->body) NNTPResponse_end_piece(instance);
+}
+
 /*
  * Decode a yEnc body straight into the sink.
  *
@@ -765,7 +809,6 @@ static void NNTPResponse_fold_crc(NNTPResponse *instance, const char *data, Py_s
  */
 static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance, const char *buf,
                                           const Py_ssize_t buf_len, Py_ssize_t &read) {
-    constexpr Py_ssize_t CHUNK = YENC_CHUNK_SIZE;
     RapidYencDecoderEnd end = RYDEC_END_NONE;
     SinkFailure failure;
 
@@ -775,63 +818,18 @@ static bool NNTPResponse_decode_yenc_sink(Decoder *owner, NNTPResponse *instance
     // microseconds of decoding into milliseconds of waiting.
     Py_BEGIN_ALLOW_THREADS;
     while (read < buf_len) {
-        Py_ssize_t space = owner->staging_size - owner->staging_used;
-        if (space == 0) {
+        if (owner->staging_used == owner->staging_size) {
             NNTPResponse_flush_sink_nogil(owner, instance, failure);
-            space = owner->staging_size;
         }
-
-        // The decoder never writes more than it reads, so a chunk that fits the
-        // remaining space always fits its output
-        Py_ssize_t chunk_in = std::min(CHUNK, buf_len - read);
-        if (chunk_in > space) chunk_in = space;
-
-        const char *src = buf + read;
-        char *dst = owner->staging + owner->staging_used;
-        char *dst_start = dst;
-
-        end = rapidyenc_decode_incremental(
-            reinterpret_cast<const void **>(&src),
-            reinterpret_cast<void **>(&dst),
-            chunk_in,
-            &instance->state
-        );
-
-        const Py_ssize_t consumed = src - (buf + read);
-        const Py_ssize_t produced = dst - dst_start;
-
-        if (produced > 0) {
-            NNTPResponse_fold_crc(instance, dst_start, produced);
-        }
-
-        read += consumed;
-        instance->bytes_decoded += produced;
+        Py_ssize_t produced;
+        const bool more = NNTPResponse_decode_chunk(instance, buf, buf_len, read, owner->staging + owner->staging_used,
+                                                    owner->staging_size - owner->staging_used, produced, end);
         owner->staging_used += produced;
-
-        if (end != RYDEC_END_NONE || (consumed == 0 && produced == 0))
-            break;
+        if (!more) break;
     }
 
-    // Same end handling as the bytearray path; see the comments there
-    switch (end) {
-        case RYDEC_END_NONE:
-            if (instance->state == RYDEC_STATE_CRLFEQ) {
-                instance->state = RYDEC_STATE_CRLF;
-                read -= 1;
-            }
-            break;
-        case RYDEC_END_CONTROL:
-            instance->body = false;
-            read -= 2;
-            break;
-        case RYDEC_END_ARTICLE:
-            instance->body = false;
-            instance->eof = true;
-            break;
-    }
-
+    NNTPResponse_decode_end(instance, end, read);
     if (!instance->body) {
-        NNTPResponse_end_piece(instance);
         // The body is over, so whatever is still staged has to go out now. Leaving it
         // would lose the tail of the article: the buffer belongs to the connection, and
         // the next response resets it.
@@ -852,38 +850,12 @@ static bool NNTPResponse_decode_into(NNTPResponse *instance, const char *buf, co
                                      Py_ssize_t &read, char *data, const Py_ssize_t capacity,
                                      RapidYencDecoderEnd &end) {
     while (read < buf_len) {
-        Py_ssize_t chunk_in = std::min<Py_ssize_t>(YENC_CHUNK_SIZE, buf_len - read);
+        // Trim the chunk rather than grow: over-allocation is never handed back
         const Py_ssize_t space = capacity - instance->bytes_decoded;
         if (space <= 0) return false;
-
-        // The decoder never writes more bytes than it reads, so any chunk that fits in
-        // the remaining space can be decoded in place. Prefer trimming the chunk over
-        // growing the buffer: growing over-allocates and that slack can never be handed
-        // back, so it would become permanent overhead on every article.
-        if (space < chunk_in) chunk_in = space;
-
-        const char *src = buf + read;
-        char *dst = data + instance->bytes_decoded;
-        char *dst_start = dst;
-
-        end = rapidyenc_decode_incremental(
-            reinterpret_cast<const void **>(&src),
-            reinterpret_cast<void **>(&dst),
-            chunk_in,
-            &instance->state
-        );
-
-        const Py_ssize_t consumed = src - (buf + read);
-        const Py_ssize_t produced = dst - dst_start;
-
-        if (produced > 0) {
-            NNTPResponse_fold_crc(instance, dst_start, produced);
-        }
-
-        read += consumed;
-        instance->bytes_decoded += produced;
-
-        if (end != RYDEC_END_NONE || (consumed == 0 && produced == 0))
+        Py_ssize_t produced;
+        if (!NNTPResponse_decode_chunk(instance, buf, buf_len, read, data + instance->bytes_decoded, space,
+                                       produced, end))
             break;
     }
     return true;
@@ -1012,35 +984,7 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
 
     PyBuffer_Release(&dst_buf);
 
-    // Handle different end conditions from the decoder
-    switch (end) {
-        case RYDEC_END_NONE:
-            if (instance->state == RYDEC_STATE_CRLFEQ) {
-                // Special case: found "\r\n=" but no more data - might be start of =yend
-                instance->state = RYDEC_STATE_CRLF;
-                read -= 1; // Back up to allow =yend detection
-            }
-            break;
-        case RYDEC_END_CONTROL:
-            // Found "\r\n=y" - likely =yend line, exit body mode
-            instance->body = false;
-            // Back up to include "=y" for header processing. Safe because the
-            // CRLFEQ case above leaves the "=" unconsumed, so a call can never
-            // resume on the 'y' alone: both bytes are always in this buffer.
-            read -= 2;
-            break;
-        case RYDEC_END_ARTICLE:
-            // Found "\r\n.\r\n" - NNTP article terminator, read already points
-            // past it. Nothing is gained by backing up so the line parser can
-            // rediscover the "." line; end the response here. Backing up is also
-            // not always possible, as the terminator may have started in a
-            // previous call whose bytes have since left the buffer.
-            instance->body = false;
-            instance->eof = true;
-            break;
-    }
-
-    if (!instance->body) NNTPResponse_end_piece(instance);
+    NNTPResponse_decode_end(instance, end, read);
 
     return true;
 }
@@ -1364,7 +1308,6 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->part_end = 0;
     instance->part_size = 0;
     instance->end_size = 0;
-    instance->total = 0;
     instance->crc = 0;
     instance->status_code = 0;
     instance->crc_expected = std::nullopt;
@@ -1372,7 +1315,6 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->eof = false;
     instance->body = false;
     instance->has_part = false;
-    instance->has_end = false;
     instance->has_emptyline = false;
     instance->has_baddata = false;
     instance->sink_failed = false;
@@ -1501,24 +1443,9 @@ static int Decoder_getbuffer(Decoder* self, Py_buffer *view, int flags)
         flags);
 }
 
-/**
- * Buffer protocol releasebuffer implementation for Decoder.
- *
- * The Decoder does not allocate per-view resources when exporting its
- * buffer, so there is nothing to clean up when a view is released.
- * This function exists only to satisfy the PyBufferProcs interface.
- *
- * @param self Decoder instance that previously exported a buffer view
- * @param view Py_buffer being released (unused)
- */
-static void Decoder_releasebuffer(Decoder* self, Py_buffer *view)
-{
-    // nothing to do
-}
-
 static PyBufferProcs Decoder_bufferprocs = {
     (getbufferproc)Decoder_getbuffer,
-    (releasebufferproc)Decoder_releasebuffer
+    nullptr
 };
 
 static PyObject* Decoder_iter(Decoder *self)
@@ -1601,31 +1528,29 @@ static int Decoder_traverse(Decoder *self, visitproc visit, void* arg)
     return 0;
 }
 
+static void Decoder_drop_pending(Decoder *self)
+{
+    for (PendingRequest& request : self->pending) {
+        Py_XDECREF(request.context);
+        Py_XDECREF(request.sink);
+    }
+    self->pending.clear();
+}
+
 static int Decoder_clear(Decoder *self)
 {
     for (NNTPResponse* item : self->deque)
         Py_XDECREF(item);
     self->deque.clear();
     Py_CLEAR(self->response);
-    for (PendingRequest& request : self->pending) {
-        Py_XDECREF(request.context);
-        Py_XDECREF(request.sink);
-    }
-    self->pending.clear();
+    Decoder_drop_pending(self);
     return 0;
 }
 
 static void Decoder_dealloc(Decoder *self)
 {
     PyObject_GC_UnTrack(self);
-    // DECREF all remaining items
-    for (NNTPResponse* item : self->deque)
-        Py_XDECREF(item);
-    Py_XDECREF(self->response);
-    for (PendingRequest& request : self->pending) {
-        Py_XDECREF(request.context);
-        Py_XDECREF(request.sink);
-    }
+    Decoder_clear(self);
     self->deque.~deque();
     self->pending.~deque();
     free(self->data);
@@ -1844,11 +1769,7 @@ static PyObject* Decoder_expect(Decoder *self, PyObject *args, PyObject *kwds)
 /* Drop every pending request, for a connection being reset */
 static PyObject* Decoder_clear_expected(Decoder *self, PyObject *Py_UNUSED(ignored))
 {
-    for (PendingRequest& request : self->pending) {
-        Py_XDECREF(request.context);
-        Py_XDECREF(request.sink);
-    }
-    self->pending.clear();
+    Decoder_drop_pending(self);
     Py_RETURN_NONE;
 }
 
