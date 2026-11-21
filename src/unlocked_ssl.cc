@@ -30,6 +30,7 @@
 static int (*SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
 static int (*SSL_get_error)(void*, int) = NULL;
 static int (*SSL_get_shutdown)(void*) = NULL;
+static int (*SSL_pending)(const void*) = NULL;
 static PyObject *SSLWantReadError = NULL;
 static PyObject *SSLWantWriteError = NULL;
 static PyTypeObject *SSLSocketType = NULL;
@@ -85,15 +86,6 @@ static inline _PySSLError _PySSL_errno(int failed, void *ssl, int retcode)
     }
     return err;
 }
-
-typedef enum {
-    SOCKET_IS_NONBLOCKING,
-    SOCKET_IS_BLOCKING,
-    SOCKET_HAS_TIMED_OUT,
-    SOCKET_HAS_BEEN_CLOSED,
-    SOCKET_TOO_LARGE_FOR_SELECT,
-    SOCKET_OPERATION_OK
-} timeout_state;
 
 /*
  * A closed or vanished socket raises what socket.recv_into raises for one, an OSError
@@ -186,6 +178,7 @@ void openssl_init() {
     SSL_read_ex = reinterpret_cast<decltype(SSL_read_ex)>(GetProcAddress(openssl_handle, "SSL_read_ex"));
     SSL_get_error = reinterpret_cast<decltype(SSL_get_error)>(GetProcAddress(openssl_handle, "SSL_get_error"));
     SSL_get_shutdown = reinterpret_cast<decltype(SSL_get_shutdown)>(GetProcAddress(openssl_handle, "SSL_get_shutdown"));
+    SSL_pending = reinterpret_cast<decltype(SSL_pending)>(GetProcAddress(openssl_handle, "SSL_pending"));
 #else
     // Find library at "import ssl; print(ssl._ssl.__file__)"
 
@@ -202,6 +195,7 @@ void openssl_init() {
     *(void**)&SSL_read_ex = dlsym(openssl_handle, "SSL_read_ex");
     *(void**)&SSL_get_error = dlsym(openssl_handle, "SSL_get_error");
     *(void**)&SSL_get_shutdown = dlsym(openssl_handle, "SSL_get_shutdown");
+    *(void**)&SSL_pending = dlsym(openssl_handle, "SSL_pending");
 #endif
 
 cleanup:
@@ -215,6 +209,7 @@ cleanup:
         SSL_read_ex = NULL;
         SSL_get_error = NULL;
         SSL_get_shutdown = NULL;
+        SSL_pending = NULL;
         PyErr_Clear(); // linking is optional; any failure results in openssl_linked=False
     }
 }
@@ -223,153 +218,124 @@ bool openssl_linked() {
     return SSL_read_ex &&
         SSL_get_error &&
         SSL_get_shutdown &&
+        SSL_pending &&
         SSLWantReadError &&
         SSLWantWriteError &&
         SSLSocketType;
 }
 
-static PyObject* unlocked_ssl_recv_into_impl(PySSLSocket *self, Py_ssize_t len, Py_buffer *buffer) {
-    char *mem;
-    size_t count = 0;
-    size_t readbytes = 0;
-    int retval;
-    int sockstate;
-    _PySSLError err;
+/* 0 for a non-blocking socket, else -1 with an exception set */
+int require_nonblocking(PyObject *sock) {
+    PyObject *blocking = PyObject_CallMethod(sock, "getblocking", NULL);
+    const int is_blocking = blocking ? PyObject_IsTrue(blocking) : -1;
+    Py_XDECREF(blocking);
+    if (is_blocking > 0) PyErr_SetString(PyExc_ValueError, "Only non-blocking sockets are supported");
+    return is_blocking == 0 ? 0 : -1;
+}
 
+/*
+ * Read what a non-blocking ssl.SSLSocket has ready into buf, without the GIL.
+ * Returns the bytes read, 0 when the peer closed, -1 with an exception set.
+ * *more is set when OpenSSL still holds decrypted bytes.
+ */
+Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, bool *more) {
+    *more = false;
+
+    PyObject *sslobj = PyObject_GetAttrString(ssl_socket, "_sslobj");
+    if (!sslobj || Py_IsNone(sslobj)) {
+        // None once the socket is closed
+        Py_XDECREF(sslobj);
+        PyErr_Clear();
+        raise_socket_closed("Could not find _sslobj attribute");
+        return -1;
+    }
+
+    if (require_nonblocking(ssl_socket) < 0) {
+        Py_DECREF(sslobj);
+        return -1;
+    }
+
+    if (len <= 0) {
+        PyErr_SetString(PyExc_ValueError, "No space left in buffer");
+        Py_DECREF(sslobj);
+        return -1;
+    }
+
+    PySSLSocket *self = (PySSLSocket *)sslobj;
     PySocketSockObject *sock = NULL;
     if (get_socket(self, &sock) < 0) {
-        return NULL;
+        Py_DECREF(sslobj);
+        return -1;
     }
 
-    mem = (char *)buffer->buf;
-    if (len <= 0 || len > buffer->len) {
-        len = (int) buffer->len;
-        if (buffer->len != len) {
-            PyErr_SetString(PyExc_OverflowError,
-                            "maximum length can't fit in a C 'int'");
-            goto error;
-        }
-        if (len == 0) {
-            count = 0;
-            goto done;
-        }
+    size_t count = 0, readbytes = 0;
+    int retval = 1, pending = 0;
+    _PySSLError err;
+    Py_BEGIN_ALLOW_THREADS;
+    while (len > 0) {
+        retval = SSL_read_ex(self->ssl, buf + count, (size_t)len, &readbytes);
+        if (retval <= 0) break;
+        count += readbytes;
+        len -= (Py_ssize_t)readbytes;
     }
-
-    do {
-        Py_BEGIN_ALLOW_THREADS;
-        do {
-            retval = SSL_read_ex(self->ssl, mem + count, len, &readbytes);
-            if (retval <= 0) {
-                break;
-            }
-            count += readbytes;
-            len -= readbytes;
-        } while (len > 0);
-        err = _PySSL_errno(retval == 0, self->ssl, retval);
-        Py_END_ALLOW_THREADS;
+    err = _PySSL_errno(retval <= 0, self->ssl, retval);
+    pending = SSL_pending(self->ssl);
+    Py_END_ALLOW_THREADS;
 #if PY_VERSION_HEX < SABCTOOLS_PY_HEX(3, 15)
-        self->err = err;
+    self->err = err;
 #endif
 
-        if (count > 0) {
-            break;
-        }
-
-        if (PyErr_CheckSignals())
-            goto error;
-
-        if (err.ssl == SSL_ERROR_WANT_READ) {
-            sockstate = SOCKET_IS_NONBLOCKING;
-        } else if (err.ssl == SSL_ERROR_WANT_WRITE) {
-            sockstate = SOCKET_IS_NONBLOCKING;
-        } else if (err.ssl == SSL_ERROR_ZERO_RETURN &&
-                SSL_get_shutdown(self->ssl) == SSL_RECEIVED_SHUTDOWN)
-        {
-            count = 0;
-            goto done;
-        }
-        else
-            sockstate = SOCKET_OPERATION_OK;
-
-        if (sockstate == SOCKET_IS_NONBLOCKING) {
-            break;
-        }
-    } while (err.ssl == SSL_ERROR_WANT_READ ||
-             err.ssl == SSL_ERROR_WANT_WRITE);
-
+    Py_ssize_t result = (Py_ssize_t)count;
+    *more = pending > 0;
     if (count == 0) {
-        if (err.ssl == SSL_ERROR_WANT_READ) {
+        if (PyErr_CheckSignals()) {
+            result = -1;
+        } else if (err.ssl == SSL_ERROR_WANT_READ) {
             PyErr_SetString(SSLWantReadError, "The operation did not complete (read)");
-        }
-        else if (err.ssl == SSL_ERROR_WANT_WRITE) {
+            result = -1;
+        } else if (err.ssl == SSL_ERROR_WANT_WRITE) {
             PyErr_SetString(SSLWantWriteError, "The operation did not complete (write)");
-        } else {
-            // Raise general error, as all errors that are left indicate fatal errors
-            // The calling code will have to establish a new connection
+            result = -1;
+        } else if (!(err.ssl == SSL_ERROR_ZERO_RETURN && SSL_get_shutdown(self->ssl) == SSL_RECEIVED_SHUTDOWN)) {
+            // Fatal, needs a new connection
             PyErr_SetString(PyExc_ConnectionAbortedError, "Failed to read data");
+            result = -1;
         }
-        goto error;
     }
-
-done:
     Py_XDECREF(sock);
-    return PyLong_FromSize_t(count);
+    Py_DECREF(sslobj);
+    return result;
+}
 
-error:
-    Py_XDECREF(sock);
-    return NULL;
+/* Whether unlocked_ssl_read() can read obj */
+bool is_unlocked_ssl_socket(PyObject *obj) {
+    return openssl_linked() && PyObject_TypeCheck(obj, SSLSocketType);
+}
+
+/* Clear the error if it only says nothing was ready yet */
+bool unlocked_ssl_clear_want() {
+    if (PyErr_ExceptionMatches(SSLWantReadError) || PyErr_ExceptionMatches(SSLWantWriteError)) {
+        PyErr_Clear();
+        return true;
+    }
+    return false;
 }
 
 PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     PyObject *ssl_socket;
-    PyObject *Py_ssl_socket;
-    Py_ssize_t len;
-    Py_buffer Py_buffer;
-    PyObject *retval = NULL;
-    PyObject *blocking = NULL;
-    int is_blocking;
+    Py_buffer buffer;
 
-    if(!openssl_linked()) {
+    if (!openssl_linked()) {
         PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
         return NULL;
     }
 
-    // Parse input
-    if (!PyArg_ParseTuple(args, "O!w*:unlocked_ssl_recv_into", SSLSocketType, &ssl_socket, &Py_buffer)) {
+    if (!PyArg_ParseTuple(args, "O!w*:unlocked_ssl_recv_into", SSLSocketType, &ssl_socket, &buffer)) {
         return NULL;
     }
 
-    Py_ssl_socket = PyObject_GetAttrString(ssl_socket, "_sslobj");
-    if (!Py_ssl_socket || Py_IsNone(Py_ssl_socket)) {
-        // None once the socket is closed
-        PyErr_Clear();
-        raise_socket_closed("Could not find _sslobj attribute");
-        goto error;
-    }
-
-    blocking = PyObject_CallMethod(ssl_socket, "getblocking", NULL);
-    if (!blocking)
-        goto error; // call failed
-    is_blocking = PyObject_IsTrue(blocking);
-    if (is_blocking < 0)
-        goto error;
-    if (is_blocking) {
-        PyErr_SetString(PyExc_ValueError, "Only non-blocking sockets are supported");
-        goto error;
-    }
-
-    // Basic sanity check
-    len = (Py_ssize_t)Py_buffer.len;
-    if (len <= 0) {
-        PyErr_SetString(PyExc_ValueError, "No space left in buffer");
-        goto error;
-    }
-
-    retval = unlocked_ssl_recv_into_impl((PySSLSocket*)Py_ssl_socket, len, &Py_buffer);
-
-error:
-    PyBuffer_Release(&Py_buffer);
-    Py_XDECREF(Py_ssl_socket);
-    Py_XDECREF(blocking);
-    return retval;
+    bool more;
+    const Py_ssize_t count = unlocked_ssl_read(ssl_socket, (char *)buffer.buf, buffer.len, &more);
+    PyBuffer_Release(&buffer);
+    return count < 0 ? NULL : PyLong_FromSsize_t(count);
 }
