@@ -1090,8 +1090,11 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
         auto it = line.begin();
         const auto end = line.end();
 
-        while (effLen > 0 && std::distance(it, end) >= 4) {
-            const auto chunk = std::min(effLen, static_cast<std::size_t>(3));
+        while (effLen > 0) {
+            const auto avail = static_cast<std::size_t>(std::distance(it, end));
+            // 2 chars encode 1 byte, so a final group without padding still decodes
+            if (avail < 2) break;
+            const auto chunk = std::min({effLen, static_cast<std::size_t>(3), avail - 1});
             const unsigned char c0 = NNTPResponse_decode_uu_char(*it++);
             const unsigned char c1 = NNTPResponse_decode_uu_char(*it++);
             unsigned char c2 = 0;
@@ -1108,8 +1111,12 @@ static bool NNTPResponse_decode_uu(NNTPResponse* instance, std::string_view line
                 *dst++ = static_cast<char>(c2 << 6 | c3);
             }
 
-            effLen -= 3;
+            // Only what was produced, or a short final group wraps the unsigned count
+            effLen -= chunk;
         }
+
+        // The line declared more bytes than its characters could encode
+        if (effLen > 0) instance->has_baddata = true;
 
         Py_ssize_t produced = dst - dst_start;
         instance->bytes_decoded += produced;

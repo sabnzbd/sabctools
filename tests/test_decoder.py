@@ -612,3 +612,35 @@ class TestRingRewind:
         reference = self.feed(self.SIZE)[1]
         for read_size in (1024, 4096, 48 * 1024, 100_000):
             assert self.feed(read_size)[1] == reference, "read_size=%d decoded differently" % read_size
+
+
+def uu_decode_single(line: bytes) -> "sabctools.NNTPResponse":
+    data_plain = b"".join([b"222 0 <foo@bar>\r\n", b"begin 644 f\r\n", line, b"\r\n", b"`\r\n", b"end\r\n", b".\r\n"])
+    decoder = sabctools.Decoder(len(data_plain))
+    n = BytesIO(data_plain).readinto(decoder)
+    decoder.process(n)
+    response = next(decoder, None)
+    assert response
+    assert response.format is sabctools.EncodingFormat.UU
+    return response
+
+
+def test_uu_declared_length_shorter_than_data():
+    """Trailing junk after the declared length must not be decoded as data"""
+    response = uu_decode_single(uu(b"A") + b"````````")
+    assert response.data == b"A"
+    assert not response.baddata
+
+
+def test_uu_truncated_final_group():
+    """Some encoders omit the trailing padding"""
+    response = uu_decode_single(uu(b"A")[:3])
+    assert response.data == b"A"
+    assert not response.baddata
+
+
+def test_uu_declared_length_not_encodable():
+    """The length byte claims 3 bytes but the characters only encode 2"""
+    response = uu_decode_single(uu(b"ABC")[:4])
+    assert response.data == b"AB"
+    assert response.baddata
