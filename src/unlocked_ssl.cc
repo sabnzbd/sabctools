@@ -312,15 +312,6 @@ bool is_unlocked_ssl_socket(PyObject *obj) {
     return openssl_linked() && PyObject_TypeCheck(obj, SSLSocketType);
 }
 
-/* Clear the error if it only says nothing was ready yet */
-bool unlocked_ssl_clear_want() {
-    if (PyErr_ExceptionMatches(SSLWantReadError) || PyErr_ExceptionMatches(SSLWantWriteError)) {
-        PyErr_Clear();
-        return true;
-    }
-    return false;
-}
-
 PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     PyObject *ssl_socket;
     Py_buffer buffer;

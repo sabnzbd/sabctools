@@ -56,7 +56,6 @@ void openssl_init();
 bool openssl_linked();
 PyObject *unlocked_ssl_recv_into(PyObject *, PyObject*);
 bool is_unlocked_ssl_socket(PyObject *obj);
-bool unlocked_ssl_clear_want();
 int require_nonblocking(PyObject *sock);
 Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, bool *more);
 
