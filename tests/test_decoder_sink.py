@@ -187,6 +187,131 @@ class TestSinkOutput:
         assert os.path.getsize(writer.path) == 20 * len(payload)
 
 
+class TestSinkBounds:
+    def test_a_range_beyond_the_limit_is_discarded(self, tmp_path):
+        """An =ypart range past the limit would extend the file, so nothing is written"""
+        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("far", target, block_size=64, max_end=1000)
+        response = feed(decoder, build_article(b"x" * 8, begin=68719476736, total=1000))[0]
+        target.close()
+
+        assert response.crc is None
+        assert response.block_crcs is None
+        assert response.sink_failed is False
+        assert os.path.getsize(target.path) == 0
+
+    def test_a_range_within_the_limit_is_written(self, tmp_path):
+        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("ok", target, max_end=1000)
+        response = feed(decoder, build_article(b"x" * 100, begin=900, total=1000))[0]
+        target.close()
+
+        assert response.crc is not None
+        assert open(target.path, "rb").read()[900:] == b"x" * 100
+
+    def test_negative_max_end_is_rejected(self):
+        with pytest.raises(ValueError):
+            sabctools.Decoder(4096).expect("ctx", None, max_end=-1)
+
+    def test_block_size_and_max_end_are_keyword_only(self):
+        with pytest.raises(TypeError):
+            sabctools.Decoder(4096).expect("ctx", None, 64)
+
+    @pytest.mark.parametrize("streamed", [True, False])
+    def test_a_body_past_its_range_has_no_block_crcs(self, tmp_path, streamed):
+        """Pieces past the range would describe bytes that were never written"""
+        encoded, crc = sabctools.yenc_encode(b"L" * 150)
+        wire = (
+            b"222 0 <test.bin-1>\r\n"
+            b"=ybegin part=1 line=128 size=200 name=test.bin\r\n"
+            b"=ypart begin=1 end=100\r\n" + encoded + f"\r\n=yend size=150 part=1 pcrc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin")) if streamed else None
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("long", target, block_size=64)
+        response = feed(decoder, wire)[0]
+        if target:
+            target.close()
+
+        assert response.crc == crc
+        assert response.block_crcs is None
+
+    @pytest.mark.parametrize("size, max_end, written", [(150, 0, 150), (100, 0, 100), (0, 100, 100), (100, 50, 0)])
+    def test_a_single_part_body_stops_at_its_end(self, tmp_path, size, max_end, written):
+        """Without =ypart the end comes from the =ybegin size, or max_end when that is missing.
+        Block CRCs are only reported when every decoded byte was written."""
+        encoded, crc = sabctools.yenc_encode(b"L" * 150)
+        wire = (
+            b"222 0 <test.bin>\r\n"
+            + f"=ybegin line=128 size={size} name=test.bin\r\n".encode()
+            + encoded
+            + f"\r\n=yend size=150 crc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        decoder = sabctools.Decoder(1 << 20)
+        # Two pieces, few enough to be kept without a size in the header
+        decoder.expect("single", target, block_size=128, max_end=max_end)
+        response = feed(decoder, wire)[0]
+        target.close()
+
+        assert open(target.path, "rb").read() == b"L" * written
+        assert (response.block_crcs is not None) == (written == 150)
+
+    @pytest.mark.parametrize("chunk", [0, 7])
+    def test_a_body_longer_than_its_range_does_not_touch_the_next_article(self, tmp_path, chunk):
+        """The header says 100 bytes, the body carries 150: the extra must not land on the neighbour"""
+        neighbour = b"N" * 100
+        long_body = b"L" * 150
+        encoded, crc = sabctools.yenc_encode(long_body)
+        wire = (
+            b"222 0 <test.bin-1>\r\n"
+            b"=ybegin part=1 line=128 size=200 name=test.bin\r\n"
+            b"=ypart begin=1 end=100\r\n" + encoded + f"\r\n=yend size=150 part=1 pcrc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("neighbour", target)
+        decoder.expect("long", target)
+        responses = feed(decoder, build_article(neighbour, begin=100, total=200, part=2) + wire, chunk=chunk)
+        target.close()
+
+        assert responses[1].bytes_decoded == 150
+        assert responses[1].part_size == 100
+        contents = open(target.path, "rb").read()
+        assert contents[:100] == b"L" * 100
+        assert contents[100:200] == neighbour
+
+    @pytest.mark.parametrize("chunk", [0, 7])
+    @pytest.mark.parametrize(
+        "second_header",
+        [
+            b"=ypart begin=101 end=200\r\n",
+            b"=ypart begin=0 end=0\r\n",
+            b"=ybegin line=128 size=1000 name=test.bin\r\n",
+        ],
+    )
+    def test_a_second_body_in_one_response_is_discarded(self, tmp_path, chunk, second_header):
+        """Headers after the first =yend would move the range the limit was checked against"""
+        first = build_article(b"x" * 100, total=1000)
+        encoded, crc = sabctools.yenc_encode(b"Z" * 100)
+        wire = (
+            first[: -len(b".\r\n")]
+            + second_header
+            + encoded
+            + f"\r\n=yend size=100 part=1 pcrc32={crc:08x}\r\n.\r\n".encode()
+        )
+        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("two bodies", target, max_end=100)
+        response = feed(decoder, wire, chunk=chunk)[0]
+        target.close()
+
+        assert response.crc is None
+        assert open(target.path, "rb").read() == b"x" * 100
+
+
 class TestSinkErrors:
     def test_a_closed_sink_fails_the_article_not_the_connection(self, tmp_path):
         """A job deleted mid-download closes the file under an article still arriving.
@@ -500,10 +625,12 @@ def test_sink_and_bytearray_agree(test_data, tmp_path):
             assert actual.crc is None
             continue
 
-        # Streamed: the same bytes have to be at the offset the headers gave
+        # Streamed: the same bytes have to be at the offset the headers gave, up to the
+        # declared end, where a longer body is cut
+        length = min(len(expected.data), expected.part_size)
         with open(target, "rb") as written:
             written.seek(expected.part_begin)
-            assert written.read(len(expected.data)) == bytes(expected.data)
+            assert written.read(length) == bytes(expected.data[:length])
 
 
 class TestSinkError:

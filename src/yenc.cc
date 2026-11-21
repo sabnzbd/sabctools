@@ -552,12 +552,21 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
 /**
  * Property getter for the 'block_crcs' attribute: the CRC of each piece of the yEnc
  * body between multiples of the block size given to expect(), counted from the start
- * of the file. None without a block size, without valid =ypart offsets, and where the
- * pieces could not be kept.
+ * of the file. None without a block size, without valid =ypart offsets, where the
+ * pieces could not be kept, and wherever bytes were not written: a discarded body, or
+ * one that ran past its range or past max_end.
  */
 static PyObject* NNTPResponse_get_block_crcs(NNTPResponse* self, void *closure)
 {
-    if (self->format != ENCODING_FORMAT_YENC || self->block_size <= 0 || self->pieces_dropped) {
+    if (self->format != ENCODING_FORMAT_YENC || self->block_size <= 0 || self->pieces_dropped ||
+        self->sink_unplaced) {
+        Py_RETURN_NONE;
+    }
+    if (self->part_size > 0 && self->bytes_decoded > self->part_size) {
+        Py_RETURN_NONE;
+    }
+    // Only a sink stops at max_end
+    if (self->sink && self->max_end > 0 && self->part_begin + self->bytes_decoded > self->max_end) {
         Py_RETURN_NONE;
     }
 
@@ -650,12 +659,23 @@ static void NNTPResponse_flush_sink_nogil(Decoder *owner, NNTPResponse *instance
         return;
     }
 
+    // Never write past the end the yEnc headers declare, with or without =ypart, nor past
+    // max_end: a long body would overwrite the next article or grow the file
+    Py_ssize_t length = owner->staging_used;
+    owner->staging_used = 0;
+    long long end = instance->part_size > 0 ? instance->part_end : 0;
+    if (instance->max_end > 0 && (end == 0 || end > instance->max_end)) end = instance->max_end;
+    if (end > 0) {
+        const long long room = end - instance->sink_offset;
+        if (room <= 0) return;
+        if (length > room) length = static_cast<Py_ssize_t>(room);
+    }
+
     FileWriter *writer = reinterpret_cast<FileWriter *>(instance->sink);
     bool was_closed = false;
     unsigned long error_code = 0;
-    Py_ssize_t written = filewriter_write_raw(writer, owner->staging, owner->staging_used,
+    Py_ssize_t written = filewriter_write_raw(writer, owner->staging, length,
                                               static_cast<long long>(instance->sink_offset), &was_closed, &error_code);
-    owner->staging_used = 0;
 
     if (was_closed || error_code) {
         instance->sink_failed = true;
@@ -931,7 +951,8 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
         if (instance->bytes_decoded == 0) {
             // Where this article belongs in the file, straight from its =ypart header
             instance->sink_offset = instance->part_begin;
-            instance->sink_unplaced = instance->has_part && instance->part_size == 0;
+            instance->sink_unplaced = (instance->has_part && instance->part_size == 0) ||
+                                      (instance->max_end > 0 && instance->part_end > instance->max_end);
         }
         return NNTPResponse_decode_yenc_sink(owner, instance, buf, buf_len, read);
     }
@@ -1221,6 +1242,9 @@ static Py_ssize_t NNTPResponse_decode_buffer(Decoder *owner, NNTPResponse *insta
             NNTPResponse_process_yenc_header(instance, line);
             if (instance->body) {
                 // =ypart was encountered, switch to body decoding
+                // A second body in one response is malformed: its headers would move a
+                // streamed body past the range checked for the first, so discard the rest
+                if (instance->sink && instance->bytes_decoded > 0) instance->sink_unplaced = true;
                 if (!NNTPResponse_decode_yenc(owner, instance, buf, buf_len, read)) return -1;
                 if (instance->body) return read;  // Still decoding, need more data
                 if (instance->eof) return read;   // Decoder consumed the article terminator
@@ -1327,6 +1351,7 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->sink_failed = false;
     instance->sink_unplaced = false;
     instance->block_size = 0;
+    instance->max_end = 0;
     instance->pieces = nullptr;
     instance->piece_count = 0;
     instance->piece_capacity = 0;
@@ -1617,6 +1642,7 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
             instance->context = request.context;
             instance->sink = request.sink;
             instance->block_size = request.block_size;
+            instance->max_end = request.max_end;
         }
         // Defensive, and deliberately so. A response that ran to the end of its body
         // has already flushed, so this is normally a no-op - but tp_clear drops a
@@ -1801,22 +1827,33 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
  * headers declare instead of being collected into a bytearray, and response.data is
  * left as None.
  *
+ * ``max_end`` bounds a streamed body: when the =ypart range ends beyond it, the body is
+ * discarded like one with invalid offsets. A body longer than its declared range is
+ * written only up to the range's end or max_end, so it cannot overwrite the next
+ * article. ``block_size`` and ``max_end`` are keyword-only.
+ *
  * Calls must be in the order the requests were sent. Nothing here can check that, but
  * keeping the queue on this side means it cannot drift against the responses the way
  * a second queue in Python could.
  */
 static PyObject* Decoder_expect(Decoder *self, PyObject *args, PyObject *kwds)
 {
-    static const char* kwlist[] = {"context", "sink", "block_size", NULL};
+    static const char* kwlist[] = {"context", "sink", "block_size", "max_end", NULL};
     PyObject* context = nullptr;
     PyObject* sink = nullptr;
     long long block_size = 0;
+    long long max_end = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|OL:expect", (char**)kwlist, &context, &sink, &block_size))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O$LL:expect", (char**)kwlist, &context, &sink, &block_size, &max_end))
         return NULL;
 
     if (block_size < 0) {
         PyErr_SetString(PyExc_ValueError, "block_size must not be negative");
+        return NULL;
+    }
+
+    if (max_end < 0) {
+        PyErr_SetString(PyExc_ValueError, "max_end must not be negative");
         return NULL;
     }
 
@@ -1833,6 +1870,7 @@ static PyObject* Decoder_expect(Decoder *self, PyObject *args, PyObject *kwds)
     request.context = context;
     request.sink = sink;
     request.block_size = block_size;
+    request.max_end = max_end;
     Py_XINCREF(request.context);
     Py_XINCREF(request.sink);
     self->pending.push_back(request);
@@ -1916,7 +1954,7 @@ static PyMethodDef Decoder_methods[] = {
     {"recv", (PyCFunction)Decoder_recv, METH_O,
      PyDoc_STR("recv(sock)\n\nRead what a non-blocking socket has ready, up to the free space, and process it.")},
     {"expect", (PyCFunction)(void (*)(void))Decoder_expect, METH_VARARGS | METH_KEYWORDS,
-     PyDoc_STR("expect(context, sink=None, block_size=0)\n\nRecord a sent request and how its response should be handled.")},
+     PyDoc_STR("expect(context, sink=None, *, block_size=0, max_end=0)\n\nRecord a sent request and how its response should be handled.")},
     {"clear_expected", (PyCFunction)Decoder_clear_expected, METH_NOARGS,
      PyDoc_STR("clear_expected()\n\nForget every pending request.")},
     {NULL}
