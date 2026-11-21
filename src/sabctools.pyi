@@ -382,7 +382,8 @@ class NNTPResponse:
     """With a block_size given to Decoder.expect(), the CRC of each piece of the yEnc body
     between multiples of it, counted from the start of the file, in order. Reported even
     when the article's CRC does not match. None without a block size, for uu, without
-    valid =ypart offsets, and where the pieces could not be kept."""
+    valid =ypart offsets, where the pieces could not be kept, and wherever bytes were not
+    written: a discarded body, or one that ran past its range or past max_end."""
     lines: Optional[list[str]]
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: Optional[EncodingFormat]
@@ -417,7 +418,9 @@ class Decoder:
     pending: tuple[object, ...]
     """Contexts of the requests still awaiting a response, oldest first"""
 
-    def expect(self, context: object, sink: Optional[FileWriter] = None, block_size: int = 0) -> None:
+    def expect(
+        self, context: object, sink: Optional[FileWriter] = None, *, block_size: int = 0, max_end: int = 0
+    ) -> None:
         """Record that a request has been sent, so its response can be paired with it.
 
         `context` is returned untouched as NNTPResponse.context. Calls must be in the
@@ -427,7 +430,13 @@ class Decoder:
         yEnc headers declare rather than collected into a bytearray, and the response's
         `data` is left as None. Bodies larger than the internal staging buffer are
         written in pieces. uu-encoded articles carry no offsets, so a sink is ignored
-        for those and `data` is populated as usual.
+        for those and `data` is populated as usual. A body longer than its declared range
+        is written only up to the end of the range, so `bytes_decoded` exceeding
+        `part_size` tells the caller it overran, and `block_crcs` is None.
+
+        When `max_end` is given, a body whose =ypart range ends beyond it, such as past the
+        file size from the par2 data, is discarded like one with invalid offsets, and no
+        write goes past it.
 
         When `block_size` is given, the response's `block_crcs` holds the CRC of each
         piece of the body between multiples of it.
