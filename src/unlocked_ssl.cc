@@ -244,10 +244,10 @@ int require_nonblocking(PyObject *sock) {
 /*
  * Read what a non-blocking ssl.SSLSocket has ready into buf, without the GIL.
  * Returns the bytes read, 0 when the peer closed, -1 with an exception set.
- * *pending is set when OpenSSL still holds decrypted bytes.
+ * *pending is set to the decrypted bytes OpenSSL still holds.
  */
-Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, bool *pending) {
-    *pending = false;
+Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, int *pending) {
+    *pending = 0;
 
     PyObject *sslobj = PyObject_GetAttr(ssl_socket, str_sslobj);
     if (!sslobj || Py_IsNone(sslobj)) {
@@ -298,7 +298,7 @@ Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, bo
 #endif
 
     Py_ssize_t result = (Py_ssize_t)count;
-    *pending = ssl_pending > 0;
+    *pending = ssl_pending > 0 ? ssl_pending : 0;
     if (count == 0) {
         if (PyErr_CheckSignals()) {
             result = -1;
@@ -337,7 +337,7 @@ PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    bool pending;
+    int pending;
     const Py_ssize_t count = unlocked_ssl_read(ssl_socket, (char *)buffer.buf, buffer.len, &pending);
     PyBuffer_Release(&buffer);
     return count < 0 ? NULL : PyLong_FromSsize_t(count);
