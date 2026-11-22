@@ -1437,8 +1437,8 @@ PyTypeObject NNTPResponseType = {
  *
  * Exposes the Decoder's internal storage as a writable, contiguous
  * bytes buffer so callers can fill it directly (e.g. via memoryviews
- * or I/O APIs). The buffer always starts at the beginning of the
- * internal array and spans ``self->size`` bytes.
+ * or I/O APIs). The buffer is the free tail of the internal array,
+ * from ``self->position`` to ``self->size``.
  *
  * @param self Decoder instance whose internal buffer is being exported
  * @param view Filled-in Py_buffer describing the exported memory
@@ -1636,20 +1636,18 @@ Py_ssize_t Decoder_decode(Decoder *self, const char* data, const Py_ssize_t size
 }
 
 /*
- * Advance decoding for data previously written via the buffer protocol.
+ * Advance decoding for data newly written into the internal buffer.
  *
- * Decoder instances expose the Python buffer protocol; external code (for
- * example, a socket reader) writes raw NNTP article bytes directly into the
- * decoder's internal buffer. ``Decoder_process`` is then called with a
- * ``length`` indicating how many newly written bytes should be processed.
+ * The bytes are written either by external code through the buffer protocol
+ * (for example socket.recv_into, followed by Decoder.process), or by
+ * Decoder.recv directly. ``length`` is how many newly written bytes to process.
  *
  * The method consumes up to ``length`` bytes starting at the current
  * ``self->position`` from the internal buffer, feeding them into the NNTP
  * state machine and yEnc/UU decoders. Completed NNTPResponse objects are
  * queued on the decoder and can be retrieved by iterating the Decoder.
  *
- * @param self Decoder instance whose internal buffer has been filled via the
- *             buffer protocol
+ * @param self Decoder instance whose internal buffer has been filled
  * @param length How many bytes of newly available data to process
  * @return true on success, false with an exception set on error
  */
@@ -1855,9 +1853,6 @@ static PyGetSetDef Decoder_getsetters[] = {
     {NULL}
 };
 
-// Buffers one recv() call reads at most, so a busy connection cannot hold its thread
-#define DECODER_RECV_BUFFERS 4
-
 #ifdef _WIN32
 #define SOCKET_ERROR_CODE WSAGetLastError()
 #else
@@ -1866,7 +1861,7 @@ static PyGetSetDef Decoder_getsetters[] = {
 
 /*
  * Read from a plain socket.socket with recv() on its descriptor, without the GIL.
- * Returns the bytes read, 0 when the peer closed, or -1 with an OSError set.
+ * Returns the bytes read, 0 when the peer closed, or -1 with an exception set.
  */
 static Py_ssize_t socket_read(PyObject *sock, char *buf, Py_ssize_t len)
 {
@@ -1913,10 +1908,10 @@ static Py_ssize_t socket_read(PyObject *sock, char *buf, Py_ssize_t len)
 }
 
 /*
- * Read everything a non-blocking socket has ready and process it. Takes a socket.socket
- * or an ssl.SSLSocket, and needs OpenSSL linked. Returns the bytes read, 0 when the peer
- * closed. An error is only raised when nothing was read, otherwise the next call
- * reports it.
+ * Read what a non-blocking socket has ready, up to the free space, and process it. Takes
+ * a socket.socket or an ssl.SSLSocket, and needs OpenSSL linked. Returns the bytes read,
+ * 0 when the peer closed. An error is only raised when nothing was read, otherwise the
+ * next call reports it.
  */
 static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
 {
@@ -1936,37 +1931,41 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
         if (require_nonblocking(sock) < 0) return NULL;
     }
 
-    const Py_ssize_t limit = DECODER_RECV_BUFFERS * self->size;
-    Py_ssize_t total = 0;
-    bool more = true;
-    while (more && total < limit) {
-        // Never read past the limit
-        const Py_ssize_t space = std::min(self->size - self->position, limit - total);
-        if (space <= 0) {
-            if (total) break;
-            PyErr_SetString(PyExc_BufferError, "No space left in buffer");
-            return NULL;
-        }
-        char *dst = self->data + self->position;
+    // One read into the free space, so a busy connection cannot hold up the select() round
+    const Py_ssize_t space = self->size - self->position;
+    if (space <= 0) {
+        PyErr_SetString(PyExc_BufferError, "No space left in buffer");
+        return NULL;
+    }
 
-        bool ssl_pending = false;
-        const Py_ssize_t n = tls ? unlocked_ssl_read(sock, dst, space, &ssl_pending)
-                                 : socket_read(sock, dst, space);
+    int ssl_pending = 0;
+    Py_ssize_t n;
+    if (tls) {
+        n = unlocked_ssl_read(sock, self->data + self->position, space, &ssl_pending);
+    } else {
+        n = socket_read(sock, self->data + self->position, space);
+    }
+    if (n < 0) return NULL;
+    if (n == 0) return PyLong_FromSsize_t(0); // Peer closed
+    if (!Decoder_process_length(self, n)) return NULL;
+    Py_ssize_t total = n;
+
+    // Then what OpenSSL already decrypted: it needs no socket read, and select() would not report it.
+    // Processing rewinds the buffer once less than YENC_COMPACT_THRESHOLD is free, more than a TLS
+    // record, so all of it fits unless undecoded data fills the buffer
+    while (ssl_pending) {
+        const Py_ssize_t room = std::min<Py_ssize_t>(self->size - self->position, ssl_pending);
+        if (room <= 0) break;
+        n = unlocked_ssl_read(sock, self->data + self->position, room, &ssl_pending);
         if (n < 0) {
-            // Leave the error to the next call when something was read already
-            if (total && PyErr_ExceptionMatches(PyExc_OSError)) {
-                PyErr_Clear();
-                break;
-            }
-            return NULL;
+            // Leave the error to the next call, as something was read already
+            if (!PyErr_ExceptionMatches(PyExc_OSError)) return NULL;
+            PyErr_Clear();
+            break;
         }
-        if (n == 0) break; // Peer closed
-
+        if (n == 0) break;
         if (!Decoder_process_length(self, n)) return NULL;
         total += n;
-
-        // More may be ready when OpenSSL still holds bytes or the buffer was filled
-        more = ssl_pending || n == space;
     }
     return PyLong_FromSsize_t(total);
 }
@@ -1974,7 +1973,7 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
 static PyMethodDef Decoder_methods[] = {
     {"process", (PyCFunction)Decoder_process, METH_O, ""},
     {"recv", (PyCFunction)Decoder_recv, METH_O,
-     PyDoc_STR("recv(sock)\n\nRead what a non-blocking socket has ready and process it.")},
+     PyDoc_STR("recv(sock)\n\nRead what a non-blocking socket has ready, up to the free space, and process it.")},
     {"expect", (PyCFunction)(void (*)(void))Decoder_expect, METH_VARARGS | METH_KEYWORDS,
      PyDoc_STR("expect(context, sink=None, block_size=0)\n\nRecord a sent request and how its response should be handled.")},
     {"clear_expected", (PyCFunction)Decoder_clear_expected, METH_NOARGS,

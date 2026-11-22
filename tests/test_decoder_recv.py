@@ -71,25 +71,7 @@ class TestPlain:
         sub.close()
         assert responses[0].data == payload
 
-    def test_one_call_drains_more_than_the_buffer(self, pair):
-        reader, writer = pair
-        reader.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-        writer.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
-        payload = os.urandom(1024 * 1024)
-        decoder = sabctools.Decoder(BUFFER)
-        decoder.expect("article")
-        writer.sendall(build_article(payload))
-        time.sleep(0.2)
-
-        select.select([reader], [], [], 5)
-        first = decoder.recv(reader)
-
-        assert first > BUFFER
-        if not (responses := list(decoder)):
-            responses, _ = receive(decoder, reader, 1)
-        assert responses[0].data == payload
-
-    def test_one_call_stops_after_four_buffers(self, pair):
+    def test_one_call_reads_at_most_the_free_space(self, pair):
         reader, writer = pair
         reader.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
         writer.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8 * 1024 * 1024)
@@ -99,7 +81,7 @@ class TestPlain:
             decoder.expect(i)
         data = b"".join(build_article(p) for p in payloads)
 
-        # A small read first, so the next reads start part-way into the buffer
+        # A small read first, so the next read starts part-way into the buffer
         writer.sendall(data[:1000])
         select.select([reader], [], [], 5)
         start = decoder.recv(reader)
@@ -109,8 +91,8 @@ class TestPlain:
         select.select([reader], [], [], 5)
         first = decoder.recv(reader)
 
-        # Never more than four buffers
-        assert BUFFER < first <= 4 * BUFFER
+        # Never more than the free space, even when more is ready
+        assert BUFFER // 2 < first <= BUFFER - start
         responses = list(decoder)
         more, _ = receive(decoder, reader, len(payloads) - len(responses))
         assert [r.data for r in responses + more] == payloads
@@ -171,6 +153,26 @@ class TestTLS:
         send_all(client, build_article(payload))
         responses, _ = receive(decoder, client, 1)
         assert responses[0].context == "tls"
+        assert responses[0].data == payload
+
+    def test_one_call_leaves_nothing_in_openssl(self, client):  # noqa: F811
+        # A buffer that is no multiple of a TLS record, so reads stop mid-record
+        payload = os.urandom(200_000)
+        decoder = sabctools.Decoder(20_000)
+        decoder.expect("tls")
+        send_all(client, build_article(payload))
+        responses = []
+        deadline = time.monotonic() + 10
+        while not responses:
+            assert time.monotonic() < deadline, "response did not arrive"
+            select.select([client], [], [], 1)
+            try:
+                assert decoder.recv(client)
+            except ssl.SSLWantReadError:
+                continue
+            # select() would not report bytes OpenSSL still holds
+            assert client.pending() == 0
+            responses.extend(decoder)
         assert responses[0].data == payload
 
     def test_nothing_ready_raises_want_read(self, client):  # noqa: F811
