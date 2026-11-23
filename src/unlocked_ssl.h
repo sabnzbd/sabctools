@@ -52,12 +52,15 @@ extern "C" {
 # define SSL_ERROR_WANT_WRITE 3
 # define SSL_ERROR_ZERO_RETURN 6
 
+bool socket_init();
 void openssl_init();
 extern bool openssl_linked;
-PyObject *unlocked_ssl_recv_into(PyObject *, PyObject*);
-bool is_unlocked_ssl_socket(PyObject *obj);
 int require_nonblocking(PyObject *sock);
+bool is_socket(PyObject *obj);
+Py_ssize_t socket_read(PyObject *sock, char *buf, Py_ssize_t len);
 Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, int *pending);
+bool is_unlocked_ssl_socket(PyObject *obj);
+PyObject *unlocked_ssl_recv_into(PyObject *, PyObject*);
 
 #ifdef __cplusplus
 }

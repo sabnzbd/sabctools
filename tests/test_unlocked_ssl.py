@@ -334,7 +334,7 @@ def test_unlocked_ssl_recv_into_blocking_socket_fails(client, buffer):
 
 
 def test_unlocked_ssl_recv_into_full_buffer_fails(client, buffer):
-    with pytest.raises(ValueError, match="No space left in buffer"):
+    with pytest.raises(ValueError, match="Buffer has zero length"):
         unlocked_ssl_recv_into_wrapper(client, b"TEST", buffer[len(buffer) :])
 
 

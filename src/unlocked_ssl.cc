@@ -25,7 +25,12 @@
 
 #include "unlocked_ssl.h"
 
+#include <algorithm>
+#include <climits>
 #include <errno.h>
+#ifndef _WIN32
+#include <sys/socket.h>
+#endif
 
 static int (*SSL_read_ex)(void*, void*, size_t, size_t*) = NULL;
 static int (*SSL_get_error)(void*, int) = NULL;
@@ -34,8 +39,10 @@ static int (*SSL_pending)(const void*) = NULL;
 static PyObject *SSLWantReadError = NULL;
 static PyObject *SSLWantWriteError = NULL;
 static PyTypeObject *SSLSocketType = NULL;
+static PyTypeObject *SocketType = NULL;
 static PyObject *str_getblocking = NULL;
 static PyObject *str_sslobj = NULL;
+static PyObject *str_fileno = NULL;
 bool openssl_linked = false;
 
 typedef struct {
@@ -143,6 +150,25 @@ static int get_socket(PySSLSocket *obj, PySocketSockObject **out_sock)
 #endif
 }
 
+/* Looks up socket.socket's C type and interns the method names called on every read */
+bool socket_init() {
+    str_getblocking = PyUnicode_InternFromString("getblocking");
+    str_fileno = PyUnicode_InternFromString("fileno");
+    if (!str_getblocking || !str_fileno) return false;
+
+    // The C type behind socket.socket, so subclasses such as SOCKS sockets pass too
+    PyObject *socket_module = PyImport_ImportModule("_socket");
+    if (!socket_module) return false;
+    SocketType = reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(socket_module, "socket"));
+    Py_DECREF(socket_module);
+    if (!SocketType || !PyType_Check(SocketType)) {
+        Py_CLEAR(SocketType);
+        if (!PyErr_Occurred()) PyErr_SetString(PyExc_TypeError, "_socket.socket is not a type");
+        return false;
+    }
+    return true;
+}
+
 /* Linking to OpenSSL function used by Python */
 void openssl_init() {
     PyObject *ssl_module = NULL;
@@ -154,10 +180,8 @@ void openssl_init() {
     void* openssl_handle = NULL;
     #endif
 
-    // Also used for plain sockets, so kept when linking fails
-    str_getblocking = PyUnicode_InternFromString("getblocking");
     str_sslobj = PyUnicode_InternFromString("_sslobj");
-    if (!str_getblocking || !str_sslobj) goto cleanup;
+    if (!str_sslobj) goto cleanup;
 
     ssl_module = PyImport_ImportModule("ssl");
     if(!ssl_module) goto cleanup;
@@ -241,6 +265,60 @@ int require_nonblocking(PyObject *sock) {
     return is_blocking == 0 ? 0 : -1;
 }
 
+/* Whether socket_read() can read obj: a socket.socket or a subclass */
+bool is_socket(PyObject *obj) {
+    return PyObject_TypeCheck(obj, SocketType);
+}
+
+/*
+ * Read from a plain socket.socket with recv() on its descriptor, without the GIL.
+ * Returns the bytes read, 0 when the peer closed, or -1 with an exception set.
+ */
+Py_ssize_t socket_read(PyObject *sock, char *buf, Py_ssize_t len)
+{
+    for (;;) {
+        // Looked up before every read, as another thread can close the socket
+        PyObject *fileno = PyObject_CallMethodNoArgs(sock, str_fileno);
+        if (!fileno) return -1;
+        const long long fd = PyLong_AsLongLong(fileno);
+        Py_DECREF(fileno);
+        if (fd < 0) {
+            // -1 once the socket is closed
+            if (!PyErr_Occurred()) {
+                errno = EBADF;
+                PyErr_SetFromErrno(PyExc_OSError);
+            }
+            return -1;
+        }
+
+        Py_ssize_t n;
+        int error = 0;
+        Py_BEGIN_ALLOW_THREADS;
+#ifdef _WIN32
+        n = recv(static_cast<SOCKET>(fd), buf, static_cast<int>(std::min<Py_ssize_t>(len, INT_MAX)), 0);
+        if (n < 0) error = WSAGetLastError();
+#else
+        n = recv(static_cast<int>(fd), buf, static_cast<size_t>(len), 0);
+        if (n < 0) error = errno;
+#endif
+        Py_END_ALLOW_THREADS;
+        if (n >= 0) return n;
+
+#ifdef _WIN32
+        PyErr_SetExcFromWindowsErr(PyExc_OSError, error);
+#else
+        // Interrupted by a signal: run its handler, then try again
+        if (error == EINTR) {
+            if (PyErr_CheckSignals()) return -1;
+            continue;
+        }
+        errno = error;
+        PyErr_SetFromErrno(PyExc_OSError);
+#endif
+        return -1;
+    }
+}
+
 /*
  * Read what a non-blocking ssl.SSLSocket has ready into buf, without the GIL.
  * Returns the bytes read, 0 when the peer closed, -1 with an exception set.
@@ -264,7 +342,7 @@ Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, in
     }
 
     if (len <= 0) {
-        PyErr_SetString(PyExc_ValueError, "No space left in buffer");
+        PyErr_SetString(PyExc_ValueError, "Buffer has zero length");
         Py_DECREF(sslobj);
         return -1;
     }
@@ -298,7 +376,7 @@ Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, in
 #endif
 
     Py_ssize_t result = (Py_ssize_t)count;
-    *pending = ssl_pending > 0 ? ssl_pending : 0;
+    *pending = ssl_pending;
     if (count == 0) {
         if (PyErr_CheckSignals()) {
             result = -1;
