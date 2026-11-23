@@ -85,7 +85,7 @@ class TestPlain:
         writer.sendall(data[:1000])
         select.select([reader], [], [], 5)
         start = decoder.recv(reader)
-        writer.sendall(data[start:])
+        writer.sendall(data[1000:])
         time.sleep(0.2)
 
         select.select([reader], [], [], 5)

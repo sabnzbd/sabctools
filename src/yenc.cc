@@ -19,18 +19,12 @@
 #include "yenc.h"
 #include "filewriter.h"
 #include "unlocked_ssl.h"
-#include <climits>
-#include <errno.h>
-#ifndef _WIN32
-#include <sys/socket.h>
-#endif
 
 
 /* Global objects */
 
 static PyObject* ENCODING_FORMAT_YENC = nullptr;
 static PyObject* ENCODING_FORMAT_UU = nullptr;
-static PyTypeObject* SOCKET_TYPE = nullptr;
 
 /* Function definitions */
 
@@ -1729,6 +1723,67 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
 }
 
 /*
+ * Read what a non-blocking socket has ready, up to the free space, and process it. Takes
+ * a socket.socket or an ssl.SSLSocket, and needs OpenSSL linked. Returns the bytes read,
+ * 0 when the peer closed. An error is only raised when nothing was read, otherwise the
+ * next call reports it.
+ */
+static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
+{
+    // Otherwise an SSLSocket, also a socket.socket, would be read as a plain socket
+    if (!openssl_linked) {
+        PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
+        return NULL;
+    }
+
+    const bool tls = is_unlocked_ssl_socket(sock);
+    if (!tls) {
+        if (!is_socket(sock)) {
+            PyErr_Format(PyExc_TypeError, "recv() needs a socket.socket or an ssl.SSLSocket, not %s",
+                         Py_TYPE(sock)->tp_name);
+            return NULL;
+        }
+        if (require_nonblocking(sock) < 0) return NULL;
+    }
+
+    // One read into the free space, so a busy connection cannot hold up the select() round
+    const Py_ssize_t space = self->size - self->position;
+    if (space <= 0) {
+        PyErr_SetString(PyExc_BufferError, "No space left in buffer");
+        return NULL;
+    }
+
+    int ssl_pending = 0;
+    Py_ssize_t n;
+    if (tls) {
+        n = unlocked_ssl_read(sock, self->data + self->position, space, &ssl_pending);
+    } else {
+        n = socket_read(sock, self->data + self->position, space);
+    }
+    if (n < 0) return NULL;
+    if (n == 0) return PyLong_FromSsize_t(0); // Peer closed
+    if (!Decoder_process_length(self, n)) return NULL;
+    Py_ssize_t total = n;
+
+    // Then what OpenSSL already decrypted: it needs no socket read, and select() would not report it.
+    // Processing rewinds the buffer once less than YENC_COMPACT_THRESHOLD is free, more than a TLS
+    // record, so all of it fits unless undecoded data fills the buffer
+    const Py_ssize_t room = std::min<Py_ssize_t>(self->size - self->position, ssl_pending);
+    if (room > 0) {
+        n = unlocked_ssl_read(sock, self->data + self->position, room, &ssl_pending);
+        if (n < 0) {
+            // Leave the error to the next call, as something was read already
+            if (!PyErr_ExceptionMatches(PyExc_OSError)) return NULL;
+            PyErr_Clear();
+        } else if (n > 0) {
+            if (!Decoder_process_length(self, n)) return NULL;
+            total += n;
+        }
+    }
+    return PyLong_FromSsize_t(total);
+}
+
+/*
  * Record that a request has gone out, so its response can be paired with it.
  *
  * ``context`` is returned untouched as NNTPResponse.context. ``sink`` is an optional
@@ -1845,123 +1900,6 @@ static PyGetSetDef Decoder_getsetters[] = {
      PyDoc_STR("Contexts of the requests still awaiting a response, oldest first"), NULL},
     {NULL}
 };
-
-#ifdef _WIN32
-#define SOCKET_ERROR_CODE WSAGetLastError()
-#else
-#define SOCKET_ERROR_CODE errno
-#endif
-
-/*
- * Read from a plain socket.socket with recv() on its descriptor, without the GIL.
- * Returns the bytes read, 0 when the peer closed, or -1 with an exception set.
- */
-static Py_ssize_t socket_read(PyObject *sock, char *buf, Py_ssize_t len)
-{
-    for (;;) {
-        // Looked up before every read, as another thread can close the socket
-        PyObject *fileno = PyObject_CallMethod(sock, "fileno", NULL);
-        if (!fileno) return -1;
-        const long long fd = PyLong_AsLongLong(fileno);
-        Py_DECREF(fileno);
-        if (fd < 0) {
-            // -1 once the socket is closed
-            if (!PyErr_Occurred()) {
-                errno = EBADF;
-                PyErr_SetFromErrno(PyExc_OSError);
-            }
-            return -1;
-        }
-
-        Py_ssize_t n;
-        int error = 0;
-        Py_BEGIN_ALLOW_THREADS;
-#ifdef _WIN32
-        n = recv(static_cast<SOCKET>(fd), buf, static_cast<int>(std::min<Py_ssize_t>(len, INT_MAX)), 0);
-#else
-        n = recv(static_cast<int>(fd), buf, static_cast<size_t>(len), 0);
-#endif
-        if (n < 0) error = SOCKET_ERROR_CODE;
-        Py_END_ALLOW_THREADS;
-        if (n >= 0) return n;
-
-#ifdef _WIN32
-        PyErr_SetExcFromWindowsErr(PyExc_OSError, error);
-#else
-        // Interrupted by a signal: run its handler, then try again
-        if (error == EINTR) {
-            if (PyErr_CheckSignals()) return -1;
-            continue;
-        }
-        errno = error;
-        PyErr_SetFromErrno(PyExc_OSError);
-#endif
-        return -1;
-    }
-}
-
-/*
- * Read what a non-blocking socket has ready, up to the free space, and process it. Takes
- * a socket.socket or an ssl.SSLSocket, and needs OpenSSL linked. Returns the bytes read,
- * 0 when the peer closed. An error is only raised when nothing was read, otherwise the
- * next call reports it.
- */
-static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
-{
-    // Otherwise an SSLSocket, also a socket.socket, would be read as a plain socket
-    if (!openssl_linked) {
-        PyErr_SetString(PyExc_OSError, "Failed to link with OpenSSL");
-        return NULL;
-    }
-
-    const bool tls = is_unlocked_ssl_socket(sock);
-    if (!tls) {
-        if (!PyObject_TypeCheck(sock, SOCKET_TYPE)) {
-            PyErr_Format(PyExc_TypeError, "recv() needs a socket.socket or an ssl.SSLSocket, not %s",
-                         Py_TYPE(sock)->tp_name);
-            return NULL;
-        }
-        if (require_nonblocking(sock) < 0) return NULL;
-    }
-
-    // One read into the free space, so a busy connection cannot hold up the select() round
-    const Py_ssize_t space = self->size - self->position;
-    if (space <= 0) {
-        PyErr_SetString(PyExc_BufferError, "No space left in buffer");
-        return NULL;
-    }
-
-    int ssl_pending = 0;
-    Py_ssize_t n;
-    if (tls) {
-        n = unlocked_ssl_read(sock, self->data + self->position, space, &ssl_pending);
-    } else {
-        n = socket_read(sock, self->data + self->position, space);
-    }
-    if (n < 0) return NULL;
-    if (n == 0) return PyLong_FromSsize_t(0); // Peer closed
-    if (!Decoder_process_length(self, n)) return NULL;
-    Py_ssize_t total = n;
-
-    // Then what OpenSSL already decrypted: it needs no socket read, and select() would not report it.
-    // Processing rewinds the buffer once less than YENC_COMPACT_THRESHOLD is free, more than a TLS
-    // record, so all of it fits unless undecoded data fills the buffer
-    while (ssl_pending) {
-        const Py_ssize_t room = std::min<Py_ssize_t>(self->size - self->position, ssl_pending);
-        if (room <= 0) break;
-        n = unlocked_ssl_read(sock, self->data + self->position, room, &ssl_pending);
-        if (n < 0) {
-            // Leave the error to the next call, as something was read already
-            if (!PyErr_ExceptionMatches(PyExc_OSError)) return NULL;
-            PyErr_Clear();
-            break;
-        }
-        if (n == 0) break;
-        if (!Decoder_process_length(self, n)) return NULL;
-        total += n;
-    }
-    return PyLong_FromSsize_t(total);
-}
 
 static PyMethodDef Decoder_methods[] = {
     {"process", (PyCFunction)Decoder_process, METH_O, ""},
@@ -2093,17 +2031,6 @@ bool yenc_init(PyObject *m) {
     rapidyenc_decode_init();
     rapidyenc_crc_init();
 
-    // The C type behind socket.socket, so subclasses such as SOCKS sockets pass too
-    PyObject* socket_module = PyImport_ImportModule("_socket");
-    if (!socket_module) return false;
-    SOCKET_TYPE = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(socket_module, "socket"));
-    Py_DECREF(socket_module);
-    if (!SOCKET_TYPE || !PyType_Check(SOCKET_TYPE)) {
-        Py_CLEAR(SOCKET_TYPE);
-        if (!PyErr_Occurred()) PyErr_SetString(PyExc_TypeError, "_socket.socket is not a type");
-        return false;
-    }
-
     // Create EncodingFormat enum
     static EnumEntry encoding_entries[] = {
         {"YENC", 0},
@@ -2135,6 +2062,5 @@ error:
     Py_XDECREF(encoding_enum);
     Py_CLEAR(ENCODING_FORMAT_YENC);
     Py_CLEAR(ENCODING_FORMAT_UU);
-    Py_CLEAR(SOCKET_TYPE);
     return false;
 }

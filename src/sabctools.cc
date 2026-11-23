@@ -151,6 +151,13 @@ PyMODINIT_FUNC PyInit_sabctools(void) {
         Py_DECREF(m);
         return NULL;
     }
+    // Fails the import: is_socket() relies on the socket type being set
+    if (!socket_init()) {
+        Py_DECREF(m);
+        return NULL;
+    }
+    // Cannot fail the import: without OpenSSL, openssl_linked stays false, and
+    // without msvcrt, sparse() raises when called
     openssl_init();
     sparse_init();
 
