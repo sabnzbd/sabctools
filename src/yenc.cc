@@ -1725,8 +1725,8 @@ static PyObject* Decoder_process(Decoder *self, PyObject *arg)
 /*
  * Read what a non-blocking socket has ready, up to the free space, and process it. Takes
  * a socket.socket or an ssl.SSLSocket, and needs OpenSSL linked. Returns the bytes read,
- * 0 when the peer closed. An error is only raised when nothing was read, otherwise the
- * next call reports it.
+ * 0 when the peer closed. A "nothing ready" error is only raised when nothing was read,
+ * any other error also after a read, as it ends the connection.
  */
 static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
 {
@@ -1772,8 +1772,8 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
     if (room > 0) {
         n = unlocked_ssl_read(sock, self->data + self->position, room, &ssl_pending);
         if (n < 0) {
-            // Leave the error to the next call, as something was read already
-            if (!PyErr_ExceptionMatches(PyExc_OSError)) return NULL;
+            // Nothing more to read right now; anything else ends the connection
+            if (!is_ssl_want_error()) return NULL;
             PyErr_Clear();
         } else if (n > 0) {
             if (!Decoder_process_length(self, n)) return NULL;

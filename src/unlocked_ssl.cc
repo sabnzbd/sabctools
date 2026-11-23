@@ -402,6 +402,11 @@ bool is_unlocked_ssl_socket(PyObject *obj) {
     return openssl_linked && PyObject_TypeCheck(obj, SSLSocketType);
 }
 
+/* Whether the raised error only means nothing more can be read right now */
+bool is_ssl_want_error() {
+    return PyErr_ExceptionMatches(SSLWantReadError) || PyErr_ExceptionMatches(SSLWantWriteError);
+}
+
 PyObject* unlocked_ssl_recv_into(PyObject* self, PyObject* args) {
     PyObject *ssl_socket;
     Py_buffer buffer;
