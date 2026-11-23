@@ -60,6 +60,7 @@ bool is_socket(PyObject *obj);
 Py_ssize_t socket_read(PyObject *sock, char *buf, Py_ssize_t len);
 Py_ssize_t unlocked_ssl_read(PyObject *ssl_socket, char *buf, Py_ssize_t len, int *pending);
 bool is_unlocked_ssl_socket(PyObject *obj);
+bool is_ssl_want_error();
 PyObject *unlocked_ssl_recv_into(PyObject *, PyObject*);
 
 #ifdef __cplusplus

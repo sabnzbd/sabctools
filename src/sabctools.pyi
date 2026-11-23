@@ -441,8 +441,8 @@ class Decoder:
 
         Reads once into the free space, plus what OpenSSL already decrypted, as select()
         would not report those bytes. Returns the bytes read, 0 when the peer closed.
-        Raises the socket's own error, such as ssl.SSLWantReadError or BlockingIOError,
-        only when nothing was read.
+        Raises ssl.SSLWantReadError or BlockingIOError only when nothing was read. Any
+        other error, such as ConnectionAbortedError, is raised even after a read.
 
         Takes a non-blocking socket.socket or ssl.SSLSocket. Needs openssl_linked,
         otherwise raises OSError. A blocking socket raises ValueError, anything else TypeError.
