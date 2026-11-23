@@ -155,10 +155,11 @@ class TestTLS:
         assert responses[0].context == "tls"
         assert responses[0].data == payload
 
-    def test_one_call_leaves_nothing_in_openssl(self, client):  # noqa: F811
-        # A buffer that is no multiple of a TLS record, so reads stop mid-record
+    # No multiple of a TLS record, so reads stop mid-record; and smaller than one record
+    @pytest.mark.parametrize("size", [20_000, 4096])
+    def test_one_call_leaves_nothing_in_openssl(self, client, size):  # noqa: F811
         payload = os.urandom(200_000)
-        decoder = sabctools.Decoder(20_000)
+        decoder = sabctools.Decoder(size)
         decoder.expect("tls")
         send_all(client, build_article(payload))
         responses = []

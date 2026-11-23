@@ -1750,8 +1750,9 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
                          Py_TYPE(sock)->tp_name);
             return NULL;
         }
-        if (require_nonblocking(sock) < 0) return NULL;
     }
+    // Once per call, not per read
+    if (require_nonblocking(sock) < 0) return NULL;
 
     // One read into the free space, so a busy connection cannot hold up the select() round
     const Py_ssize_t space = self->size - self->position;
@@ -1773,19 +1774,21 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
     Py_ssize_t total = n;
 
     // Then what OpenSSL already decrypted: it needs no socket read, and select() would not report it.
-    // Processing rewinds the buffer once less than YENC_COMPACT_THRESHOLD is free, more than a TLS
-    // record, so all of it fits unless undecoded data fills the buffer
-    const Py_ssize_t room = std::min<Py_ssize_t>(self->size - self->position, ssl_pending);
-    if (room > 0) {
+    // Usually one pass, as processing rewinds the buffer once less than YENC_COMPACT_THRESHOLD is
+    // free, more than a TLS record. A smaller buffer, or undecoded data filling it, takes more.
+    while (ssl_pending > 0) {
+        const Py_ssize_t room = std::min<Py_ssize_t>(self->size - self->position, ssl_pending);
+        if (room <= 0) break;
         n = unlocked_ssl_read(sock, self->data + self->position, room, &ssl_pending);
         if (n < 0) {
             // Nothing more to read right now; anything else ends the connection
             if (!is_ssl_want_error()) return NULL;
             PyErr_Clear();
-        } else if (n > 0) {
-            if (!Decoder_process_length(self, n)) return NULL;
-            total += n;
+            break;
         }
+        if (n == 0) break;
+        if (!Decoder_process_length(self, n)) return NULL;
+        total += n;
     }
     return PyLong_FromSsize_t(total);
 }
