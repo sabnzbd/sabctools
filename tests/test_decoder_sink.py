@@ -211,9 +211,22 @@ class TestSinkBounds:
         assert response.crc is not None
         assert open(target.path, "rb").read()[900:] == b"x" * 100
 
-    def test_negative_max_end_is_rejected(self):
+    @pytest.mark.parametrize("argument", ["block_size", "max_end"])
+    def test_negative_sizes_are_rejected(self, argument):
         with pytest.raises(ValueError):
-            sabctools.Decoder(4096).expect("ctx", None, max_end=-1)
+            sabctools.Decoder(4096).expect("ctx", None, **{argument: -1})
+
+    @pytest.mark.parametrize("argument", ["block_size", "max_end"])
+    def test_sizes_must_be_an_int_or_none(self, argument):
+        with pytest.raises(TypeError):
+            sabctools.Decoder(4096).expect("ctx", None, **{argument: "1000"})
+
+    def test_a_block_size_of_none_reports_no_block_crcs(self):
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("ctx", None, block_size=None)
+        response = feed(decoder, build_article(b"x" * 100))[0]
+        assert response.crc is not None
+        assert response.block_crcs is None
 
     def test_block_size_and_max_end_are_keyword_only(self):
         with pytest.raises(TypeError):
@@ -238,7 +251,9 @@ class TestSinkBounds:
         assert response.crc == crc
         assert response.block_crcs is None
 
-    @pytest.mark.parametrize("size, max_end, written", [(150, 0, 150), (100, 0, 100), (0, 100, 100), (100, 50, 0)])
+    @pytest.mark.parametrize(
+        "size, max_end, written", [(150, None, 150), (150, 0, 150), (100, None, 100), (0, 100, 100), (100, 50, 0)]
+    )
     def test_a_single_part_body_stops_at_its_end(self, tmp_path, size, max_end, written):
         """Without =ypart the end comes from the =ybegin size, or max_end when that is missing.
         Block CRCs are only reported when every decoded byte was written."""
