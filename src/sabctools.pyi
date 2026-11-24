@@ -419,27 +419,35 @@ class Decoder:
     """Contexts of the requests still awaiting a response, oldest first"""
 
     def expect(
-        self, context: object, sink: Optional[FileWriter] = None, *, block_size: int = 0, max_end: int = 0
+        self,
+        context: object,
+        sink: Optional[FileWriter] = None,
+        *,
+        block_size: Optional[int] = None,
+        max_end: Optional[int] = None,
     ) -> None:
         """Record that a request has been sent, so its response can be paired with it.
 
-        `context` is returned untouched as NNTPResponse.context. Calls must be in the
-        order the requests were sent.
+        Calls must be in the order the requests were sent. `context` comes back untouched
+        as NNTPResponse.context.
 
-        When `sink` is given, the decoded body is written into it at the offset the
-        yEnc headers declare rather than collected into a bytearray, and the response's
-        `data` is left as None. Bodies larger than the internal staging buffer are
-        written in pieces. uu-encoded articles carry no offsets, so a sink is ignored
-        for those and `data` is populated as usual. A body longer than its declared range
-        is written only up to the end of the range, so `bytes_decoded` exceeding
-        `part_size` tells the caller it overran, and `block_crcs` is None.
+        With a `sink`, a yEnc body is written into it at the offset its headers declare,
+        instead of being collected into a bytearray, and the response's `data` is None.
+        uu-encoded articles carry no offsets, so they ignore the sink and fill `data` as
+        usual. Nothing is written past the end of the declared range: a longer body is cut
+        there, its `bytes_decoded` then exceeds `part_size`, and `block_crcs` is None. A
+        body with invalid =ypart offsets is not written at all, nor is any body after the
+        first in the same response, and `crc` is then None. A failed write sets
+        `sink_failed` and `sink_error`; the response is still read to its end.
 
-        When `max_end` is given, a body whose =ypart range ends beyond it, such as past the
-        file size from the par2 data, is discarded like one with invalid offsets, and no
-        write goes past it.
+        `block_size` and `max_end` are keyword-only, and None or 0 means unused.
 
-        When `block_size` is given, the response's `block_crcs` holds the CRC of each
-        piece of the body between multiples of it.
+        `block_size`: `block_crcs` holds the CRC of each piece of the body between
+        multiples of it, counted from the start of the file.
+
+        `max_end`: only with a `sink`. A body whose range ends beyond it, such as past the
+        file size from the par2 data, is not written at all, like one with invalid offsets,
+        and no write goes past it.
         """
 
     def clear_expected(self) -> None:

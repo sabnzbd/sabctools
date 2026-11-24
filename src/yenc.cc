@@ -1830,7 +1830,7 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
  * ``max_end`` bounds a streamed body: when the =ypart range ends beyond it, the body is
  * discarded like one with invalid offsets. A body longer than its declared range is
  * written only up to the range's end or max_end, so it cannot overwrite the next
- * article. ``block_size`` and ``max_end`` are keyword-only.
+ * article. None or 0 means no bound. ``block_size`` and ``max_end`` are keyword-only.
  *
  * Calls must be in the order the requests were sent. Nothing here can check that, but
  * keeping the queue on this side means it cannot drift against the responses the way
@@ -1841,20 +1841,32 @@ static PyObject* Decoder_expect(Decoder *self, PyObject *args, PyObject *kwds)
     static const char* kwlist[] = {"context", "sink", "block_size", "max_end", NULL};
     PyObject* context = nullptr;
     PyObject* sink = nullptr;
+    PyObject* block_size_arg = Py_None;
+    PyObject* max_end_arg = Py_None;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O$OO:expect", (char**)kwlist, &context, &sink, &block_size_arg, &max_end_arg))
+        return NULL;
+
+    // None, like 0, means no split
     long long block_size = 0;
-    long long max_end = 0;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O$LL:expect", (char**)kwlist, &context, &sink, &block_size, &max_end))
-        return NULL;
-
-    if (block_size < 0) {
-        PyErr_SetString(PyExc_ValueError, "block_size must not be negative");
-        return NULL;
+    if (block_size_arg != Py_None) {
+        block_size = PyLong_AsLongLong(block_size_arg);
+        if (block_size == -1 && PyErr_Occurred()) return NULL;
+        if (block_size < 0) {
+            PyErr_SetString(PyExc_ValueError, "block_size must not be negative");
+            return NULL;
+        }
     }
 
-    if (max_end < 0) {
-        PyErr_SetString(PyExc_ValueError, "max_end must not be negative");
-        return NULL;
+    // None, like 0, means no bound
+    long long max_end = 0;
+    if (max_end_arg != Py_None) {
+        max_end = PyLong_AsLongLong(max_end_arg);
+        if (max_end == -1 && PyErr_Occurred()) return NULL;
+        if (max_end < 0) {
+            PyErr_SetString(PyExc_ValueError, "max_end must not be negative");
+            return NULL;
+        }
     }
 
     if (sink == Py_None) sink = nullptr;
@@ -1954,7 +1966,7 @@ static PyMethodDef Decoder_methods[] = {
     {"recv", (PyCFunction)Decoder_recv, METH_O,
      PyDoc_STR("recv(sock)\n\nRead what a non-blocking socket has ready, up to the free space, and process it.")},
     {"expect", (PyCFunction)(void (*)(void))Decoder_expect, METH_VARARGS | METH_KEYWORDS,
-     PyDoc_STR("expect(context, sink=None, *, block_size=0, max_end=0)\n\nRecord a sent request and how its response should be handled.")},
+     PyDoc_STR("expect(context, sink=None, *, block_size=None, max_end=None)\n\nRecord a sent request and how its response should be handled.")},
     {"clear_expected", (PyCFunction)Decoder_clear_expected, METH_NOARGS,
      PyDoc_STR("clear_expected()\n\nForget every pending request.")},
     {NULL}
