@@ -392,12 +392,24 @@ def test_exceeds_size_limit():
         b"\r\n=yend size=%d pcrc32=%s\r\n" % (size, hex(crc).encode()[2:]),
         b".\r\n",
     ]
-    data_plain = b"".join(parts)
+    # The next request on the connection must still come through
+    data_plain = b"".join(parts) + b"223 0 <next@bar>\r\n"
     input = BytesIO(data_plain)
     decoder = sabctools.Decoder(256 * 1024)
-    with pytest.raises(BufferError, match="Maximum data buffer size exceeded"):
-        while n := input.readinto(decoder):
-            decoder.process(n)
+    decoder.expect("big")
+    decoder.expect("next")
+    responses = []
+    while n := input.readinto(decoder):
+        decoder.process(n)
+        responses.extend(decoder)
+
+    assert [response.context for response in responses] == ["big", "next"]
+    big, following = responses
+    assert big.data is None
+    assert big.bytes_decoded == 0
+    assert big.crc is None
+    assert big.block_crcs is None
+    assert following.status_code == 223
 
 
 def test_invalid_crc_chars():

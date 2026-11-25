@@ -884,7 +884,8 @@ static bool NNTPResponse_decode_into(NNTPResponse *instance, const char *buf, co
 
 /*
  * Grow the response's bytearray and pin it again. Requires the GIL. False with an
- * exception set, and the buffer released, when it cannot.
+ * exception set, and the buffer released, when it cannot. A body that would outgrow
+ * YENC_MAX_PART_SIZE keeps nothing instead, and the buffer stays pinned.
  */
 static bool NNTPResponse_grow(NNTPResponse *instance, Py_buffer &dst_buf, char *&data, Py_ssize_t &capacity,
                               const Py_ssize_t remaining) {
@@ -893,11 +894,15 @@ static bool NNTPResponse_grow(NNTPResponse *instance, Py_buffer &dst_buf, char *
     // over-shoot when the buffer also holds later responses, but only by less than one
     // chunk.
     const Py_ssize_t needed = instance->bytes_decoded + std::min<Py_ssize_t>(YENC_CHUNK_SIZE, remaining);
-    PyBuffer_Release(&dst_buf);
     if (needed > YENC_MAX_PART_SIZE) {
-        PyErr_SetString(PyExc_BufferError, "Maximum data buffer size exceeded");
-        return false;
+        // Larger than any article may be: keep none of it, but read the rest of the body
+        // into the same buffer, dropped as it goes, so the connection stays in step and
+        // the other requests on it are not affected
+        instance->unplaced = true;
+        instance->bytes_decoded = 0;
+        return true;
     }
+    PyBuffer_Release(&dst_buf);
     if (PyByteArray_Resize(instance->data, needed) == -1)
         return false;
     if (PyObject_GetBuffer(instance->data, &dst_buf, PyBUF_WRITABLE) < 0)
