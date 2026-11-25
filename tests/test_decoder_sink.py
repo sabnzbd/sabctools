@@ -233,8 +233,8 @@ class TestSinkBounds:
             sabctools.Decoder(4096).expect("ctx", None, 64)
 
     @pytest.mark.parametrize("streamed", [True, False])
-    def test_a_body_past_its_range_has_no_block_crcs(self, tmp_path, streamed):
-        """Pieces past the range would describe bytes that were never written"""
+    def test_a_body_past_its_range_reports_only_its_range(self, tmp_path, streamed):
+        """The whole body is checked against =yend, but only the range is kept and described"""
         encoded, crc = sabctools.yenc_encode(b"L" * 150)
         wire = (
             b"222 0 <test.bin-1>\r\n"
@@ -248,15 +248,49 @@ class TestSinkBounds:
         if target:
             target.close()
 
-        assert response.crc == crc
+        assert response.bytes_decoded == 100
+        assert response.crc == zlib.crc32(b"L" * 100)
+        assert response.block_crcs == [zlib.crc32(b"L" * 64), zlib.crc32(b"L" * 36)]
+        if streamed:
+            assert open(target.path, "rb").read() == b"L" * 100
+        else:
+            assert response.data == b"L" * 100
+
+    def test_a_body_with_a_wrong_crc_is_still_rejected(self):
+        """Keeping only the range must not hide damage in the bytes that are dropped"""
+        encoded, _ = sabctools.yenc_encode(b"L" * 150)
+        wire = (
+            b"222 0 <test.bin-1>\r\n"
+            b"=ybegin part=1 line=128 size=200 name=test.bin\r\n"
+            b"=ypart begin=1 end=100\r\n"
+            + encoded
+            + f"\r\n=yend size=150 part=1 pcrc32={zlib.crc32(b'L' * 100):08x}\r\n.\r\n".encode()
+        )
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("long")
+        assert feed(decoder, wire)[0].crc is None
+
+    @pytest.mark.parametrize("streamed", [True, False])
+    def test_a_range_past_max_end_is_discarded_on_both_paths(self, tmp_path, streamed):
+        target = sabctools.FileWriter(str(tmp_path / "target.bin")) if streamed else None
+        decoder = sabctools.Decoder(1 << 20)
+        decoder.expect("far", target, block_size=64, max_end=150)
+        response = feed(decoder, build_article(b"x" * 100, begin=100, total=200))[0]
+        if target:
+            target.close()
+
+        assert response.bytes_decoded == 0
+        assert response.data is None
+        assert response.crc is None
         assert response.block_crcs is None
 
     @pytest.mark.parametrize(
         "size, max_end, written", [(150, None, 150), (150, 0, 150), (100, None, 100), (0, 100, 100), (100, 50, 0)]
     )
-    def test_a_single_part_body_stops_at_its_end(self, tmp_path, size, max_end, written):
+    @pytest.mark.parametrize("streamed", [True, False])
+    def test_a_single_part_body_stops_at_its_end(self, tmp_path, size, max_end, written, streamed):
         """Without =ypart the end comes from the =ybegin size, or max_end when that is missing.
-        Block CRCs are only reported when every decoded byte was written."""
+        The CRCs describe exactly the bytes kept, on both paths."""
         encoded, crc = sabctools.yenc_encode(b"L" * 150)
         wire = (
             b"222 0 <test.bin>\r\n"
@@ -264,15 +298,26 @@ class TestSinkBounds:
             + encoded
             + f"\r\n=yend size=150 crc32={crc:08x}\r\n.\r\n".encode()
         )
-        target = sabctools.FileWriter(str(tmp_path / "target.bin"))
+        target = sabctools.FileWriter(str(tmp_path / "target.bin")) if streamed else None
         decoder = sabctools.Decoder(1 << 20)
         # Two pieces, few enough to be kept without a size in the header
         decoder.expect("single", target, block_size=128, max_end=max_end)
         response = feed(decoder, wire)[0]
-        target.close()
+        if target:
+            target.close()
 
-        assert open(target.path, "rb").read() == b"L" * written
-        assert (response.block_crcs is not None) == (written == 150)
+        kept = b"L" * written
+        if streamed:
+            assert open(target.path, "rb").read() == kept
+        else:
+            assert (response.data or b"") == kept
+        assert response.bytes_decoded == written
+        if written:
+            assert response.crc == zlib.crc32(kept)
+            assert response.block_crcs == [zlib.crc32(kept[:128]), zlib.crc32(kept[128:])][: 1 + (written > 128)]
+        else:
+            assert response.crc is None
+            assert response.block_crcs is None
 
     @pytest.mark.parametrize("chunk", [0, 7])
     def test_a_body_longer_than_its_range_does_not_touch_the_next_article(self, tmp_path, chunk):
@@ -292,7 +337,7 @@ class TestSinkBounds:
         responses = feed(decoder, build_article(neighbour, begin=100, total=200, part=2) + wire, chunk=chunk)
         target.close()
 
-        assert responses[1].bytes_decoded == 150
+        assert responses[1].bytes_decoded == 100
         assert responses[1].part_size == 100
         contents = open(target.path, "rb").read()
         assert contents[:100] == b"L" * 100
@@ -621,6 +666,11 @@ def test_sink_and_bytearray_agree(test_data, tmp_path):
             "format",
             "baddata",
         ):
+            # A streamed body with invalid =ypart offsets has nowhere to go, so the sink keeps
+            # none of it, where the bytearray path keeps it to be appended
+            if attribute == "bytes_decoded" and expected.part_size == 0 and b"\n=ypart " in data:
+                assert actual.bytes_decoded == 0
+                continue
             assert getattr(actual, attribute) == getattr(expected, attribute), attribute
         assert actual.sink_failed is False
 
@@ -723,12 +773,15 @@ class TestBlockCrcs:
     @pytest.mark.parametrize("sink", [False, True])
     @pytest.mark.parametrize("chunk", [0, 37])
     def test_more_pieces_than_the_headers_allow_for(self, tmp_path, sink, chunk):
-        """The pieces are dropped, but the article's CRC still covers every byte in order"""
+        """The pieces are dropped, but the article's CRC still covers every byte in order.
+        Only a body without a size can outgrow the room kept for its pieces: one with a
+        range is cut to it."""
         encoded, crc = sabctools.yenc_encode(self.payload)
         wire = (
-            b"222 0 <test.bin-1>\r\n"
-            b"=ybegin part=1 line=128 size=100000 name=test.bin\r\n"
-            b"=ypart begin=1 end=32\r\n" + encoded + f"\r\n=yend size=32 part=1 pcrc32={crc:08x}\r\n.\r\n".encode()
+            b"222 0 <test.bin>\r\n"
+            b"=ybegin line=128 size=0 name=test.bin\r\n"
+            + encoded
+            + f"\r\n=yend size=0 crc32={crc:08x}\r\n.\r\n".encode()
         )
         target = sabctools.FileWriter(str(tmp_path / "target.bin")) if sink else None
         decoder = sabctools.Decoder(1 << 20)

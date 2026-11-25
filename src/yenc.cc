@@ -538,11 +538,16 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
         Py_RETURN_NONE;
     }
 
-    if (self->format == ENCODING_FORMAT_YENC && (!self->crc_expected.has_value() || self->crc != self->crc_expected.value())) {
-        Py_RETURN_NONE;
+    // The =yend CRC covers every byte received, so that is what it is checked against,
+    // while the CRC reported covers only the bytes kept
+    if (self->format == ENCODING_FORMAT_YENC) {
+        const uint32_t received = rapidyenc_crc_combine(self->crc, self->crc_dropped, self->dropped_length);
+        if (!self->crc_expected.has_value() || received != self->crc_expected.value()) {
+            Py_RETURN_NONE;
+        }
     }
 
-    if (self->sink_unplaced) {
+    if (self->unplaced) {
         Py_RETURN_NONE;
     }
 
@@ -552,21 +557,12 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
 /**
  * Property getter for the 'block_crcs' attribute: the CRC of each piece of the yEnc
  * body between multiples of the block size given to expect(), counted from the start
- * of the file. None without a block size, without valid =ypart offsets, where the
- * pieces could not be kept, and wherever bytes were not written: a discarded body, or
- * one that ran past its range or past max_end.
+ * of the file, covering only the bytes kept. None without a block size, without valid
+ * =ypart offsets, where the pieces could not be kept, and for a discarded body.
  */
 static PyObject* NNTPResponse_get_block_crcs(NNTPResponse* self, void *closure)
 {
-    if (self->format != ENCODING_FORMAT_YENC || self->block_size <= 0 || self->pieces_dropped ||
-        self->sink_unplaced) {
-        Py_RETURN_NONE;
-    }
-    if (self->part_size > 0 && self->bytes_decoded > self->part_size) {
-        Py_RETURN_NONE;
-    }
-    // Only a sink stops at max_end
-    if (self->sink && self->max_end > 0 && self->part_begin + self->bytes_decoded > self->max_end) {
+    if (self->format != ENCODING_FORMAT_YENC || self->block_size <= 0 || self->pieces_dropped || self->unplaced) {
         Py_RETURN_NONE;
     }
 
@@ -654,22 +650,14 @@ struct SinkFailure {
  * stream stays in step.
  */
 static void NNTPResponse_flush_sink_nogil(Decoder *owner, NNTPResponse *instance, SinkFailure &failure) {
-    if (instance->sink_failed || instance->sink_unplaced || owner->staging_used == 0) {
+    if (instance->sink_failed || instance->unplaced || owner->staging_used == 0) {
         owner->staging_used = 0;
         return;
     }
 
-    // Never write past the end the yEnc headers declare, with or without =ypart, nor past
-    // max_end: a long body would overwrite the next article or grow the file
-    Py_ssize_t length = owner->staging_used;
+    // Only kept bytes are staged, so all of it goes out
+    const Py_ssize_t length = owner->staging_used;
     owner->staging_used = 0;
-    long long end = instance->part_size > 0 ? instance->part_end : 0;
-    if (instance->max_end > 0 && (end == 0 || end > instance->max_end)) end = instance->max_end;
-    if (end > 0) {
-        const long long room = end - instance->sink_offset;
-        if (room <= 0) return;
-        if (length > room) length = static_cast<Py_ssize_t>(room);
-    }
 
     FileWriter *writer = reinterpret_cast<FileWriter *>(instance->sink);
     bool was_closed = false;
@@ -767,7 +755,10 @@ static void NNTPResponse_fold_crc(NNTPResponse *instance, const char *data, Py_s
     }
 }
 
-/* Decode one chunk of at most `space` bytes into dst, without the GIL. False when done. */
+/*
+ * Decode one chunk of at most `space` bytes into dst, without the GIL. `produced` is how
+ * many of them are kept, at the start of dst. False when done.
+ */
 static bool NNTPResponse_decode_chunk(NNTPResponse *instance, const char *buf, const Py_ssize_t buf_len,
                                       Py_ssize_t &read, char *dst, const Py_ssize_t space,
                                       Py_ssize_t &produced, RapidYencDecoderEnd &end) {
@@ -784,13 +775,28 @@ static bool NNTPResponse_decode_chunk(NNTPResponse *instance, const char *buf, c
     );
 
     const Py_ssize_t consumed = src - (buf + read);
-    produced = out - dst;
+    const Py_ssize_t decoded = out - dst;
+
+    // Both write paths keep only what fits: nothing of a body without a place, and
+    // nothing past the end the yEnc headers declare or past max_end. The rest is decoded
+    // all the same, to stay in step with the stream, and the next chunk overwrites it.
+    produced = instance->unplaced ? 0 : decoded;
+    long long limit = instance->part_size > 0 ? instance->part_end : 0;
+    if (instance->max_end > 0 && (limit == 0 || limit > instance->max_end)) limit = instance->max_end;
+    if (limit > 0) {
+        const long long room = limit - (instance->part_begin + instance->bytes_decoded);
+        produced = static_cast<Py_ssize_t>(std::clamp<long long>(room, 0, produced));
+    }
     if (produced > 0) {
         NNTPResponse_fold_crc(instance, dst, produced);
     }
+    if (decoded > produced) {
+        instance->crc_dropped = rapidyenc_crc(dst + produced, decoded - produced, instance->crc_dropped);
+        instance->dropped_length += decoded - produced;
+    }
     read += consumed;
     instance->bytes_decoded += produced;
-    return end == RYDEC_END_NONE && (consumed > 0 || produced > 0);
+    return end == RYDEC_END_NONE && (consumed > 0 || decoded > 0);
 }
 
 /* Handle how decoding stopped, and end the last piece once the body is over */
@@ -947,12 +953,6 @@ static bool NNTPResponse_decode_yenc(Decoder *owner, NNTPResponse *instance, con
             }
             owner->staging_size = YENC_STAGING_SIZE;
             owner->staging_used = 0;
-        }
-        if (instance->bytes_decoded == 0) {
-            // Where this article belongs in the file, straight from its =ypart header
-            instance->sink_offset = instance->part_begin;
-            instance->sink_unplaced = (instance->has_part && instance->part_size == 0) ||
-                                      (instance->max_end > 0 && instance->part_end > instance->max_end);
         }
         return NNTPResponse_decode_yenc_sink(owner, instance, buf, buf_len, read);
     }
@@ -1242,9 +1242,19 @@ static Py_ssize_t NNTPResponse_decode_buffer(Decoder *owner, NNTPResponse *insta
             NNTPResponse_process_yenc_header(instance, line);
             if (instance->body) {
                 // =ypart was encountered, switch to body decoding
-                // A second body in one response is malformed: its headers would move a
-                // streamed body past the range checked for the first, so discard the rest
-                if (instance->sink && instance->bytes_decoded > 0) instance->sink_unplaced = true;
+                if (instance->body_started) {
+                    // A second body in one response is malformed: its headers would move it
+                    // past the range checked for the first, so the rest is discarded
+                    instance->unplaced = true;
+                } else {
+                    // Where the body belongs, straight from its headers. One ending past
+                    // max_end does not fit the file, and a streamed one without valid
+                    // =ypart offsets has nowhere to go
+                    instance->body_started = true;
+                    instance->sink_offset = instance->part_begin;
+                    instance->unplaced = (instance->max_end > 0 && instance->part_end > instance->max_end) ||
+                                         (instance->sink && instance->has_part && instance->part_size == 0);
+                }
                 if (!NNTPResponse_decode_yenc(owner, instance, buf, buf_len, read)) return -1;
                 if (instance->body) return read;  // Still decoding, need more data
                 if (instance->eof) return read;   // Decoder consumed the article terminator
@@ -1340,6 +1350,8 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->part_size = 0;
     instance->end_size = 0;
     instance->crc = 0;
+    instance->crc_dropped = 0;
+    instance->dropped_length = 0;
     instance->status_code = 0;
     instance->crc_expected = std::nullopt;
     instance->state = RYDEC_STATE_CRLF;
@@ -1349,7 +1361,8 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->has_emptyline = false;
     instance->has_baddata = false;
     instance->sink_failed = false;
-    instance->sink_unplaced = false;
+    instance->body_started = false;
+    instance->unplaced = false;
     instance->block_size = 0;
     instance->max_end = 0;
     instance->pieces = nullptr;
@@ -1827,10 +1840,9 @@ static PyObject* Decoder_recv(Decoder *self, PyObject *sock)
  * headers declare instead of being collected into a bytearray, and response.data is
  * left as None.
  *
- * ``max_end`` bounds a streamed body: when the =ypart range ends beyond it, the body is
- * discarded like one with invalid offsets. A body longer than its declared range is
- * written only up to the range's end or max_end, so it cannot overwrite the next
- * article. None or 0 means no bound. ``block_size`` and ``max_end`` are keyword-only.
+ * ``max_end`` bounds every body to the file: when the =ypart range ends beyond it, the
+ * body is discarded, and no body keeps bytes past it or past its own range, on either
+ * write path. None or 0 means no bound. ``block_size`` and ``max_end`` are keyword-only.
  *
  * Calls must be in the order the requests were sent. Nothing here can check that, but
  * keeping the queue on this side means it cannot drift against the responses the way
