@@ -234,7 +234,7 @@ class TestSinkBounds:
 
     @pytest.mark.parametrize("streamed", [True, False])
     def test_a_body_past_its_range_reports_only_its_range(self, tmp_path, streamed):
-        """The whole body is checked against =yend, but only the range is kept and described"""
+        """The whole body is checked against =yend and reported in crc, while only the range is kept"""
         encoded, crc = sabctools.yenc_encode(b"L" * 150)
         wire = (
             b"222 0 <test.bin-1>\r\n"
@@ -249,7 +249,7 @@ class TestSinkBounds:
             target.close()
 
         assert response.bytes_decoded == 100
-        assert response.crc == zlib.crc32(b"L" * 100)
+        assert response.crc == response.crc_expected == crc
         assert response.block_crcs == [zlib.crc32(b"L" * 64), zlib.crc32(b"L" * 36)]
         if streamed:
             assert open(target.path, "rb").read() == b"L" * 100
@@ -290,7 +290,7 @@ class TestSinkBounds:
     @pytest.mark.parametrize("streamed", [True, False])
     def test_a_single_part_body_stops_at_its_end(self, tmp_path, size, max_end, written, streamed):
         """Without =ypart the end comes from the =ybegin size, or max_end when that is missing.
-        The CRCs describe exactly the bytes kept, on both paths."""
+        The block CRCs describe exactly the bytes kept, on both paths."""
         encoded, crc = sabctools.yenc_encode(b"L" * 150)
         wire = (
             b"222 0 <test.bin>\r\n"
@@ -313,7 +313,7 @@ class TestSinkBounds:
             assert (response.data or b"") == kept
         assert response.bytes_decoded == written
         if written:
-            assert response.crc == zlib.crc32(kept)
+            assert response.crc == response.crc_expected == crc
             assert response.block_crcs == [zlib.crc32(kept[:128]), zlib.crc32(kept[128:])][: 1 + (written > 128)]
         else:
             assert response.crc is None

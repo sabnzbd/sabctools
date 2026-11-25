@@ -538,13 +538,8 @@ static PyObject* NNTPResponse_get_crc(NNTPResponse* self, void *closure)
         Py_RETURN_NONE;
     }
 
-    // The =yend CRC covers every byte received, so that is what it is checked against,
-    // while the CRC reported covers only the bytes kept
-    if (self->format == ENCODING_FORMAT_YENC) {
-        const uint32_t received = rapidyenc_crc_combine(self->crc, self->crc_dropped, self->dropped_length);
-        if (!self->crc_expected.has_value() || received != self->crc_expected.value()) {
-            Py_RETURN_NONE;
-        }
+    if (self->format == ENCODING_FORMAT_YENC && (!self->crc_expected.has_value() || self->crc != self->crc_expected.value())) {
+        Py_RETURN_NONE;
     }
 
     if (self->unplaced) {
@@ -791,8 +786,8 @@ static bool NNTPResponse_decode_chunk(NNTPResponse *instance, const char *buf, c
         NNTPResponse_fold_crc(instance, dst, produced);
     }
     if (decoded > produced) {
-        instance->crc_dropped = rapidyenc_crc(dst + produced, decoded - produced, instance->crc_dropped);
-        instance->dropped_length += decoded - produced;
+        NNTPResponse_end_piece(instance);
+        instance->crc = rapidyenc_crc(dst + produced, decoded - produced, instance->crc);
     }
     read += consumed;
     instance->bytes_decoded += produced;
@@ -1350,8 +1345,6 @@ static PyObject* NNTPResponse_new(PyTypeObject* type, PyObject* args, PyObject* 
     instance->part_size = 0;
     instance->end_size = 0;
     instance->crc = 0;
-    instance->crc_dropped = 0;
-    instance->dropped_length = 0;
     instance->status_code = 0;
     instance->crc_expected = std::nullopt;
     instance->state = RYDEC_STATE_CRLF;

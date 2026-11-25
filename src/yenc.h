@@ -141,12 +141,7 @@ typedef struct {
 	PyObject* message;
 	RapidYencDecoderState state;
 	int status_code;
-	// CRC of the bytes kept, the ones that go to the file
 	uint32_t crc;
-	// CRC and length of the decoded bytes not kept. They always follow the kept ones, so
-	// combined with crc they give the CRC of everything received, which =yend covers.
-	uint32_t crc_dropped;
-	long long dropped_length;
 
 	bool eof;
 	bool body;

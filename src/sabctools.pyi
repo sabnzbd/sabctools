@@ -373,8 +373,8 @@ class NNTPResponse:
     data: Optional[bytearray]
     """The bytes kept, or None when they were streamed to a sink instead or none were kept"""
     crc: Optional[int]
-    """CRC of the bytes kept. None when the body received does not match crc_expected, or
-    when the body had nowhere to go in the file and nothing was kept"""
+    """CRC of decoded data, None if does not match crc_expected, or when the body had
+    nowhere to go in the file and nothing was kept"""
     crc_expected: Optional[int]
     """CRC is yEnc headers, None if not found"""
     block_size: int
@@ -439,11 +439,10 @@ class Decoder:
         read to its end.
 
         Both paths keep the same bytes: nothing past the end of the declared range or past
-        `max_end`. The whole body is still checked against its =yend CRC, but `data`,
-        `bytes_decoded`, `crc` and `block_crcs` describe only what was kept, which is what
-        goes to the file. A body whose range ends past `max_end`, any body after the first
-        in the same response, and a streamed body with invalid =ypart offsets keep nothing,
-        and `crc` is then None.
+        `max_end`. `data`, `bytes_decoded` and `block_crcs` describe only what was kept,
+        which is what goes to the file, while `crc` covers the whole body. A body whose
+        range ends past `max_end`, any body after the first in the same response, and a
+        streamed body with invalid =ypart offsets keep nothing, and `crc` is then None.
 
         `block_size` and `max_end` are keyword-only, and None or 0 means unused.
 
