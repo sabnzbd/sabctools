@@ -141,7 +141,12 @@ typedef struct {
 	PyObject* message;
 	RapidYencDecoderState state;
 	int status_code;
+	// CRC of the bytes kept, the ones that go to the file
 	uint32_t crc;
+	// CRC and length of the decoded bytes not kept. They always follow the kept ones, so
+	// combined with crc they give the CRC of everything received, which =yend covers.
+	uint32_t crc_dropped;
+	long long dropped_length;
 
 	bool eof;
 	bool body;
@@ -152,12 +157,14 @@ typedef struct {
 	// continues regardless: the response has to be consumed to its end or the
 	// connection's byte stream is left mid-article.
 	bool sink_failed;
-	// The =ypart offsets were invalid, so the body has nowhere to go and is discarded
-	bool sink_unplaced;
+	// A body has started; a second one in the same response is discarded
+	bool body_started;
+	// The body has nowhere to go in the file, so nothing of it is kept
+	bool unplaced;
 	// With a block size, the CRC of each piece of a yEnc body between multiples of it,
 	// counted from the start of the file. crc is combined from these as each ends.
 	long long block_size;
-	// The offset a streamed body may not pass, 0 for none
+	// The file offset a body may not pass, 0 for none
 	long long max_end;
 	uint32_t* pieces;
 	Py_ssize_t piece_count;

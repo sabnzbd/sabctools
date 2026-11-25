@@ -362,7 +362,8 @@ class NNTPResponse:
     bytes_read: int
     """Bytes consumed, including status line and yEnc headers"""
     bytes_decoded: int
-    """Bytes produced"""
+    """Bytes kept: for yEnc only those within the declared range and max_end, the ones that
+    go to the file. 0 for a body with nowhere to go."""
     file_name: Optional[str]
     file_size: int
     part_begin: int
@@ -370,20 +371,20 @@ class NNTPResponse:
     part_size: int
     end_size: int
     data: Optional[bytearray]
-    """Decoded data, or None when it was streamed to a sink instead"""
+    """The bytes kept, or None when they were streamed to a sink instead or none were kept"""
     crc: Optional[int]
-    """CRC of decoded data, None if does not match crc_expected, or when the body was
-    streamed to a sink but its =ypart offsets were invalid and nothing was written"""
+    """CRC of the bytes kept. None when the body received does not match crc_expected, or
+    when the body had nowhere to go in the file and nothing was kept"""
     crc_expected: Optional[int]
     """CRC is yEnc headers, None if not found"""
     block_size: int
     """The block_size given to Decoder.expect(), 0 for none"""
     block_crcs: Optional[list[int]]
     """With a block_size given to Decoder.expect(), the CRC of each piece of the yEnc body
-    between multiples of it, counted from the start of the file, in order. Reported even
-    when the article's CRC does not match. None without a block size, for uu, without
-    valid =ypart offsets, where the pieces could not be kept, and wherever bytes were not
-    written: a discarded body, or one that ran past its range or past max_end."""
+    between multiples of it, counted from the start of the file, in order, covering the
+    bytes kept. Reported even when the article's CRC does not match. None without a block
+    size, for uu, without valid =ypart offsets, where the pieces could not be kept, and for
+    a body with nowhere to go."""
     lines: Optional[list[str]]
     """NNTP lines from multi-line responses which are not yEnc headers/data e.g. ARTICLE/HEAD/CAPABILITIES"""
     format: Optional[EncodingFormat]
@@ -434,20 +435,23 @@ class Decoder:
         With a `sink`, a yEnc body is written into it at the offset its headers declare,
         instead of being collected into a bytearray, and the response's `data` is None.
         uu-encoded articles carry no offsets, so they ignore the sink and fill `data` as
-        usual. Nothing is written past the end of the declared range: a longer body is cut
-        there, its `bytes_decoded` then exceeds `part_size`, and `block_crcs` is None. A
-        body with invalid =ypart offsets is not written at all, nor is any body after the
-        first in the same response, and `crc` is then None. A failed write sets
-        `sink_failed` and `sink_error`; the response is still read to its end.
+        usual. A failed write sets `sink_failed` and `sink_error`; the response is still
+        read to its end.
+
+        Both paths keep the same bytes: nothing past the end of the declared range or past
+        `max_end`. The whole body is still checked against its =yend CRC, but `data`,
+        `bytes_decoded`, `crc` and `block_crcs` describe only what was kept, which is what
+        goes to the file. A body whose range ends past `max_end`, any body after the first
+        in the same response, and a streamed body with invalid =ypart offsets keep nothing,
+        and `crc` is then None.
 
         `block_size` and `max_end` are keyword-only, and None or 0 means unused.
 
         `block_size`: `block_crcs` holds the CRC of each piece of the body between
         multiples of it, counted from the start of the file.
 
-        `max_end`: only with a `sink`. A body whose range ends beyond it, such as past the
-        file size from the par2 data, is not written at all, like one with invalid offsets,
-        and no write goes past it.
+        `max_end`: the file offset no body may pass, such as the file size from the par2
+        data.
         """
 
     def clear_expected(self) -> None:
